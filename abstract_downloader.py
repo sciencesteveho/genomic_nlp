@@ -160,13 +160,15 @@ general_search_terms = [
 
 def make_directories(dir: str) -> None:
     try:
-        os.makedir(dir)
+        os.makedirs(dir)
     except FileExistsError:
         pass
 
 
 def main() -> None:
     """Download some abstracts!"""
+    make_directories('abstracts')
+
     parser = argparse.ArgumentParser(description='Graph regression attempts')
     parser.add_argument('--start', type=int, default=1898,
                         help='random seed to use (default: 1898)')
@@ -177,7 +179,7 @@ def main() -> None:
     scopus_general = ScopusSearch(f"TITLE-ABS-KEY({' OR '.join(general_search_terms)}) AND (DOCTYPE(ar) OR DOCTYPE(le) OR DOCTYPE(re) AND (PUBYEAR > 2019) AND (PUBYEAR < 2023))", cursor=True, refresh=False, verbose=True, download=True)
 
     ### save the named tuples
-    output = open(f'abstract_retrieval_{args.start}_{args.end}.pkl', 'wb')
+    output = open(f'abstracts/abstract_retrieval_{args.start}_{args.end}.pkl', 'wb')
     try:
         pickle.dump(scopus_general.results(), output)
     except:
@@ -187,7 +189,7 @@ def main() -> None:
 
     ### also save as dataframe
     df = pd.DataFrame(pd.DataFrame(scopus_general.results))
-    df['description'].to_pickle(f'df_abstracts_{args.start}_{args.end}.pkl')
+    df['description'].to_pickle(f'abstracts/df_abstracts_{args.start}_{args.end}.pkl')
 
 if __name__ == '__main__':
     main()
