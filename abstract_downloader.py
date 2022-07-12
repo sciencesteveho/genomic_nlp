@@ -7,11 +7,11 @@
 """Mine abstracts from scopus API"""
 
 import argparse
+import os
 import pandas as pd
 import pickle
 
 from pybliometrics.scopus import ScopusSearch
-
 
 general_search_terms = [
     'ATAC-seq',
@@ -158,9 +158,15 @@ general_search_terms = [
     '{translational regulation}'
 ]
 
+def make_directories(dir: str) -> None:
+    try:
+        os.makedir(dir)
+    except FileExistsError:
+        pass
+
 
 def main() -> None:
-    """Nlp, buddy!"""
+    """Download some abstracts!"""
     parser = argparse.ArgumentParser(description='Graph regression attempts')
     parser.add_argument('--start', type=int, default=1898,
                         help='random seed to use (default: 1898)')
@@ -170,6 +176,7 @@ def main() -> None:
 
     scopus_general = ScopusSearch(f"TITLE-ABS-KEY({' OR '.join(general_search_terms)}) AND (DOCTYPE(ar) OR DOCTYPE(le) OR DOCTYPE(re) AND (PUBYEAR > 2019) AND (PUBYEAR < 2023))", cursor=True, refresh=False, verbose=True, download=True)
 
+    ### save the named tuples
     output = open(f'abstract_retrieval_{args.start}_{args.end}.pkl', 'wb')
     try:
         pickle.dump(scopus_general.results(), output)
@@ -178,6 +185,7 @@ def main() -> None:
     finally:
         output.close()
 
+    ### also save as dataframe
     df = pd.DataFrame(pd.DataFrame(scopus_general.results))
     df['description'].to_pickle(f'df_abstracts_{args.start}_{args.end}.pkl')
 
