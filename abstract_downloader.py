@@ -158,6 +158,7 @@ general_search_terms = [
     '{translational regulation}'
 ]
 
+
 def make_directories(dir: str) -> None:
     try:
         os.makedirs(dir)
@@ -176,7 +177,7 @@ def main() -> None:
                         help='random seed to use (default: 2023)')
     args = parser.parse_args()
 
-    scopus_general = ScopusSearch(f"TITLE-ABS-KEY({' OR '.join(general_search_terms)}) AND (DOCTYPE(ar) OR DOCTYPE(le) OR DOCTYPE(re) AND (PUBYEAR > 2019) AND (PUBYEAR < 2023))", cursor=True, refresh=False, verbose=True, download=True)
+    scopus_general = ScopusSearch(f"TITLE-ABS-KEY({' OR '.join(general_search_terms)}) AND (DOCTYPE(ar) OR DOCTYPE(le) OR DOCTYPE(re) AND (PUBYEAR > {args.start}) AND (PUBYEAR < {args.end}))", cursor=True, refresh=False, verbose=True, download=True)
 
     ### save the named tuples
     output = open(f'abstracts/abstract_retrieval_{args.start}_{args.end}.pkl', 'wb')
