@@ -152,16 +152,20 @@ def main() -> None:
     make_directories('abstracts')
 
     parser = argparse.ArgumentParser(description='Graph regression attempts')
-    parser.add_argument('--start', type=int, default=1898,
-                        help='random seed to use (default: 1898)')
-    parser.add_argument('--end', type=int, default=2023,
-                        help='random seed to use (default: 2023)')
+    parser.add_argument('--year', type=int, default=1898,
+                        help='year abstracts are published')
+    # parser.add_argument('--start', type=int, default=1898,
+    #                     help='random seed to use (default: 1898)')
+    # parser.add_argument('--end', type=int, default=2023,
+    #                     help='random seed to use (default: 2023)')
     args = parser.parse_args()
 
-    scopus_general = ScopusSearch(f"TITLE-ABS-KEY({' OR '.join(general_search_terms)}) AND (DOCTYPE(ar) OR DOCTYPE(le) OR DOCTYPE(re) AND (PUBYEAR > {args.start}) AND (PUBYEAR < {args.end}))", cursor=True, refresh=False, verbose=True, download=True)
+    scopus_general = ScopusSearch(f"TITLE-ABS-KEY({' OR '.join(general_search_terms)}) AND (DOCTYPE(ar) OR DOCTYPE(le) OR DOCTYPE(re) AND (PUBYEAR = {args.year}))", cursor=True, refresh=False, verbose=True, download=True)
+
+    # scopus_general = ScopusSearch(f"TITLE-ABS-KEY({' OR '.join(general_search_terms)}) AND (DOCTYPE(ar) OR DOCTYPE(le) OR DOCTYPE(re) AND (PUBYEAR > {args.start}) AND (PUBYEAR < {args.end}))", cursor=True, refresh=False, verbose=True, download=True)
 
     ### save the named tuples
-    output = open(f'abstracts/abstract_retrieval_{args.start}_{args.end}.pkl', 'wb')
+    output = open(f'abstracts/abstract_retrieval_{args.year}.pkl', 'wb')
     try:
         pickle.dump(scopus_general.results(), output)
     except:
@@ -171,7 +175,7 @@ def main() -> None:
 
     ### also save as dataframe
     df = pd.DataFrame(pd.DataFrame(scopus_general.results))
-    df['description'].to_pickle(f'abstracts/df_abstracts_{args.start}_{args.end}.pkl')
+    df['description'].to_pickle(f'abstracts/df_abstracts_{args.year}.pkl')
 
 if __name__ == '__main__':
     main()
