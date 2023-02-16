@@ -181,7 +181,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    if args.interval == True:
+    if args.interval:
         scopus_general = ScopusSearch(f"TITLE-ABS-KEY({' OR '.join(general_search_terms)}) AND (DOCTYPE(ar) OR DOCTYPE(le) OR DOCTYPE(re) AND (PUBYEAR > {args.start}) AND (PUBYEAR < {args.end}))", cursor=True, refresh=False, verbose=True, download=True)
         year = f'{args.start}_{args.end}'
     else:
