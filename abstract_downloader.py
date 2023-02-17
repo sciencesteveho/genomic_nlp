@@ -156,7 +156,7 @@ def main() -> None:
         '--interval',
         help='search over an internal of time',
         action='store_true',
-        required=True,
+        required=False,
     )
     parser.add_argument(
         '--year',
