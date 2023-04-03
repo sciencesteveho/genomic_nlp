@@ -72,9 +72,9 @@ class AbstractCollection:
 
     SUBLIST_SPACES = ["-", "\s+"]
 
-    def __init__(self, abstracts):
+    def __init__(self, abstracts) -> None:
         """Initialize the class"""
-        self.abstracts = abstracts.tolist()
+        self.abstracts = [abstract for abstract in abstracts.tolist() if abstract]
 
     #@time_decorator
     def _abstract_cleaning(self):
