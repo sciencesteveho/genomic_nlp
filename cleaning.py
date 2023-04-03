@@ -76,7 +76,7 @@ class AbstractCollection:
         """Initialize the class"""
         self.abstracts = abstracts
 
-    @time_decorator
+    #@time_decorator
     def _abstract_cleaning(self):
         """Lorem Ipsum"""
         cleaned_abstracts = []
