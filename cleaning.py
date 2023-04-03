@@ -74,7 +74,7 @@ class AbstractCollection:
 
     def __init__(self, abstracts):
         """Initialize the class"""
-        self.abstracts = abstracts
+        self.abstracts = abstracts.tolist()
 
     #@time_decorator
     def _abstract_cleaning(self):
