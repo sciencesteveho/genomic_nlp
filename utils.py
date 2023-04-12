@@ -6,8 +6,11 @@
 from datetime import timedelta
 import functools
 import inspect
+import random
 import time
 from typing import Any, Callable
+
+import pandas as pd
 
 
 SUBLIST = [
@@ -117,3 +120,52 @@ def time_decorator(print_args: bool = False, display_arg: str ="") -> Callable:
                     print(f'Finished {function.__name__} {display_arg} - Time: {timedelta(seconds=end_time - start_time)}')
         return _execute
     return _time_decorator_func
+
+
+def _random_subset_abstract_printer(n: int, df: pd.Series) -> None:
+    """Prints N random abstracts"""
+    for num in random.sample(range(0, len(df)), n):
+        print(df[num])
+
+# import pandas as pd
+abstracts = pd.read_pickle('gene_filtered_abstracts_1.pkl')
+abstracts = list(abstracts)
+_random_subset_abstract_printer(25, abstracts)
+
+
+from random import sample
+from tqdm import tqdm
+import pickle
+
+def Filter(string, substr):
+    # Create an empty list to store the filtered strings
+    filtered_list = []
+     
+    # Loop over each string in the input list
+    for s in tqdm(string):
+        # Loop over each substring in the filter list
+        for sub in substr:
+            # Check if the substring is in the current string
+            if sub in s:
+                # If it is, add the string to the filtered list and break out of the inner loop
+                filtered_list.append(s)
+                break
+                 
+    # Return the final filtered list
+    return filtered_list
+
+with open('gtex_genes.txt', 'r') as file:
+    data = file.read()
+    genes = data.split("\n")
+
+# get a subset of genes, and a subset of abstracts
+
+for num in [3,4,5]:
+    subset_genes = sample(genes, 1000)
+    subset_abs = sample(abstracts, 500000)
+
+    gene_filtered_abstracts = Filter(subset_abs, subset_genes)
+
+    with open(f'gene_filtered_abstracts_{num}.pkl', 'wb') as output:
+        pickle.dump(gene_filtered_abstracts, output)
+
