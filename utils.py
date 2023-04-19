@@ -6,9 +6,11 @@
 from datetime import timedelta
 import functools
 import inspect
+import pickle
 import random
 import time
-from typing import Any, Callable
+from tqdm import tqdm
+from typing import Any, Callable, List
 
 import pandas as pd
 
@@ -100,7 +102,7 @@ SUBLIST_POST = [
 SUBLIST_TITLE = ["<.{3}>", "</.{3}>"]
 
 
-def time_decorator(print_args: bool = False, display_arg: str ="") -> Callable:
+def time_decorator(print_args: bool = False, display_arg: str = "") -> Callable:
     def _time_decorator_func(function: Callable) -> Callable:
         @functools.wraps(function)
         def _execute(*args: Any, **kwargs: Any) -> Any:
@@ -115,57 +117,216 @@ def time_decorator(print_args: bool = False, display_arg: str ="") -> Callable:
             finally:
                 end_time = time.monotonic()
                 if print_args == True:
-                    print(f'Finished {function.__name__} {[val for val in fxn_args.values()]} - Time: {timedelta(seconds=end_time - start_time)}')
+                    print(
+                        f"Finished {function.__name__} {[val for val in fxn_args.values()]} - Time: {timedelta(seconds=end_time - start_time)}"
+                    )
                 else:
-                    print(f'Finished {function.__name__} {display_arg} - Time: {timedelta(seconds=end_time - start_time)}')
+                    print(
+                        f"Finished {function.__name__} {display_arg} - Time: {timedelta(seconds=end_time - start_time)}"
+                    )
+
         return _execute
+
     return _time_decorator_func
 
 
-def _random_subset_abstract_printer(n: int, df: pd.Series) -> None:
-    """Prints N random abstracts"""
-    for num in random.sample(range(0, len(df)), n):
-        print(df[num])
-
-# import pandas as pd
-abstracts = pd.read_pickle('gene_filtered_abstracts_1.pkl')
-abstracts = list(abstracts)
-_random_subset_abstract_printer(25, abstracts)
-
-
-from random import sample
-from tqdm import tqdm
-import pickle
-
 def Filter(string, substr):
-    # Create an empty list to store the filtered strings
     filtered_list = []
-     
-    # Loop over each string in the input list
     for s in tqdm(string):
-        # Loop over each substring in the filter list
-        for sub in substr:
-            # Check if the substring is in the current string
-            if sub in s:
-                # If it is, add the string to the filtered list and break out of the inner loop
-                filtered_list.append(s)
-                break
-                 
-    # Return the final filtered list
+        common = substr.intersection(s.split())
+        if len(common) >= 9:
+            filtered_list.append(s)
     return filtered_list
 
-with open('gtex_genes.txt', 'r') as file:
-    data = file.read()
-    genes = data.split("\n")
+
+def _random_subset_abstract_printer(n: int, abstracts: List) -> None:
+    """Prints N random abstracts"""
+    for num in random.sample(range(0, len(abstracts)), n):
+        print(abstracts[num])
+
+
+abstracts = []
+for num in [1, 2, 3, 4, 5]:
+    abstracts.append(pd.read_pickle(f"gene_filtered_abstracts_{num}.pkl"))
+
+abstracts = [x for abstract in abstracts for x in abstract]
+abstracts = list(set(abstracts))
+
+_random_subset_abstract_printer(
+    25, abstracts
+)
+
+genes = [
+    "promoter",
+    "enhancer",
+    "transcription factor",
+    "transcriptional regulator",
+    "transcriptional repressor",
+    "gene",
+    "protein",
+    "transcript",
+    "chromatin",
+    "chromosome",
+    "mRNA",
+    "DNA",
+    "RNA",
+    "mechanism",
+    "mechanisms",
+    "messenger",
+    "signaling",
+    "signal",
+    "pathway",
+    "pathways",
+    "receptor",
+    "receptors",
+    "cell",
+    "cells",
+    "cellular",
+    "eQTL",
+    "QTL",
+    "ChIP",
+    "epigenomic",
+    "epigenome",
+    "lncRNA",
+    "noncoding",
+    "polymerase",
+    "retrotransposon",
+    "telomerase",
+    "transcription",
+    "transcriptional",
+    "transcriptome",
+    "transposon",
+    "DNA accessibility",
+    "DNA damage",
+    "DNA element" "DNA methylation",
+    "DNA repair",
+    "DNA sequence",
+    "DNA structure",
+    "3D chromatin",
+    "3D genome",
+    "chromatin accessibility",
+    "cis-regulatory element",
+    "chromatin conformation",
+    "chromatin domain",
+    "chromatin loop",
+    "chromatin modification",
+    "chromatin organization",
+    "histone",
+    "histone modification",
+    "histone variant",
+    "nucleosome",
+    "H3K4me3",
+    "H3K27ac",
+    "H3K27me3",
+    "H3K36me3",
+    "H3K4me1",
+    "microRNA",
+    "post-translational modification",
+    "protein complex",
+    "noncoding elements",
+    "noncoding RNA",
+    "noncoding RNAs",
+    "super enhancer",
+    "super-enhancer",
+    "super-enhancers",
+    "transcriptional modification",
+    "transcriptional regulation",
+    "transcriptional regulator",
+    "transcriptional repressor",
+    "cell function",
+    "cell type",
+    "cell types",
+    "cellular function",
+    "biological process",
+    "biological processes",
+    "cellular component",
+    "biological mechanism",
+    "biological mechanisms",
+    "biological pathway",
+    "multicellular organism",
+    "multicellular organisms",
+    "eukaryotic",
+    "vertebrate",
+    "signaling pathway",
+    "signaling pathways",
+    "mammalian",
+    "human",
+    "humans",
+    "tissue",
+    "tissues",
+    "tissue-specific",
+    "tissue-specificity",
+    "tissue-specific expression",
+    "controlling",
+    "target",
+    "targets",
+    "targeting",
+    "targeted",
+    "cell",
+    "key role",
+    "genome regulation",
+    "structural variation",
+    "polymorphism",
+    "gene expression",
+    "gene expression regulation",
+    "activated",
+    "key signaling",
+    "key role",
+    "key roles",
+    "key function",
+    "genome structure",
+    "genome organization",
+    "genome regulation",
+    "genome-wide",
+    "genome-wide association",
+    "genome-wide association study",
+    "critical roles",
+    "biological functions",
+    "biological function",
+    "biological processes",
+    "biological process",
+    "biological mechanisms",
+    "gene target",
+    "gene targets",
+    "core human",
+    "core promoter",
+    "loss",
+    "loss of function",
+    "inhibitor",
+    "inhibits",
+    "role",
+    "function",
+    "contribution",
+    "critical",
+    "involved",
+    "evidence",
+    "lacked",
+    "present",
+    "precise",
+    "process",
+    "explored",
+    "demonstrated",
+    "proposed",
+    "involvement",
+    "down-regulated",
+    "down-regulation",
+    "regulates",
+]
+
+
+with open('cleaned_abstracts.pkl', 'rb') as file:
+    abstracts = pickle.load(file)
 
 # get a subset of genes, and a subset of abstracts
+for num in [1, 2, 3, 4, 5]:
+    # subset_genes = sample(genes, 1000)
+    subset_abs = random.sample(abstracts, 1000000)
+    geneset = set(genes)
 
-for num in [3,4,5]:
-    subset_genes = sample(genes, 1000)
-    subset_abs = sample(abstracts, 500000)
+    # gene_filtered_abstracts = Filter(subset_abs, subset_genes)
+    # gene_filtered_abstracts = Filter(subset_abs, genes)
+    gene_filtered_abstracts = Filter(subset_abs, geneset)
+    print(len(gene_filtered_abstracts))
 
-    gene_filtered_abstracts = Filter(subset_abs, subset_genes)
-
-    with open(f'gene_filtered_abstracts_{num}.pkl', 'wb') as output:
+    with open(f"gene_filtered_abstracts_{num}.pkl", "wb") as output:
         pickle.dump(gene_filtered_abstracts, output)
-
