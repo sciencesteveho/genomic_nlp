@@ -200,7 +200,7 @@ def clean_dict(d):
     for key, value in d.items():
         for pattern in SUBLIST_TITLE:
             key = re.sub(pattern, "", key)
-        new_dict[key] = _abstract_cleaning(value)
+        new_dict[_abstract_cleaning(value)] = key
     return new_dict
 
 
@@ -273,8 +273,9 @@ def main() -> None:
     df["combined"].to_pickle(f"abstracts/abstracts_{year}.pkl")
 
     # save as a dict for matching
+    ab_dict = dict(zip(df.title, df.description)) 
     with open(f'abstract_dicts/abstract_retrieval_{year}_dict.pkl', 'wb') as output:
-        pickle.dump(clean_dict(dict(zip(df.title, df.description))), output)
+        pickle.dump(clean_dict(ab_dict), output)
 
 
 if __name__ == "__main__":
