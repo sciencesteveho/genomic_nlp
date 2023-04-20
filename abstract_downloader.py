@@ -9,9 +9,22 @@
 import argparse
 import os
 import pickle
+import re
+from typing import Any, Dict, List, Tuple
 
 import pandas as pd
 from pybliometrics.scopus import ScopusSearch
+
+from utils import (
+    SUBLIST,
+    SUBLIST_INITIAL,
+    SUBLIST_TOKEN_ZERO,
+    SUBLIST_TOKEN_ONE,
+    SUBLIST_POST,
+    SUBLIST_TITLE,
+    time_decorator,
+)
+
 
 general_search_terms = [
     "ATAC-seq",
@@ -147,6 +160,50 @@ def make_directories(dir: str) -> None:
         pass
 
 
+def _abstract_cleaning(abstract):
+    """Lorem Ipsum"""
+    for pattern in SUBLIST:
+        abstract = re.sub(pattern, "", abstract)
+    for pattern in SUBLIST_INITIAL:
+        abstract = re.sub(pattern, "", abstract, flags=re.IGNORECASE)
+    tokens = abstract.split(". ")
+    if tokens[0].startswith("©"):
+        for pattern in SUBLIST_TOKEN_ZERO:
+            abstract = re.sub(pattern, r"\4", abstract)
+        abstract = re.sub("^©(.*?)\.", "", abstract)
+    elif (("©") in tokens[0]) and (not tokens[0].startswith("©")):
+        for pattern in SUBLIST_TOKEN_ONE:
+            abstract = re.sub(pattern, r"\4", abstract)
+        abstract = re.sub(
+            "^[0-9][0-9][0-9][0-9](.*?)©(.*?)the (authors|author|author(s))",
+            "",
+            abstract,
+            flags=re.IGNORECASE,
+        )
+    for idx in (-2, -1):
+        tokens = abstract.split(". ")
+        try:
+            if "©" in tokens[idx]:
+                abstract = ". ".join(tokens[:idx]) + "."
+        except:
+            pass
+    else:
+        abstract = abstract
+    for pattern in SUBLIST_POST:
+        abstract = re.sub(pattern, "", abstract)
+    return abstract
+
+
+def clean_dict(d):
+    """Lorem Ipsum"""
+    new_dict = {}
+    for key, value in d.items():
+        for pattern in SUBLIST_TITLE:
+            key = re.sub(pattern, "", key)
+        new_dict[key] = _abstract_cleaning(value)
+    return new_dict
+
+
 def main() -> None:
     """Download some abstracts!"""
     make_directories("abstracts")
@@ -216,7 +273,7 @@ def main() -> None:
 
     # save as a dict for matching
     with open(f'abstract_dicts/abstract_retrieval_{year}_dict.pkl', 'wb') as output:
-        pickle.dump(dict(zip(df.title, df.description)), output)
+        pickle.dump(clean_dict(dict(zip(df.title, df.description))), output)
 
 
 if __name__ == "__main__":

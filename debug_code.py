@@ -7,10 +7,15 @@ from utils import (
 )
 
 
-def map_abs_to_titles(abstracts, abstract):
-    return [
-        value + key for key, value in abstracts.items() if abstract in abstracts.keys()
-    ]
+def map_abs_to_titles(abstracts, lines):
+    full_abs = []
+    for line in lines:
+        if line in abstracts.keys():
+            full_abs.append(abstracts[line] + '. ' + line)
+            
+    # return [
+    #     str(value) + ' .' + str(key) for key, value in abstracts.items() for line in lines if line in abstracts.keys() 
+    # ]
 
 
 def main() -> None:
@@ -26,7 +31,7 @@ def main() -> None:
     
     with open('abstract_dicts/all_abstracts.dict', 'rb') as f:
         abstracts = pickle.load(f)
-        
+
     with open("relevant") as file:
         lines = [line.strip() for line in file.readlines()]
 
