@@ -124,10 +124,8 @@ def main():
             _abstract_retrieval_concat(data_path=abstract_path)
         except FileExistsError:
             pass
-    else:
-        abstracts = pd.read_pickle(abstract_file)
 
-    abstractcollectionObj = AbstractCollection(abstracts=abstracts)
+    abstractcollectionObj = AbstractCollection(abstracts=pd.read_pickle(abstract_file))
 
     # run processing!
     abstractcollectionObj.process_abstracts()
