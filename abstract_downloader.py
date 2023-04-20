@@ -199,7 +199,10 @@ def clean_dict(d):
     new_dict = {}
     for key, value in d.items():
         for pattern in SUBLIST_TITLE:
-            key = re.sub(pattern, "", key)
+            try:
+                key = re.sub(pattern, "", key)
+            except TypeError:
+                key = ''
         new_dict[_abstract_cleaning(value)] = key
     return new_dict
 
