@@ -200,7 +200,7 @@ def main() -> None:
         )
         year = args.year
 
-    ### save the named tuples
+    # save the named tuples
     output = open(f"abstracts/abstract_retrieval_{year}.pkl", "wb")
     try:
         pickle.dump(scopus_general.results(), output)
@@ -209,10 +209,14 @@ def main() -> None:
     finally:
         output.close()
 
-    ### also save as dataframe
+    # also save as dataframe
     df = pd.DataFrame(scopus_general.results)
-    df['combined'] = df['title'].astype(str) + ". " + df['description'].astype(str)
-    df['combined'].to_pickle(f"abstracts_title_combined/abstracts_{year}.pkl")
+    df["combined"] = df["title"].astype(str) + ". " + df["description"].astype(str)
+    df["combined"].to_pickle(f"abstracts_title_combined/abstracts_{year}.pkl")
+
+    # save as a dict for matching
+    with open(f"abstract_dicts/abstract_retrieval_{year}_dict.pkl)", "wb") as output:
+        pickle.dump(dict(zip(df.title, df.description)), output)
 
 
 if __name__ == "__main__":

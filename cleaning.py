@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 #
 # // TO-DO //
-# - [ ] 
+# - [ ]
 
 """Abstract df concatenation, cleaning with regular expressions, and relevancy
 classification"""
@@ -23,6 +23,7 @@ from utils import (
     SUBLIST_TITLE,
     time_decorator,
 )
+
 
 def _abstract_retrieval_concat(data_path: str) -> None:
     """Take abstract outputs and combine into a single pd.series. Only needs to
@@ -76,7 +77,7 @@ class AbstractCollection:
         """Initialize the class"""
         self.abstracts = [abstract for abstract in abstracts.tolist() if abstract]
 
-    #@time_decorator
+    # @time_decorator
     def _abstract_cleaning(self):
         """Lorem Ipsum"""
         cleaned_abstracts = []
@@ -93,7 +94,12 @@ class AbstractCollection:
             elif (("©") in tokens[0]) and (not tokens[0].startswith("©")):
                 for pattern in SUBLIST_TOKEN_ONE:
                     abstract = re.sub(pattern, r"\4", abstract)
-                abstract = re.sub("^[0-9][0-9][0-9][0-9](.*?)©(.*?)the (authors|author|author(s))", "", abstract, flags=re.IGNORECASE)
+                abstract = re.sub(
+                    "^[0-9][0-9][0-9][0-9](.*?)©(.*?)the (authors|author|author(s))",
+                    "",
+                    abstract,
+                    flags=re.IGNORECASE,
+                )
             for idx in (-2, -1):
                 tokens = abstract.split(". ")
                 try:
@@ -108,7 +114,7 @@ class AbstractCollection:
             cleaned_abstracts.append(abstract)
         cleaned_abstracts = set([i for i in cleaned_abstracts if i])
         return cleaned_abstracts
-    
+
     def process_abstracts(self):
         """Process abstracts through regex, NER, and classification"""
         self.cleaned_abstracts = self._abstract_cleaning()
@@ -116,8 +122,8 @@ class AbstractCollection:
 
 def main():
     """Processing pipeline"""
-    abstract_path = '/scratch/remills_root/remills/stevesho/bio_nlp/nlp/abstracts'
-    abstract_file = f'{abstract_path}/abstracts_combined.pkl'
+    abstract_path = "/scratch/remills_root/remills/stevesho/bio_nlp/nlp/abstracts"
+    abstract_file = f"{abstract_path}/abstracts_combined.pkl"
 
     if not os.path.exists(abstract_file):
         try:
@@ -133,6 +139,7 @@ def main():
     # save
     with open(f"{abstract_path}/cleaned_abstracts.pkl", "wb") as f:
         pickle.dump(abstractcollectionObj.cleaned_abstracts, f)
+
 
 if __name__ == "__main__":
     main()
