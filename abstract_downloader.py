@@ -215,7 +215,7 @@ def main() -> None:
     df["combined"].to_pickle(f"abstracts/abstracts_{year}.pkl")
 
     # save as a dict for matching
-    with open(f"abstract_dicts/abstract_retrieval_{year}_dict.pkl)", "wb") as output:
+    with open(f'abstract_dicts/abstract_retrieval_{year}_dict.pkl', 'wb') as output:
         pickle.dump(dict(zip(df.title, df.description)), output)
 
 
