@@ -268,6 +268,7 @@ def main() -> None:
 
     # save as title plus abstract
     df = pd.DataFrame(scopus_general.results)
+    df = df[df['description'].str.len() > 0]  # filter out empty descriptions
     df["combined"] = df["title"].astype(str) + ". " + df["description"].astype(str)
     df["combined"].to_pickle(f"abstracts/abstracts_{year}.pkl")
 
