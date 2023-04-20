@@ -23,6 +23,10 @@ def main() -> None:
 
     _random_subset_abstract_printer(25, abstracts)
 
+    
+    with open('abstract_dicts/all_abstracts.dict', 'rb') as f:
+        abstracts = pickle.load(f)
+        
     with open("relevant") as file:
         lines = [line.strip() for line in file.readlines()]
 
