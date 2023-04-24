@@ -258,6 +258,37 @@ FILTER_TERMS = [
     "regulates",
 ]
 
+SPECIFIC_TERMS = [
+    "central dogma",
+    "gene expression",
+    "mRNA",
+    "mRNA stability",
+    "DNA replication",
+    "transcription",
+    "translation",
+    "transcriptional regulation",
+    "reverse transcription",
+    "RNA replication",
+    "post-translational modification",
+    "methylation",
+    "epigenetic",
+    "model",
+    "models",
+    "cell cycle",
+    "regulator",
+    "mechanism",
+    "mammalian",
+    "human",
+    "histones",
+    "chromatin",
+    "promoter",
+    "enhancer",
+    "required",
+    "necessary",
+    "essential",
+    "dependent",
+]
+
 
 def time_decorator(print_args: bool = False, display_arg: str = "") -> Callable:
     def _time_decorator_func(function: Callable) -> Callable:
@@ -287,11 +318,11 @@ def time_decorator(print_args: bool = False, display_arg: str = "") -> Callable:
     return _time_decorator_func
 
 
-def filter_abstract_by_terms(string, substr):
+def filter_abstract_by_terms(string, substr, matches):
     filtered_list = []
     for s in tqdm(string):
         common = substr.intersection(s.split())
-        if len(common) >= 9:
+        if len(common) >= matches:
             filtered_list.append(s)
     return filtered_list
 

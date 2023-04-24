@@ -4,6 +4,7 @@ from utils import (
     _random_subset_abstract_printer,
     FILTER_TERMS,
     filter_abstract_by_terms,
+    SPECIFIC_TERMS,
 )
 
 
@@ -12,30 +13,42 @@ def map_abs_to_titles(abstracts, lines):
     for line in lines:
         if line in abstracts.keys():
             full_abs.append(abstracts[line] + '. ' + line)
-            
-    # return [
-    #     str(value) + ' .' + str(key) for key, value in abstracts.items() for line in lines if line in abstracts.keys() 
-    # ]
 
 
 def main() -> None:
+    # abstracts = filter_abstract_by_terms(
+    #     pickle.load(open("cleaned_abstracts.pkl", "rb")), set(FILTER_TERMS), 9
+    # )
+
+    # with open(f"gene_filtered_abstracts_full.pkl", "wb") as output:
+    #     pickle.dump(abstracts, output)
+
     abstracts = filter_abstract_by_terms(
-        pickle.load(open("cleaned_abstracts", "rb")), FILTER_TERMS
+        pickle.load(open("cleaned_abstracts.pkl", "rb")), set(SPECIFIC_TERMS), 7
     )
 
-    with open(f"gene_filtered_abstracts_full.pkl", "wb") as output:
+    with open(f"specific_filtered_abstracts_full.pkl", "wb") as output:
         pickle.dump(abstracts, output)
+
+
+
+    with open(f"gene_filtered_abstracts_full.pkl", "rb") as file:
+        abstracts = pickle.load(file)
 
     _random_subset_abstract_printer(25, abstracts)
 
+
+
+
+
     
-    with open('abstract_dicts/all_abstracts.dict', 'rb') as f:
-        abstracts = pickle.load(f)
+# with open('abstract_dicts/all_abstracts.dict', 'rb') as f:
+#     abstracts = pickle.load(f)
 
-    with open("relevant") as file:
-        lines = [line.strip() for line in file.readlines()]
+# with open("relevant") as file:
+#     lines = [line.strip() for line in file.readlines()]
 
-    full_abstracts = map_abs_to_titles(abstracts, lines)
+# full_abstracts = map_abs_to_titles(abstracts, lines)
 
 
 # import os
