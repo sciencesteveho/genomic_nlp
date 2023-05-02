@@ -1,5 +1,4 @@
-#! /usr/bin/env python
-# -*- coding: utf-8 -*-
+#! /usr/bin/env python -*- coding: utf-8 -*-
 #
 # // TO-DO //
 # - [ ] to-do
@@ -22,7 +21,6 @@ from utils import (
     SUBLIST_TOKEN_ONE,
     SUBLIST_POST,
     SUBLIST_TITLE,
-    time_decorator,
 )
 
 
@@ -260,7 +258,6 @@ def main() -> None:
         )
         year = args.year
 
-    # save the named tuples
     # output = open(f"abstracts/abstract_retrieval_{year}.pkl", "wb")
     # try:
     #     pickle.dump(scopus_general.results(), output)
@@ -271,14 +268,14 @@ def main() -> None:
 
     # save as title plus abstract
     df = pd.DataFrame(scopus_general.results)
-    df = df[df['description'].str.len() > 0]  # filter out empty descriptions
+    df = df[df['description'].str.len() > 1]  # filter out empty descriptions
     df["combined"] = df["title"].astype(str) + ". " + df["description"].astype(str)
     df["combined"].to_pickle(f"abstracts/abstracts_{year}.pkl")
 
     # save as a dict for matching
-    ab_dict = dict(zip(df.title, df.description)) 
-    with open(f'abstract_dicts/abstract_retrieval_{year}_dict.pkl', 'wb') as output:
-        pickle.dump(clean_dict(ab_dict), output)
+    # ab_dict = dict(zip(df.title, df.description)) 
+    # with open(f'abstract_dicts/abstract_retrieval_{year}_dict.pkl', 'wb') as output:
+    #     pickle.dump(clean_dict(ab_dict), output)
 
 
 if __name__ == "__main__":

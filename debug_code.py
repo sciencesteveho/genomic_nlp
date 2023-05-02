@@ -37,7 +37,15 @@ def main() -> None:
 
     _random_subset_abstract_printer(25, abstracts)
 
+    abstracts = filter_abstract_by_terms(
+        pickle.load(open("cleaned_abstracts.pkl", "rb")), 
+        set(FILTER_TERMS), 
+        2, 
+        keep="Remove",
+    )
 
+    with open(f"rev_filtered_abstracts_full.pkl", "wb") as output:
+        pickle.dump(abstracts, output)
 
 
 

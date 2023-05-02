@@ -6,6 +6,7 @@
 from datetime import timedelta
 import functools
 import inspect
+import os
 import pickle
 import random
 import time
@@ -76,6 +77,7 @@ SUBLIST = [
     "www[^\s]+[^.( \n)]",
     "�",
     "wiley periodicals inc",
+    "This is an open access article distributed under the terms of the Creative Commons Attribution License, which permits unrestricted use, distribution, and reproduction in any medium, provided the original author and source are credited.",
 ]
 
 SUBLIST_INITIAL = [
@@ -318,12 +320,16 @@ def time_decorator(print_args: bool = False, display_arg: str = "") -> Callable:
     return _time_decorator_func
 
 
-def filter_abstract_by_terms(string, substr, matches):
+def filter_abstract_by_terms(string, substr, matches, keep):
     filtered_list = []
     for s in tqdm(string):
         common = substr.intersection(s.split())
-        if len(common) >= matches:
-            filtered_list.append(s)
+        if keep == "match":
+            if len(common) >= matches:
+                filtered_list.append(s)
+        else:
+            if len(common) <= matches:
+                filtered_list.append(s)
     return filtered_list
 
 
@@ -332,3 +338,9 @@ def _random_subset_abstract_printer(n: int, abstracts: List) -> None:
     for num in random.sample(range(0, len(abstracts)), n):
         print(abstracts[num])
 
+
+def _listdir_isfile_wrapper(dir: str) -> List[str]:
+    """
+    Returns a list of bedfiles within the directory.
+    """
+    return [file for file in os.listdir(dir) if os.path.isfile(f"{dir}/{file}")]
