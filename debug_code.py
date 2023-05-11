@@ -16,37 +16,116 @@ def map_abs_to_titles(abstracts, lines):
 
 
 def main() -> None:
-    # abstracts = filter_abstract_by_terms(
-    #     pickle.load(open("cleaned_abstracts.pkl", "rb")), set(FILTER_TERMS), 9
+    abstracts = filter_abstract_by_terms(
+        string=pickle.load(open("cleaned_abstracts.pkl", "rb")),
+        substr=set(FILTER_TERMS),
+        matches=15,
+        remove=set(['cancer', 'plant', 'carcinoma']),
+        keep='match'
+    )
+
+    with open(f"gene_filtered_abstracts_full.pkl", "wb") as output:
+        pickle.dump(abstracts, output)
+
+    FILTER_TERMS = [
+        'racial',
+        'race',
+        'battery',
+        'batteries',
+        'socioeconomic',
+        'sociology',
+        'counseling',
+        'electricity',
+        'nanoparticle',
+        'nanoparticles',
+        'nanomaterial',
+        'physics',
+        'NASA',
+        'infared',
+        'market',
+        'economic',
+        'electroreduction',
+        'lunar',
+        'quantum',
+        'ferromagnetism',
+        'urban',
+        'urbanization',
+        'car',
+        'classroom',
+        'classrooms',
+        'rainforest',
+        'copper',
+        'atmosphere',
+        'political',
+        'industrial',
+        'capitalism',
+        'capitalist',
+        'communism',
+        'voltage',
+        'financial',
+        'management',
+        'counseling',
+        'counselor',
+        'stakeholder',
+        'investor',
+        'economic',
+        'economics',
+        'investing',
+        'outreach',
+        'shipping',
+        'spacecraft',
+        'government',
+        'governments',
+        'governmental',
+        'power',
+        'windmill',
+        'forecasting',
+        'forecast',
+        'demographic',
+        'demographics',
+        'demography',
+        'toxicology',
+        'toxic',
+        'toxicity',
+        'toxicities',
+        'public health',
+        'community',
+        'center'
+    ]
+
+    # other_abs = filter_abstract_by_terms(
+    #     pickle.load(open("cleaned_abstracts.pkl", "rb")), 
+    #     set(FILTER_TERMS), 
+    #     2, 
+    #     keep="match"
     # )
 
-    # with open(f"gene_filtered_abstracts_full.pkl", "wb") as output:
+    # other_abs = filter_abstract_by_terms(
+    #     pickle.load(open("cleaned_abstracts.pkl", "rb")), 
+    #     set(['structural variation', 'structural variations', 'structural variant', 'structural variants', 'genome', 'genomics']), 
+    #     matches=2, 
+    #     keep="match",
+    #     remove=''
+    # )
+
+    # abstracts = filter_abstract_by_terms(
+    #     pickle.load(open("cleaned_abstracts.pkl", "rb")), 
+    #     set(FILTER_TERMS), 
+    #     2, 
+    #     keep="remove",
+    # )
+
+    # with open(f"rev_filtered_abstracts_full.pkl", "wb") as output:
     #     pickle.dump(abstracts, output)
 
-    abstracts = filter_abstract_by_terms(
-        pickle.load(open("cleaned_abstracts.pkl", "rb")), set(SPECIFIC_TERMS), 7
-    )
+    # with open(f"other_rev_filtered_abstracts_full.pkl", "wb") as output:
+    #     pickle.dump(other_abs, output)
 
-    with open(f"specific_filtered_abstracts_full.pkl", "wb") as output:
-        pickle.dump(abstracts, output)
+    with open('other_rev_filtered_abstracts_full.pkl', 'rb') as f:
+        other_abs  = pickle.load(f)
 
-
-
-    with open(f"gene_filtered_abstracts_full.pkl", "rb") as file:
-        abstracts = pickle.load(file)
-
-    _random_subset_abstract_printer(25, abstracts)
-
-    abstracts = filter_abstract_by_terms(
-        pickle.load(open("cleaned_abstracts.pkl", "rb")), 
-        set(FILTER_TERMS), 
-        2, 
-        keep="Remove",
-    )
-
-    with open(f"rev_filtered_abstracts_full.pkl", "wb") as output:
-        pickle.dump(abstracts, output)
-
+    _random_subset_abstract_printer(50, other_abs)
+    _random_subset_abstract_printer(50, abstracts)
 
 
     

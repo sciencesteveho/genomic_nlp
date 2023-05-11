@@ -320,16 +320,21 @@ def time_decorator(print_args: bool = False, display_arg: str = "") -> Callable:
     return _time_decorator_func
 
 
-def filter_abstract_by_terms(string, substr, matches, keep):
+def filter_abstract_by_terms(string, substr, matches, remove, keep):
     filtered_list = []
     for s in tqdm(string):
-        common = substr.intersection(s.split())
         if keep == "match":
-            if len(common) >= matches:
+            if len(substr.intersection(s.split())) >= matches:
+                if len(remove) > 0:
+                    if len(remove.intersection(s.split())) == 0:
+                        filtered_list.append(s)
+                else:
+                    filtered_list.append(s)
+        elif keep == "remove ":
+            if len(substr.intersection(s.split())) <= matches:
                 filtered_list.append(s)
         else:
-            if len(common) <= matches:
-                filtered_list.append(s)
+            raise ValueError("keep must be either 'match' or 'remove'")
     return filtered_list
 
 
