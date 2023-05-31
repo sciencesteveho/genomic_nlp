@@ -258,14 +258,6 @@ def main() -> None:
         )
         year = args.year
 
-    output = open(f"abstracts/abstract_retrieval_{year}.pkl", "wb")
-    try:
-        pickle.dump(scopus_general.results, output)
-    except:
-        pass
-    finally:
-        output.close()
-
     # save as title plus abstract
     df = pd.DataFrame(pd.DataFrame(scopus_general.results))
     subdf = df[df['description'].str.len() > 1].reset_index()  # filter out empty descriptions

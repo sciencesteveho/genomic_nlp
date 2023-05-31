@@ -120,14 +120,13 @@ class AbstractCollection:
         self.cleaned_abstracts = self._abstract_cleaning()
 
 
-def main():
+def main(path):
     """Processing pipeline"""
-    abstract_path = "/scratch/remills_root/remills/stevesho/bio_nlp/nlp/abstracts"
-    abstract_file = f"{abstract_path}/abstracts_combined.pkl"
+    abstract_file = f"{path}/abstracts_combined.pkl"
 
     if not os.path.exists(abstract_file):
         try:
-            _abstract_retrieval_concat(data_path=abstract_path)
+            _abstract_retrieval_concat(data_path=path)
         except FileExistsError:
             pass
 
@@ -137,9 +136,11 @@ def main():
     abstractcollectionObj.process_abstracts()
 
     # save
-    with open(f"{abstract_path}/cleaned_abstracts.pkl", "wb") as f:
+    with open(f"{path}/cleaned_abstracts.pkl", "wb") as f:
         pickle.dump(abstractcollectionObj.cleaned_abstracts, f)
 
 
 if __name__ == "__main__":
-    main()
+    main(
+        path="/scratch/remills_root/remills/stevesho/bio_nlp/nlp/abstracts"
+    )
