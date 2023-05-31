@@ -258,19 +258,19 @@ def main() -> None:
         )
         year = args.year
 
-    # output = open(f"abstracts/abstract_retrieval_{year}.pkl", "wb")
-    # try:
-    #     pickle.dump(scopus_general.results(), output)
-    # except:
-    #     pass
-    # finally:
-    #     output.close()
+    output = open(f"abstracts/abstract_retrieval_{year}.pkl", "wb")
+    try:
+        pickle.dump(scopus_general.results(), output)
+    except:
+        pass
+    finally:
+        output.close()
 
     # save as title plus abstract
-    df = pd.DataFrame(scopus_general.results)
-    df = df[df['description'].str.len() > 1]  # filter out empty descriptions
-    df["combined"] = df["title"].astype(str) + ". " + df["description"].astype(str)
-    df["combined"].to_pickle(f"abstracts/abstracts_{year}.pkl")
+    # df = pd.DataFrame(scopus_general.results)
+    # df = df[df['description'].str.len() > 1]  # filter out empty descriptions
+    # df["combined"] = df["title"].astype(str) + ". " + df["description"].astype(str)
+    # df["combined"].to_pickle(f"abstracts/abstracts_{year}.pkl")
 
     # save as a dict for matching
     # ab_dict = dict(zip(df.title, df.description)) 
