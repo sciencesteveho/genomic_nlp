@@ -150,6 +150,13 @@ general_search_terms = [
     "{translational regulation}",
 ]
 
+test_set_journals = [
+    'American Journal of Human Genetics',
+    'Human Genetics',
+    'Human Molecular Genetics',
+    'European Journal of Human Genetics',
+]
+
 
 def make_directories(dir: str) -> None:
     try:
@@ -259,10 +266,17 @@ def main() -> None:
         year = args.year
 
     # save as title plus abstract
+    with open(f"abstracts/abstracts_results_{year}.pkl", "wb") as output:
+        pickle.dump(scopus_general.results, output)
+    
     df = pd.DataFrame(pd.DataFrame(scopus_general.results))
     subdf = df[df['description'].str.len() > 1].reset_index()  # filter out empty descriptions
     subdf["combined"] = subdf["title"].astype(str) + ". " + subdf["description"].astype(str)
     subdf["combined"].to_pickle(f"abstracts/abstracts_{year}.pkl")
+    
+    # get abstracts from test set journals
+    testdf = df[df['publicationName'].isin(test_set_journals)].reset_index()
+    testdf.to_pickle(f"abstracts/abstracts_testset_{year}.pkl")
 
     # save as a dict for matching
     # ab_dict = dict(zip(df.title, df.description)) 
