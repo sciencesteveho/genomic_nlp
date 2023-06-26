@@ -276,7 +276,7 @@ def main() -> None:
     
     # get abstracts from test set journals
     testdf = df[df['publicationName'].isin(test_set_journals)].reset_index()
-    testdf.to_pickle(f"abstracts/abstracts_testset_{year}.pkl")
+    testdf.to_pickle(f"test/abstracts_testset_{year}.pkl")
 
     # save as a dict for matching
     # ab_dict = dict(zip(df.title, df.description)) 
