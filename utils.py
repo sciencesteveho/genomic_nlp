@@ -338,6 +338,22 @@ def filter_abstract_by_terms(string, substr, matches, remove, keep):
     return filtered_list
 
 
+def _abstract_retrieval_concat(data_path: str, save: bool) -> None:
+    """Take abstract outputs and combine into a single pd.series. Only needs to
+    be done initially after downloading abstracts"""
+    files = os.listdir(data_path)
+    frames = [
+        pd.read_pickle((os.path.join(data_path, file)), compression=None)
+        for file in files
+        if not file.startswith(".")
+    ]
+    df = pd.concat(frames, ignore_index=True)
+    if save:
+        df.to_pickle(f"{data_path}/abstracts_combined.pkl")
+    else:
+        return df
+
+
 def _random_subset_abstract_printer(n: int, abstracts: List) -> None:
     """Prints N random abstracts"""
     for num in random.sample(range(0, len(abstracts)), n):

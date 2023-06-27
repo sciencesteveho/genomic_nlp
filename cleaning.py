@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Tuple
 import pandas as pd
 
 from utils import (
+    _abstract_retrieval_concat,
     SUBLIST,
     SUBLIST_INITIAL,
     SUBLIST_TOKEN_ZERO,
@@ -23,19 +24,6 @@ from utils import (
     SUBLIST_TITLE,
     time_decorator,
 )
-
-
-def _abstract_retrieval_concat(data_path: str) -> None:
-    """Take abstract outputs and combine into a single pd.series. Only needs to
-    be done initially after downloading abstracts"""
-    files = os.listdir(data_path)
-    frames = [
-        pd.read_pickle((os.path.join(data_path, file)), compression=None)
-        for file in files
-        if not file.startswith(".")
-    ]
-    df = pd.concat(frames, ignore_index=True)
-    df.to_pickle(f"{data_path}/abstracts_combined.pkl")
 
 
 class AbstractCollection:
@@ -126,7 +114,7 @@ def main(path):
 
     if not os.path.exists(abstract_file):
         try:
-            _abstract_retrieval_concat(data_path=path)
+            _abstract_retrieval_concat(data_path=path, save=True)
         except FileExistsError:
             pass
 
