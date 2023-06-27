@@ -10,6 +10,7 @@
 frequency. Implements a logistic classifier and a simple multi-layer perceptron,
 validated by 10-fold cross validation."""
 
+import csv
 import pickle
 from typing import Tuple
 
