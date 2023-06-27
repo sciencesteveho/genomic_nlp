@@ -12,7 +12,7 @@ validated by 10-fold cross validation."""
 
 import csv
 import pickle
-from typing import Tuple
+from typing import Set, Tuple
 
 import numpy as np
 import pandas as pd
@@ -98,14 +98,13 @@ def vectorize_and_train_logistic_classifier(
 
 
 def classify_corpus(
-    corpus: pd.DataFrame,
+    corpus: Set[str],
     k: int,
     vectorizer: TfidfVectorizer,
     selector: SelectKBest,
     classifier: LogisticRegression,
 ) -> pd.DataFrame:
-    full = corpus["cleaned_combined"].values
-    ex = vectorizer.transform(full)
+    ex = vectorizer.transform(list(corpus))
     ex2 = selector.transform(ex)
     predictions = [label for label in classifier.predict(ex2)]
     corpus[k] = "None"
