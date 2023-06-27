@@ -25,19 +25,19 @@ from utils import (
 
 
 relevant_source_ids = [
-    21677,
-    22101,
-    22245,
-    22266,
+    '0002-9297',
+    '0340-6717',
+    '0964-6906',
+    '1018-4813',
 ]  # AJHG, Human Genetics, Human Molecular Genetics, European Journal of Human Genetics  
 
 irrelevant_source_ids = [  
-    11500153511,
-    19881,
-    21100812579,
-    21537,
-    14316,
-    21100838559,
+    '11500153511',
+    '19881',
+    '21100812579',
+    '21537',
+    '14316',
+    '21100838559',
 ]  # ACS Nano, Advanced Materials, Nature Energy, Environmental Science & Technology, Harvard Law Review, Fashion and Textiles
 
 def make_directories(dir: str) -> None:
@@ -109,8 +109,10 @@ def main() -> None:
     
     if args.positive:
         source_ids = relevant_source_ids
+        abstract_set = 'positive'
     else:
         source_ids = irrelevant_source_ids
+        abstract_set = 'negative'
         
     scopus_general = ScopusSearch(
         f"EISSN({' OR '.join(source_ids)}) AND (DOCTYPE(ar) OR DOCTYPE(le) OR DOCTYPE(re))",
@@ -125,7 +127,7 @@ def main() -> None:
     df = pd.DataFrame(pd.DataFrame(scopus_general.results))
     subdf = df[df['description'].str.len() > 1].reset_index()  # filter out empty descriptions
     subdf["combined"] = subdf["title"].astype(str) + ". " + subdf["description"].astype(str)
-    subdf["combined"].to_pickle(f"abstracts/abstracts_{year}.pkl")
+    subdf["combined"].to_pickle(f"abstracts/abstracts_{abstract_set}.pkl")
 
     # save as a dict for matching
     # ab_dict = dict(zip(df.title, df.description)) 
