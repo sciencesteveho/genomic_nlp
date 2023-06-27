@@ -37,16 +37,16 @@ def prepare_annotated_classification_set(
     abstracts, shuffled randomly
 
     Args:
-        abstracts (str): path/to/abstracts.txt encoding (int): 1 for relevant, 0
-        for irrelevant
+        abstracts (str): path/to/abstracts.txt
+        encoding (int): 1 for relevant, 0 for irrelevant
 
     Returns:
         pd.DataFrame
     """
-    data = pd.read_csv(abstracts, sep="\n", header=None)
-    data.columns = ["abstracts"]
-    data["encoding"] = encoding
-    return data.sample(frac=1).reset_index(drop=True)
+    data = [line for line in csv.reader(open(abstracts, "r"), delimiter="\n")]
+    df = pd.DataFrame(data, columns=["abstracts"])
+    df["encoding"] = encoding
+    return df.sample(frac=1).reset_index(drop=True)
 
 
 def vectorize_and_train_logistic_classifier(
