@@ -264,17 +264,17 @@ def main() -> None:
             download=True,
         )
         year = args.year
-
-    # save as title plus abstract
-    with open(f"abstracts/abstracts_results_{year}.pkl", "wb") as output:
-        pickle.dump(scopus_general.results, output)
     
+    # save all abstracts w/ metadata
     df = pd.DataFrame(pd.DataFrame(scopus_general.results))
+    df.to_pickle(f"abstracts/abstracts_results_{year}.pkl")
+    
+    # save just title and abstract
     subdf = df[df['description'].str.len() > 1].reset_index()  # filter out empty descriptions
     subdf["combined"] = subdf["title"].astype(str) + ". " + subdf["description"].astype(str)
     subdf["combined"].to_pickle(f"abstracts/abstracts_{year}.pkl")
     
-    # get abstracts from test set journals
+    # save subset where publicationName matches journal in the test set
     testdf = df[df['publicationName'].isin(test_set_journals)].reset_index()
     testdf.to_pickle(f"test/abstracts_testset_{year}.pkl")
 
