@@ -10,16 +10,20 @@
 frequency. Implements a logistic classifier and a simple multi-layer perceptron,
 validated by 10-fold cross validation."""
 
-from typing import Type, Tuple
+import pickle
+from typing import Tuple
 
 import numpy as np
 import pandas as pd
-from sklearn.externals import joblib
+import joblib
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.feature_selection import f_classif, SelectKBest
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import cross_val_score
 from sklearn.neural_network import MLPClassifier
+
+from cleaning import AbstractCollection
+from utils import _abstract_retrieval_concat
 
 
 RANDOM_SEED = 42
@@ -108,11 +112,53 @@ def classify_corpus(
     return corpus
 
 
-def main(corpus: str, relevant_abstracts: str, negative_abstracts: str) -> None:
+def _get_positive_testset(
+    data_path: str,
+) -> pd.DataFrame:
+    """Get positive testset from directory
+
+    Args:
+        data_path (str): path/to/abstracts
+        save (bool): whether to save dataframe
+
+    Returns:
+        pd.DataFrame
+    """
+    df = _abstract_retrieval_concat(data_path=data_path, save=False)
+
+    df.sample(n=20000, random_state=RANDOM_SEED).reset_index(
+        drop=True
+    )  # get random 20k
+    PositiveTestCorpus = AbstractCollection(
+        df["title"].astype(str) + ". " + df["description"].astype(str)
+    )
+    PositiveTestCorpus.process_abstracts()
+    return PositiveTestCorpus.cleaned_abstracts
+
+
+def _get_negative_testset(
+    data_path: str,
+) -> pd.DataFrame:
+    df = pd.read_csv(data_path)
+    NegativeTestCorpus = AbstractCollection(
+        df["Title"].astype(str) + ". " + df["Abstract"].astype(str)
+    )
+    NegativeTestCorpus.process_abstracts()
+    return NegativeTestCorpus.cleaned_abstracts
+
+
+def main(
+    corpus: str,
+    relevant_abstracts: str,
+    negative_abstracts: str,
+    pos_set_path: str,
+    negative_set_file: str,
+    model_save_dir: str,
+) -> None:
     """Main function"""
     # get training data and set-up annotated abstracts
     abstract_corpus = pd.read_pickle(corpus)
-
+    
     classification_trainset = pd.concat(
         [
             prepare_annotated_classification_set(
@@ -124,6 +170,16 @@ def main(corpus: str, relevant_abstracts: str, negative_abstracts: str) -> None:
         ],
         ignore_index=True,
     )
+    
+    # get positive test set data
+    positive_test_data = _get_positive_testset(
+        data_path=pos_set_path,
+    )
+
+    # get negative test set data
+    negative_test_data = _get_negative_testset(
+        data_path=negative_set_file,
+    )
 
     # train logistic classifier with different k values
     for num in (20000, 75000, 125000):
@@ -134,8 +190,8 @@ def main(corpus: str, relevant_abstracts: str, negative_abstracts: str) -> None:
         ) = vectorize_and_train_logistic_classifier(
             trainset=classification_trainset, k=num
         )
-        joblib.dump(classifier, f"logistic_classifier_{num}.pkl")
-        
+        joblib.dump(classifier, f"{model_save_dir}/logistic_classifier_{num}.pkl")
+
         abstracts_classified = classify_corpus(
             corpus=abstract_corpus,
             k=num,
@@ -143,11 +199,36 @@ def main(corpus: str, relevant_abstracts: str, negative_abstracts: str) -> None:
             selector=selector,
             classifier=classifier,
         )
+        with open(f'{model_save_dir}/abstracts_classified_tfidf_{num}.pkl', 'wb') as f:
+            pickle.dump(abstracts_classified, f)
+        
+        positive_classified = classify_corpus(
+            corpus=positive_test_data,
+            k=num,
+            vectorizer=vectorizer,
+            selector=selector,
+            classifier=classifier,
+        )
+        with open(f'{model_save_dir}/positive_classified_tfidf_{num}.pkl', 'wb') as f:
+            pickle.dump(positive_classified, f)
+        
+        negative_classified = classify_corpus(
+            corpus=negative_test_data,
+            k=num,
+            vectorizer=vectorizer,
+            selector=selector,
+            classifier=classifier,
+        )
+        with open(f'{model_save_dir}/negative_classified_tfidf_{num}.pkl', 'wb') as f:
+            pickle.dump(negative_classified, f)
 
 
 if __name__ == "__main__":
     main(
-        corpus='cleaned_abstracts.pkl',
-        relevant_abstracts='relevant_sorted.txt',
-        negative_abstracts='negative_sorted.txt',
+        corpus="abstracts/cleaned_abstracts.pkl",
+        relevant_abstracts="classification/relevant_sorted.txt",
+        negative_abstracts="classification/negative_sorted.txt",
+        pos_set_path = 'abstracts/test',
+        negative_set_file = 'classification/irrelevant_texts.csv',
+        model_save_dir="classification"
     )
