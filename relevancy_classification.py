@@ -113,7 +113,7 @@ def classify_corpus(
     for abstract in corpus:
         ex = vectorizer.transform([abstract])
         ex2 = selector.transform(ex)
-        predictions.append(classifier.predict(ex2)[0])
+        predictions.append(classifier.predict(ex2))
     if test:
         print(f"Accuracy: {accuracy_score(corpus['encoding'].values, predictions)}")
     df = pd.DataFrame(corpus, columns=["abstracts"])
