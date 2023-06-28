@@ -103,8 +103,9 @@ def classify_corpus(
     vectorizer: TfidfVectorizer,
     selector: SelectKBest,
     classifier: LogisticRegression,
+    test: bool = False,
 ) -> pd.DataFrame:
-    if type(corpus) == pd.DataFrame:
+    if test:
         corpus = corpus["abstracts"].values
     else:
         corpus = list(corpus)
@@ -113,7 +114,7 @@ def classify_corpus(
         ex = vectorizer.transform([abstract])
         ex2 = selector.transform(ex)
         predictions.append(classifier.predict(ex2)[0])
-    if type(corpus) == pd.DataFrame:
+    if test:
         print(f"Accuracy: {accuracy_score(corpus['encoding'].values, predictions)}")
     df = pd.DataFrame(corpus, columns=["abstracts"])
     df["predictions"] = predictions
@@ -208,6 +209,7 @@ def main(
             vectorizer=vectorizer,
             selector=selector,
             classifier=classifier,
+            test=True,
         )
         with open(f'{model_save_dir}/testset_classified_tfidf_{num}.pkl', 'wb') as f:
             pickle.dump(testset_classified, f)
