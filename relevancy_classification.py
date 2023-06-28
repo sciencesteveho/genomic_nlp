@@ -205,7 +205,6 @@ def main(
 
         testset_classified = classify_corpus(
             corpus=testset,
-            k=num,
             vectorizer=vectorizer,
             selector=selector,
             classifier=classifier,
@@ -215,7 +214,6 @@ def main(
             
         abstracts_classified = classify_corpus(
             corpus=abstract_corpus,
-            k=num,
             vectorizer=vectorizer,
             selector=selector,
             classifier=classifier,
