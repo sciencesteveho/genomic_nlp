@@ -106,21 +106,18 @@ def classify_corpus(
     test: bool = False,
 ) -> pd.DataFrame:
     if test:
-        corpus = corpus["abstracts"].values
+        corpora = corpus["abstracts"].values
     else:
-        corpus = list(corpus)
+        corpora = list(corpus)
     predictions = []
-    for abstract in corpus:
+    for abstract in corpora:
         ex = vectorizer.transform([abstract])
         ex2 = selector.transform(ex)
         predictions.append(classifier.predict(ex2))
-    with open("predictions.pkl", "wb") as f:
-        pickle.dump(predictions, f)
-    with open("true.pkl", "wb") as f:
-        pickle.dump(corpus["encoding"].values, f)
+    predictions = np.array(predictions).flatten()
     if test:
         print(f"Accuracy: {accuracy_score(corpus['encoding'].values, predictions)}")
-    df = pd.DataFrame(corpus, columns=["abstracts"])
+    df = pd.DataFrame(corpora, columns=["abstracts"])
     df["predictions"] = predictions
     return df
 
