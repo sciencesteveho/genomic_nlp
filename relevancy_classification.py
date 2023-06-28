@@ -147,6 +147,7 @@ def _get_testset(
         testCorpus = AbstractCollection(
             df["Title"].astype(str) + ". " + df["Abstract"].astype(str)
         )
+    testCorpus.process_abstracts()
     newdf = pd.DataFrame(testCorpus.cleaned_abstracts, columns=["abstracts"])
     newdf["encoding"] = 1 if positive else 0
     return newdf
