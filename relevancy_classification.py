@@ -104,9 +104,11 @@ def classify_corpus(
     selector: SelectKBest,
     classifier: LogisticRegression,
 ) -> pd.DataFrame:
-    ex = vectorizer.transform(list(corpus))
-    ex2 = selector.transform(ex)
-    predictions = [label for label in classifier.predict(ex2)]
+    predictions = []
+    for abstract in list(corpus):
+        ex = vectorizer.transform([abstract])
+        ex2 = selector.transform(ex)
+        predictions.append(classifier.predict(ex2)[0])
     corpus[k] = "None"
     corpus[k] = predictions
     return corpus
@@ -192,16 +194,6 @@ def main(
         )
         joblib.dump(classifier, f"{model_save_dir}/logistic_classifier_{num}.pkl")
 
-        abstracts_classified = classify_corpus(
-            corpus=abstract_corpus,
-            k=num,
-            vectorizer=vectorizer,
-            selector=selector,
-            classifier=classifier,
-        )
-        with open(f'{model_save_dir}/abstracts_classified_tfidf_{num}.pkl', 'wb') as f:
-            pickle.dump(abstracts_classified, f)
-        
         positive_classified = classify_corpus(
             corpus=positive_test_data,
             k=num,
@@ -221,6 +213,16 @@ def main(
         )
         with open(f'{model_save_dir}/negative_classified_tfidf_{num}.pkl', 'wb') as f:
             pickle.dump(negative_classified, f)
+            
+        abstracts_classified = classify_corpus(
+            corpus=abstract_corpus,
+            k=num,
+            vectorizer=vectorizer,
+            selector=selector,
+            classifier=classifier,
+        )
+        with open(f'{model_save_dir}/abstracts_classified_tfidf_{num}.pkl', 'wb') as f:
+            pickle.dump(abstracts_classified, f)
 
 
 if __name__ == "__main__":
