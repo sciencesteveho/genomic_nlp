@@ -109,9 +109,9 @@ def classify_corpus(
         ex = vectorizer.transform([abstract])
         ex2 = selector.transform(ex)
         predictions.append(classifier.predict(ex2)[0])
-    corpus[k] = "None"
-    corpus[k] = predictions
-    return corpus
+    df = pd.DataFrame(list(corpus), columns=["abstracts"])
+    df["predictions"] = predictions
+    return df
 
 
 def _get_positive_testset(
