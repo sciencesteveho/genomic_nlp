@@ -215,14 +215,14 @@ def main(
         with open(f'{model_save_dir}/testset_classified_tfidf_{num}.pkl', 'wb') as f:
             pickle.dump(testset_classified, f)
             
-        abstracts_classified = classify_corpus(
-            corpus=abstract_corpus,
-            vectorizer=vectorizer,
-            selector=selector,
-            classifier=classifier,
-        )
-        with open(f'{model_save_dir}/abstracts_classified_tfidf_{num}.pkl', 'wb') as f:
-            pickle.dump(abstracts_classified, f)
+        # abstracts_classified = classify_corpus(
+        #     corpus=abstract_corpus,
+        #     vectorizer=vectorizer,
+        #     selector=selector,
+        #     classifier=classifier,
+        # )
+        # with open(f'{model_save_dir}/abstracts_classified_tfidf_{num}.pkl', 'wb') as f:
+        #     pickle.dump(abstracts_classified, f)
 
 
 if __name__ == "__main__":
