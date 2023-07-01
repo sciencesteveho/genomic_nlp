@@ -10,6 +10,7 @@
 frequency. Implements a logistic classifier and a simple multi-layer perceptron,
 validated by 10-fold cross validation."""
 
+import argparse
 import csv
 import pickle
 from typing import Set, Tuple, Union
@@ -164,9 +165,18 @@ def main(
     model_save_dir: str,
 ) -> None:
     """Main function"""
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-k",
+        "--k",
+        help="number of features for tf-idf",
+        type=int,
+    )
+    args = parser.parse_args()
+
     # get training data and set-up annotated abstracts
     abstract_corpus = pd.read_pickle(corpus)
-    
+
     classification_trainset = pd.concat(
         [
             prepare_annotated_classification_set(
@@ -178,7 +188,7 @@ def main(
         ],
         ignore_index=True,
     )
-    
+
     # get positive test set data
     positive_test_data = _get_testset(
         data_path=pos_set_path,
@@ -190,39 +200,37 @@ def main(
         data_path=negative_set_file,
         positive=False,
     )
-    
+
     # combine
     testset = pd.concat([positive_test_data, negative_test_data], ignore_index=True)
 
-    # train logistic classifier with different k values
-    for num in (20000, 75000, 125000):
-        (
-            vectorizer,
-            selector,
-            classifier,
-        ) = vectorize_and_train_logistic_classifier(
-            trainset=classification_trainset, k=num
-        )
-        joblib.dump(classifier, f"{model_save_dir}/logistic_classifier_{num}.pkl")
+    # train logistic classifier
+    num = args.k
+    (
+        vectorizer,
+        selector,
+        classifier,
+    ) = vectorize_and_train_logistic_classifier(trainset=classification_trainset, k=num)
+    joblib.dump(classifier, f"{model_save_dir}/logistic_classifier_{num}.pkl")
 
-        testset_classified = classify_corpus(
-            corpus=testset,
-            vectorizer=vectorizer,
-            selector=selector,
-            classifier=classifier,
-            test=True,
-        )
-        with open(f'{model_save_dir}/testset_classified_tfidf_{num}.pkl', 'wb') as f:
-            pickle.dump(testset_classified, f)
-            
-        # abstracts_classified = classify_corpus(
-        #     corpus=abstract_corpus,
-        #     vectorizer=vectorizer,
-        #     selector=selector,
-        #     classifier=classifier,
-        # )
-        # with open(f'{model_save_dir}/abstracts_classified_tfidf_{num}.pkl', 'wb') as f:
-        #     pickle.dump(abstracts_classified, f)
+    # testset_classified = classify_corpus(
+    #     corpus=testset,
+    #     vectorizer=vectorizer,
+    #     selector=selector,
+    #     classifier=classifier,
+    #     test=True,
+    # )
+    # with open(f'{model_save_dir}/testset_classified_tfidf_{num}.pkl', 'wb') as f:
+    #     pickle.dump(testset_classified, f)
+
+    abstracts_classified = classify_corpus(
+        corpus=abstract_corpus,
+        vectorizer=vectorizer,
+        selector=selector,
+        classifier=classifier,
+    )
+    with open(f"{model_save_dir}/abstracts_classified_tfidf_{num}.pkl", "wb") as f:
+        pickle.dump(abstracts_classified, f)
 
 
 if __name__ == "__main__":
@@ -230,7 +238,7 @@ if __name__ == "__main__":
         corpus="abstracts/cleaned_abstracts.pkl",
         relevant_abstracts="classification/relevant_sorted.txt",
         negative_abstracts="classification/negative_sorted.txt",
-        pos_set_path = 'abstracts/test',
-        negative_set_file = 'classification/irrelevant_texts.csv',
-        model_save_dir="classification"
+        pos_set_path="abstracts/test",
+        negative_set_file="classification/irrelevant_texts.csv",
+        model_save_dir="classification",
     )
