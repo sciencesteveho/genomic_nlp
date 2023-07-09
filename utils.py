@@ -291,6 +291,31 @@ SPECIFIC_TERMS = [
     "dependent",
 ]
 
+COPY_GENES = {
+'was' : 'wasgene',
+'she' : 'shegene',
+'impact' : 'impactgene',
+'mice' : 'micegene',
+'rest' : 'restgene',
+'set' : 'setgene',
+'met' : 'metgene',
+'gc' : 'gcgene',
+'ca2': 'ca2gene',
+'atm' : 'atmgene',
+'mb' : 'mbgene',
+'pigs' : 'pigsgene',
+'cat' : 'catgene',
+'coil' : 'coilgene',
+}
+
+
+def dir_check_make(dir: str) -> None:
+    """Utility to make directories only if they do not already exist"""
+    try:
+        os.makedirs(dir)
+    except FileExistsError:
+        pass
+
 
 def time_decorator(print_args: bool = False, display_arg: str = "") -> Callable:
     def _time_decorator_func(function: Callable) -> Callable:
@@ -365,3 +390,34 @@ def _listdir_isfile_wrapper(dir: str) -> List[str]:
     Returns a list of bedfiles within the directory.
     """
     return [file for file in os.listdir(dir) if os.path.isfile(f"{dir}/{file}")]
+
+
+def is_number(entry):
+    """
+
+    # Arguments
+        entry: the string to be checked
+    # Returns
+        True for float, false for other
+    """
+    try:
+        float(entry)
+        return True
+    except ValueError:
+        return False
+
+
+def avg_len(lst: List[str]) -> int:
+    """Takes the average length of elements in a list
+
+    Args:
+        lst (_type_): _description_
+
+    Returns:
+        int
+    """
+    total_lengths = [len(i) for i in lst]
+    if len(total_lengths) == 0:
+        return 0
+    else:
+        return int(sum(total_lengths)) / len(total_lengths)
