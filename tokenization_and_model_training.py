@@ -247,6 +247,7 @@ class ProcessWord2VecModel:
         each sentence, before saving to a file
         """
         nlp = spacy.load("en_core_sci_scibert")
+        # nlp = spacy.load("en_core_sci_lg")
         dataset_tokens = []
         for doc in tqdm(nlp.pipe(self.abstracts, n_process=6, batch_size=1000)):
             sentences = [i for i in doc.sents]
@@ -428,17 +429,17 @@ class ProcessWord2VecModel:
         # tokenize abstracts
         self.processing_and_tokenization()
 
-        # remove punctuation and standardize numbers with replacement
-        self.exclude_punctuation_tokens_replace_standalone_numbers()
+        # # remove punctuation and standardize numbers with replacement
+        # self.exclude_punctuation_tokens_replace_standalone_numbers()
 
-        # remove genes so they are not used for gram generation
-        self.remove_entities_in_tokenized_corpus(genes)
+        # # remove genes so they are not used for gram generation
+        # self.remove_entities_in_tokenized_corpus(genes)
 
-        # generate ngrams
-        self.gram_generator(min_count=50, threshold=30)
+        # # generate ngrams
+        # self.gram_generator(min_count=50, threshold=30)
 
-        # train model for 30 epochs
-        self.initialize_build_vocab_and_train_word2vec_model()
+        # # train model for 30 epochs
+        # self.initialize_build_vocab_and_train_word2vec_model()
 
 
 def main(
