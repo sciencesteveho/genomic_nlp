@@ -249,7 +249,7 @@ class ProcessWord2VecModel:
         nlp = spacy.load("en_core_sci_scibert")
         # nlp = spacy.load("en_core_sci_lg")
         dataset_tokens = []
-        for doc in tqdm(nlp.pipe(self.abstracts, n_process=6, batch_size=1000)):
+        for doc in tqdm(nlp.pipe(self.abstracts), total=len(self.abstracts)):
             sentences = [i for i in doc.sents]
             split_tokens = [
                 [word.text for word in sentence] for sentence in sentences
