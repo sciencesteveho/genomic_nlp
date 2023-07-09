@@ -250,11 +250,11 @@ class ProcessWord2VecModel:
             spacy.prefer_gpu()
             nlp = spacy.load("en_core_sci_scibert")
         else:
-            nlp = spacy.load("en_core_sci_lg")
+            nlp = spacy.load("en_core_sci_sm")
 
         dataset_tokens = []
         for doc in tqdm(
-            nlp.pipe(self.abstracts, n_process=12, batch_size=1000),
+            nlp.pipe(self.abstracts, n_process=12, batch_size=256),
             total=len(self.abstracts),
         ):
             sentences = [i for i in doc.sents]
