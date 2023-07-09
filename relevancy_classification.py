@@ -15,11 +15,12 @@ import csv
 import pickle
 from typing import Set, Tuple, Union
 
+import joblib
 import numpy as np
 import pandas as pd
-import joblib
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.feature_selection import f_classif, SelectKBest
+from sklearn.feature_selection import f_classif
+from sklearn.feature_selection import SelectKBest
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import cross_val_score
@@ -27,7 +28,6 @@ from sklearn.neural_network import MLPClassifier
 
 from cleaning import AbstractCollection
 from utils import _abstract_retrieval_concat
-
 
 RANDOM_SEED = 42
 

@@ -446,8 +446,9 @@ def main(
     gene_gtf: str,
 ) -> None:
     """Main function"""
-    # load data
+    # load classified abstracts
     abstracts = pd.read_pickle(abstracts)
+    abstracts = abstracts.loc[abstracts["predictions"] == 1]["abstracts"].to_list()
 
     # instantiate object
     modelprocessingObj = ProcessWord2VecModel(
@@ -474,6 +475,6 @@ def main(
 
 if __name__ == "__main__":
     main(
-        abstracts="data/cleaned_abstracts_2021-03-01.pkl",
+        abstracts="/scratch/remills_root/remills/stevesho/bio_nlp/nlp/classification/abstracts_classified_tfidf_20000.pkl",
         gene_gtf="data/gencode.v43.basic.annotation.gtf",
     )
