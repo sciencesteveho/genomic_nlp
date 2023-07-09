@@ -242,12 +242,16 @@ class ProcessWord2VecModel:
             dir_check_make(dir)
 
     @time_decorator(print_args=False)
-    def processing_and_tokenization(self):
+    def processing_and_tokenization(self, use_gpu: bool = False):
         """Takes each token, splits into sentences, and tokenizes
         each sentence, before saving to a file
         """
-        nlp = spacy.load("en_core_sci_scibert")
-        # nlp = spacy.load("en_core_sci_lg")
+        if use_gpu:
+            spacy.prefer_gpu()
+            nlp = spacy.load("en_core_sci_scibert")
+        else:
+            nlp = spacy.load("en_core_sci_lg")
+
         dataset_tokens = []
         for doc in tqdm(nlp.pipe(self.abstracts), total=len(self.abstracts)):
             sentences = [i for i in doc.sents]
@@ -427,7 +431,7 @@ class ProcessWord2VecModel:
         genes = normalization_list(gene_gtf, "gene")
 
         # tokenize abstracts
-        self.processing_and_tokenization()
+        self.processing_and_tokenization(use_gpu=True)
 
         # # remove punctuation and standardize numbers with replacement
         # self.exclude_punctuation_tokens_replace_standalone_numbers()
