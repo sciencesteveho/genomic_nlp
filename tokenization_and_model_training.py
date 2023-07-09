@@ -431,19 +431,20 @@ class ProcessWord2VecModel:
         genes = normalization_list(gene_gtf, "gene")
 
         # tokenize abstracts
-        self.processing_and_tokenization(use_gpu=True)
+        # self.processing_and_tokenization(use_gpu=True)
+        self.processing_and_tokenization()
 
-        # # remove punctuation and standardize numbers with replacement
-        # self.exclude_punctuation_tokens_replace_standalone_numbers()
+        # remove punctuation and standardize numbers with replacement
+        self.exclude_punctuation_tokens_replace_standalone_numbers()
 
-        # # remove genes so they are not used for gram generation
-        # self.remove_entities_in_tokenized_corpus(genes)
+        # remove genes so they are not used for gram generation
+        self.remove_entities_in_tokenized_corpus(genes)
 
-        # # generate ngrams
-        # self.gram_generator(min_count=50, threshold=30)
+        # generate ngrams
+        self.gram_generator(min_count=50, threshold=30)
 
-        # # train model for 30 epochs
-        # self.initialize_build_vocab_and_train_word2vec_model()
+        # train model for 30 epochs
+        self.initialize_build_vocab_and_train_word2vec_model()
 
 
 def main(
