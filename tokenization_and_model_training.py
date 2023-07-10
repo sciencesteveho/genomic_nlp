@@ -258,7 +258,9 @@ class ProcessWord2VecModel:
 
         dataset_tokens = []
         for doc in tqdm(
-            nlp.pipe(self.abstracts, n_process=n_process, batch_size=batch_size),
+            nlp.toeknizer.pipe(
+                self.abstracts, n_process=n_process, batch_size=batch_size
+            ),
             total=len(self.abstracts),
         ):
             sentences = [i for i in doc.sents]
