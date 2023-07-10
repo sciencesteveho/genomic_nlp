@@ -254,7 +254,7 @@ class ProcessWord2VecModel:
         else:
             nlp = spacy.load("en_core_sci_lg")
             n_process = 16
-            batch_size = 256
+            batch_size = 128
 
         dataset_tokens = []
         for doc in tqdm(
