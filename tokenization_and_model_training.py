@@ -249,12 +249,14 @@ class ProcessWord2VecModel:
         if use_gpu:
             spacy.prefer_gpu()
             nlp = spacy.load("en_core_sci_scibert")
+            n_process = 1
         else:
-            nlp = spacy.load("en_core_sci_sm")
+            nlp = spacy.load("en_core_sci_lg")
+            n_process = 16
 
         dataset_tokens = []
         for doc in tqdm(
-            nlp.pipe(self.abstracts, n_process=16, batch_size=1000),
+            nlp.pipe(self.abstracts, n_process=n_process, batch_size=256),
             total=len(self.abstracts),
         ):
             sentences = [i for i in doc.sents]
@@ -434,8 +436,8 @@ class ProcessWord2VecModel:
         genes = normalization_list(gene_gtf, "gene")
 
         # tokenize abstracts
-        # self.processing_and_tokenization(use_gpu=True)
-        self.processing_and_tokenization()
+        self.processing_and_tokenization(use_gpu=True)
+        # self.processing_and_tokenization()
 
         # remove punctuation and standardize numbers with replacement
         self.exclude_punctuation_tokens_replace_standalone_numbers()
