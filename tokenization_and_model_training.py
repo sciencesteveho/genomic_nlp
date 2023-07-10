@@ -252,13 +252,13 @@ class ProcessWord2VecModel:
             n_process = 1
             batch_size = 16
         else:
-            nlp = spacy.load("en_core_sci_lg")
+            nlp = spacy.load("en_core_sci_sm")
             n_process = 16
-            batch_size = 150
+            batch_size = 512
 
         dataset_tokens = []
         for doc in tqdm(
-            nlp.pipe(self.abstracts, batch_size=batch_size),
+            nlp.pipe(self.abstracts, n_process=n_process, batch_size=batch_size),
             total=len(self.abstracts),
         ):
             sentences = [i for i in doc.sents]
