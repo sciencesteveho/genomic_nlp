@@ -254,6 +254,7 @@ class ProcessWord2VecModel:
             batch_size = 16
         else:
             nlp = spacy.load("en_core_sci_sm")
+            nlp.add_pipe("sentencizer")
             n_process = 8
             batch_size = 512
 
