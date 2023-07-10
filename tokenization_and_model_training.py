@@ -263,7 +263,7 @@ class ProcessWord2VecModel:
                 self.abstracts,
                 n_process=n_process,
                 batch_size=batch_size,
-                disable=["parser", "tagger", "ner"],
+                disable=["parser", "tagger", "ner", "lemmatizer"],
             ),
             total=len(self.abstracts),
         ):
