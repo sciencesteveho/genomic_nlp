@@ -12,6 +12,7 @@ embeddings for bio-nlp model!"""
 from datetime import date
 import gc
 import logging
+import multiprocessing
 import pickle
 import re
 import string
@@ -258,7 +259,12 @@ class ProcessWord2VecModel:
 
         dataset_tokens = []
         for doc in tqdm(
-            nlp.pipe(self.abstracts, n_process=n_process, batch_size=batch_size),
+            nlp.pipe(
+                self.abstracts,
+                n_process=n_process,
+                batch_size=batch_size,
+                disable=["parser", "tagger", "ner"],
+            ),
             total=len(self.abstracts),
         ):
             sentences = [i for i in doc.sents]
