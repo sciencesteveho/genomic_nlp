@@ -250,13 +250,15 @@ class ProcessWord2VecModel:
             spacy.prefer_gpu()
             nlp = spacy.load("en_core_sci_scibert")
             n_process = 1
+            batch_size = 16
         else:
             nlp = spacy.load("en_core_sci_lg")
             n_process = 16
+            batch_size = 256
 
         dataset_tokens = []
         for doc in tqdm(
-            nlp.pipe(self.abstracts, n_process=n_process, batch_size=256),
+            nlp.pipe(self.abstracts, n_process=n_process, batch_size=batch_size),
             total=len(self.abstracts),
         ):
             sentences = [i for i in doc.sents]
@@ -440,16 +442,16 @@ class ProcessWord2VecModel:
         # self.processing_and_tokenization()
 
         # remove punctuation and standardize numbers with replacement
-        self.exclude_punctuation_tokens_replace_standalone_numbers()
+        # self.exclude_punctuation_tokens_replace_standalone_numbers()
 
-        # remove genes so they are not used for gram generation
-        self.remove_entities_in_tokenized_corpus(genes)
+        # # remove genes so they are not used for gram generation
+        # self.remove_entities_in_tokenized_corpus(genes)
 
-        # generate ngrams
-        self.gram_generator(min_count=50, threshold=30)
+        # # generate ngrams
+        # self.gram_generator(min_count=50, threshold=30)
 
-        # train model for 30 epochs
-        self.initialize_build_vocab_and_train_word2vec_model()
+        # # train model for 30 epochs
+        # self.initialize_build_vocab_and_train_word2vec_model()
 
 
 def main(
