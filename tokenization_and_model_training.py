@@ -253,7 +253,7 @@ class ProcessWord2VecModel:
             batch_size = 16
         else:
             nlp = spacy.load("en_core_sci_sm")
-            n_process = 16
+            n_process = 8
             batch_size = 512
 
         dataset_tokens = []
