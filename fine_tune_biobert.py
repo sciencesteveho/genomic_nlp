@@ -99,7 +99,7 @@ def main() -> None:
     abstracts = abstracts.loc[abstracts["predictions"] == 1]
     abstracts = Dataset.from_pandas(abstracts)
     tokenized_dataset = abstracts.map(
-        tokenize, batched=True, num_proc=16, drop_columns=["predictions"]
+        tokenize, batched=True, num_proc=16, remove_columns=["predictions"]
     )
 
     with open(f"data/tokenized_classified_abstracts.pkl", "wb") as f:
