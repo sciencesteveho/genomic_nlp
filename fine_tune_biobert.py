@@ -96,9 +96,11 @@ def main() -> None:
     # tokenize dataset for BERT
     abstracts = "/scratch/remills_root/remills/stevesho/bio_nlp/nlp/classification/abstracts_classified_tfidf_20000.pkl"
     abstracts = pd.read_pickle(abstracts)
-    abstracts = abstracts.loc[abstracts["predictions"] == 1]["abstracts"]
+    abstracts = abstracts.loc[abstracts["predictions"] == 1]
     abstracts = Dataset.from_pandas(abstracts)
-    tokenized_dataset = abstracts.map(tokenize, batched=True, num_proc=16)
+    tokenized_dataset = abstracts.map(
+        tokenize, batched=True, num_proc=16, drop_columns=["predictions"]
+    )
 
     with open(f"data/tokenized_classified_abstracts.pkl", "wb") as f:
         pickle.dump(lm_datasets, f)
