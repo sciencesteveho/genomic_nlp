@@ -12,6 +12,7 @@ import collections
 import math
 import pickle
 
+from datasets import Dataset
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -95,7 +96,8 @@ def main() -> None:
     # tokenize dataset for BERT
     abstracts = "/scratch/remills_root/remills/stevesho/bio_nlp/nlp/classification/abstracts_classified_tfidf_20000.pkl"
     abstracts = pd.read_pickle(abstracts)
-    abstracts = abstracts.loc[abstracts["predictions"] == 1]["abstracts"].to_list()
+    abstracts = abstracts.loc[abstracts["predictions"] == 1]["abstracts"]
+    abstracts = Dataset.from_pandas(abstracts)
     tokenized_dataset = abstracts.map(tokenize, batched=True, num_proc=16)
 
     with open(f"data/tokenized_classified_abstracts.pkl", "wb") as f:
