@@ -478,7 +478,7 @@ def main(
     # abstracts = pd.read_pickle(abstracts)
     # abstracts = abstracts.loc[abstracts["predictions"] == 1]["abstracts"].to_list()
 
-    # # load pretokenized, extend list, and save for later
+    # load pretokenized, extend list, and save for later
     # tokenized_abs = []
     # for i in range(0, 15):
     #     with open(
@@ -490,7 +490,7 @@ def main(
     # with open("data/tokenized_classified_abstracts", "wb") as f:
     #     pickle.dump(tokenized_abs, f, protocol=4)
 
-    with open("data/tokenized_classified_abstracts", "wb") as f:
+    with open("data/tokenized_classified_abstracts", "rb") as f:
         abstracts = pickle.load(f)
 
     # instantiate object
