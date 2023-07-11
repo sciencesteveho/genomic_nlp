@@ -108,7 +108,7 @@ def main() -> None:
     lm_datasets = tokenized_dataset.map(
         group_texts,
         batched=True,
-        batch_size=512,
+        batch_size=128,
         num_proc=16,
     )
 
