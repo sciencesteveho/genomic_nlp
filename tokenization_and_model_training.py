@@ -280,13 +280,13 @@ class ProcessWord2VecModel:
         return dataset_tokens
 
     @time_decorator(print_args=False)
-    def exclude_punctuation_tokens_replace_standalone_numbers(self):
+    def exclude_punctuation_tokens_replace_standalone_numbers(self, abstracts):
         """Removes standalone symbols if they exist as tokens. Replaces
         numbers with a number based symbol.
         """
         pbar = ProgressBar()
         new_corpus = []
-        for sentence in pbar(self.abstracts):
+        for sentence in pbar(abstracts):
             new_sentence = [token for token in sentence if token not in self.EXTRAS]
             new_sentence_2 = []
             for new_token in new_sentence:
@@ -305,7 +305,7 @@ class ProcessWord2VecModel:
         return new_corpus
 
     @time_decorator(print_args=False)
-    def remove_entities_in_tokenized_corpus(self, entity_list):
+    def remove_entities_in_tokenized_corpus(self, entity_list, abstracts):
         """Remove genes in gene_list from tokenized corpus
 
         # Arguments
@@ -313,7 +313,7 @@ class ProcessWord2VecModel:
         """
         pbar = ProgressBar()
         new_corpus = []
-        for sentence in pbar(self.abstracts):
+        for sentence in pbar(abstracts):
             new_sentence = [token for token in sentence if token not in entity_list]
             new_corpus.append(new_sentence)
 
@@ -323,7 +323,7 @@ class ProcessWord2VecModel:
         return new_corpus
 
     @time_decorator(print_args=False)
-    def gram_generator(self, minimum, score):
+    def gram_generator(self, abstracts_without_entities, abstracts, minimum, score):
         """Iterates through prefix list to generate n-grams from 2-8!
 
         # Arguments
@@ -335,7 +335,7 @@ class ProcessWord2VecModel:
         for index in range(0, maxlen + 1):
             if index == 0:
                 gram_model = Phrases(
-                    self.abstracts_without_entities, min_count=minimum, threshold=score
+                    abstracts_without_entities, min_count=minimum, threshold=score
                 )
                 gram_model.save(
                     f"models/gram_models/{self.GRAMLIST[index]}_model_{self.date}.pkl"
@@ -343,11 +343,10 @@ class ProcessWord2VecModel:
                 gram_model_phraser = Phraser(gram_model)
                 gram_sentence = [
                     gram_model_phraser[sentence]
-                    for i, sentence in enumerate(self.abstracts_without_entities)
+                    for i, sentence in enumerate(abstracts_without_entities)
                 ]
                 gram_main = [
-                    gram_model_phraser[sentence]
-                    for i, sentence in enumerate(self.abstracts)
+                    gram_model_phraser[sentence] for i, sentence in enumerate(abstracts)
                 ]
             elif index > 0:
                 gram_model = Phrases(
@@ -446,19 +445,28 @@ class ProcessWord2VecModel:
 
         # tokenize abstracts
         # self.processing_and_tokenization(use_gpu=True)
-        self.processing_and_tokenization()
+        # self.processing_and_tokenization()
 
         # remove punctuation and standardize numbers with replacement
-        self.exclude_punctuation_tokens_replace_standalone_numbers()
+        abstracts_standard = self.exclude_punctuation_tokens_replace_standalone_numbers(
+            abstracts=self.abstracts
+        )
 
         # remove genes so they are not used for gram generation
-        self.remove_entities_in_tokenized_corpus(genes)
+        abstracts_without_entities = self.remove_entities_in_tokenized_corpus(
+            entity_list=genes, abstracts=abstracts_standard
+        )
 
         # generate ngrams
-        self.gram_generator(min_count=50, threshold=30)
+        self.gram_generator(
+            abstracts_without_entities=abstracts_without_entities,
+            abstracts=abstracts_standard,
+            min_count=50,
+            threshold=30,
+        )
 
         # train model for 30 epochs
-        self.initialize_build_vocab_and_train_word2vec_model()
+        # self.initialize_build_vocab_and_train_word2vec_model()
 
 
 def main(
@@ -466,9 +474,24 @@ def main(
     gene_gtf: str,
 ) -> None:
     """Main function"""
-    # load classified abstracts
-    abstracts = pd.read_pickle(abstracts)
-    abstracts = abstracts.loc[abstracts["predictions"] == 1]["abstracts"].to_list()
+    # # load classified abstracts
+    # abstracts = pd.read_pickle(abstracts)
+    # abstracts = abstracts.loc[abstracts["predictions"] == 1]["abstracts"].to_list()
+
+    # # load pretokenized, extend list, and save for later
+    # tokenized_abs = []
+    # for i in range(0, 15):
+    #     with open(
+    #         f"data/abstracts_classified_tfidf_20000_chunk_{i}.pkl",
+    #         "rb",
+    #     ) as file:
+    #         tokenized_abs.extend(pickle.load(file))
+
+    # with open("data/tokenized_classified_abstracts", "wb") as f:
+    #     pickle.dump(tokenized_abs, f, protocol=4)
+
+    with open("data/tokenized_classified_abstracts", "wb") as f:
+        abstracts = pickle.load(f)
 
     # instantiate object
     modelprocessingObj = ProcessWord2VecModel(
