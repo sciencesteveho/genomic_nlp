@@ -39,7 +39,7 @@ def main() -> None:
     args = parser.parse_args()
 
     with open(
-        "data/abstracts_classified_tfidf_20000_chunk_{args.idx}.pkl",
+        f"data/abstracts_classified_tfidf_20000_chunk_{args.idx}.pkl",
         "rb",
     ) as file:
         abstracts = pickle.load(file)
