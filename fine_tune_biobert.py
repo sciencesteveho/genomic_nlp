@@ -109,7 +109,7 @@ def main() -> None:
         group_texts,
         batched=True,
         batch_size=128,
-        num_proc=16,
+        num_proc=4,
     )
 
     # save tokenized dataset
