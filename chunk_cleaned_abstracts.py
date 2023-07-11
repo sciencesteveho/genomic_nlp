@@ -66,7 +66,7 @@ def main() -> None:
         ]  # generates list of tokenized sentences
         dataset_tokens.extend(split_tokens)
 
-    with open(f"data/tokens_from_cleaned_abstracts_chunk_{args.idx}", "wb") as f:
+    with open(f"data/tokens_from_cleaned_abstracts_chunk_{args.idx}.pkl", "wb") as f:
         pickle.dump(dataset_tokens, f)
 
 
