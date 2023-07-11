@@ -14,7 +14,7 @@ import pickle
 import more_itertools
 import pandas as pd
 import spacy
-import tqdm
+from tqdm import tqdm
 
 
 def main() -> None:
