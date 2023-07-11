@@ -103,7 +103,7 @@ def main() -> None:
     )
 
     with open(f"data/tokenized_classified_abstracts.pkl", "wb") as f:
-        pickle.dump(lm_datasets, f)
+        pickle.dump(tokenized_dataset, f)
 
     lm_datasets = tokenized_dataset.map(
         group_texts,
