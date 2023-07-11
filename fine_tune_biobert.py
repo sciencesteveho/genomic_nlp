@@ -93,6 +93,9 @@ def whole_word_masking_data_collator(features):
 def main() -> None:
     """Main function"""
     # tokenize dataset for BERT
+    abstracts = (
+        "/scratch/remills_root/remills/stevesho/bio_nlp/nlp/classification/abstracts_classified_tfidf_20000.pkl",
+    )
     abstracts = pd.read_pickle(abstracts)
     abstracts = abstracts.loc[abstracts["predictions"] == 1]["abstracts"].to_list()
     tokenized_dataset = abstracts.map(tokenize, batched=True, num_proc=16)
