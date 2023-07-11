@@ -36,7 +36,7 @@ model = AutoModelForMaskedLM.from_pretrained("michiyasunaga/BioLinkBERT-large")
 
 
 def tokenize(text):
-    result = tokenizer(text)
+    result = tokenizer(text["abstracts"])
     if tokenizer.is_fast:
         result["word_ids"] = [
             result.word_ids(i) for i in range(len(result["input_ids"]))
