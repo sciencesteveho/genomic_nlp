@@ -448,19 +448,19 @@ class ProcessWord2VecModel:
         # self.processing_and_tokenization()
 
         # remove punctuation and standardize numbers with replacement
-        abstracts_standard = self.exclude_punctuation_tokens_replace_standalone_numbers(
-            abstracts=self.abstracts
-        )
+        # abstracts_standard = self.exclude_punctuation_tokens_replace_standalone_numbers(
+        #     abstracts=self.abstracts
+        # )
 
         # remove genes so they are not used for gram generation
         abstracts_without_entities = self.remove_entities_in_tokenized_corpus(
-            entity_list=genes, abstracts=abstracts_standard
+            entity_list=genes, abstracts=self.abstracts
         )
 
         # generate ngrams
         self.gram_generator(
             abstracts_without_entities=abstracts_without_entities,
-            abstracts=abstracts_standard,
+            abstracts=self.abstracts,
             min_count=50,
             threshold=30,
         )
@@ -490,7 +490,9 @@ def main(
     # with open("data/tokenized_classified_abstracts", "wb") as f:
     #     pickle.dump(tokenized_abs, f, protocol=4)
 
-    with open("data/tokenized_classified_abstracts", "rb") as f:
+    with open(
+        "data/tokens_from_cleaned_abstracts_remove_punct2023-07-12.pkl", "rb"
+    ) as f:
         abstracts = pickle.load(f)
 
     # instantiate object
