@@ -111,51 +111,51 @@ def main() -> None:
         num_proc=4,
     )
 
-    # prepare to train!
-    model_name = model_checkpoint.split("/")[-1]
+    # # prepare to train!
+    # model_name = model_checkpoint.split("/")[-1]
 
-    data_collator = DataCollatorForLanguageModeling(
-        tokenizer=tokenizer, mlm_probability=0.15
-    )
+    # data_collator = DataCollatorForLanguageModeling(
+    #     tokenizer=tokenizer, mlm_probability=0.15
+    # )
 
-    train_size = 500_000
-    test_size = int(0.1 * train_size)
+    # train_size = 500_000
+    # test_size = int(0.1 * train_size)
 
-    downsampled_dataset = lm_datasets["train"].train_test_split(
-        train_size=train_size, test_size=test_size, seed=42
-    )
+    # downsampled_dataset = lm_datasets["train"].train_test_split(
+    #     train_size=train_size, test_size=test_size, seed=42
+    # )
 
-    tf_train_dataset = model.prepare_tf_dataset(
-        downsampled_dataset["train"],
-        collate_fn=data_collator,
-        shuffle=True,
-        batch_size=32,
-    )
+    # tf_train_dataset = model.prepare_tf_dataset(
+    #     downsampled_dataset["train"],
+    #     collate_fn=data_collator,
+    #     shuffle=True,
+    #     batch_size=32,
+    # )
 
-    tf_eval_dataset = model.prepare_tf_dataset(
-        downsampled_dataset["test"],
-        collate_fn=data_collator,
-        shuffle=False,
-        batch_size=32,
-    )
+    # tf_eval_dataset = model.prepare_tf_dataset(
+    #     downsampled_dataset["test"],
+    #     collate_fn=data_collator,
+    #     shuffle=False,
+    #     batch_size=32,
+    # )
 
-    num_train_steps = len(tf_train_dataset)
-    optimizer, schedule = create_optimizer(
-        init_lr=2e-5,
-        num_warmup_steps=1_000,
-        num_train_steps=num_train_steps,
-        weight_decay_rate=0.01,
-    )
-    model.compile(optimizer=optimizer)
+    # num_train_steps = len(tf_train_dataset)
+    # optimizer, schedule = create_optimizer(
+    #     init_lr=2e-5,
+    #     num_warmup_steps=1_000,
+    #     num_train_steps=num_train_steps,
+    #     weight_decay_rate=0.01,
+    # )
+    # model.compile(optimizer=optimizer)
 
-    # Train in mixed-precision float16
-    tf.keras.mixed_precision.set_global_policy("mixed_float16")
+    # # Train in mixed-precision float16
+    # tf.keras.mixed_precision.set_global_policy("mixed_float16")
 
-    model.fit(tf_train_dataset, validation_data=tf_eval_dataset)
-    eval_loss = model.evaluate(tf_eval_dataset)
-    print(f"Perplexity: {math.exp(eval_loss):.2f}")
+    # model.fit(tf_train_dataset, validation_data=tf_eval_dataset)
+    # eval_loss = model.evaluate(tf_eval_dataset)
+    # print(f"Perplexity: {math.exp(eval_loss):.2f}")
 
-    model.save_pretrained(f"{model_name}-finetuned-genomics")
+    # model.save_pretrained(f"{model_name}-finetuned-genomics")
 
 
 if __name__ == "__main__":
