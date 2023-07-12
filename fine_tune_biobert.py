@@ -10,7 +10,6 @@
 
 import collections
 import math
-import pickle
 
 from datasets import Dataset
 import numpy as np
@@ -26,7 +25,7 @@ from transformers.data.data_collator import tf_default_data_collator
 from transformers.keras_callbacks import PushToHubCallback
 
 # set up model, tokenizer, and data
-chunk_size = 128
+chunk_size = 512
 wwm_probability = 0.2
 model_checkpoint = "michiyasunaga/BioLinkBERT-large"
 
@@ -99,7 +98,10 @@ def main() -> None:
     abstracts = abstracts.loc[abstracts["predictions"] == 1]
     abstracts = Dataset.from_pandas(abstracts)
     tokenized_dataset = abstracts.map(
-        tokenize, batched=True, num_proc=4, remove_columns=["predictions"]
+        tokenize,
+        batched=True,
+        num_proc=4,
+        remove_columns="predictions",
     )
 
     lm_datasets = tokenized_dataset.map(
