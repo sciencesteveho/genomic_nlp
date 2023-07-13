@@ -442,6 +442,7 @@ class ProcessWord2VecModel:
         "Runs the entire pipeline for word2vec model training"
         # prepare genes for removal
         genes = normalization_list(gene_gtf, "gene")
+        genes = set(genes)
 
         # tokenize abstracts
         # self.processing_and_tokenization(use_gpu=True)
@@ -489,33 +490,44 @@ def main(
 
     # with open("data/tokenized_classified_abstracts", "wb") as f:
     #     pickle.dump(tokenized_abs, f, protocol=4)
+    genes = normalization_list(gene_gtf, "gene")
+    genes = set(genes)
 
     with open(
         "data/tokens_from_cleaned_abstracts_remove_punct2023-07-12.pkl", "rb"
     ) as f:
         abstracts = pickle.load(f)
 
-    # instantiate object
-    modelprocessingObj = ProcessWord2VecModel(
-        abstracts=abstracts,
-        date=date.today(),
-        min_count=5,
-        dimensions=250,
-        workers=8,
-        sample=0.0001,
-        alpha=0.01,
-        min_alpha=0.0001,
-        negative=15,
-        sg=1,
-        hs=1,
-        epochs=30,
-        sentence_model=uSIF,
-    )
+    pbar = ProgressBar()
+    new_corpus = []
+    for sentence in pbar(abstracts):
+        new_sentence = [token for token in sentence if token not in genes]
+        new_corpus.append(new_sentence)
 
-    # run pipeline!
-    modelprocessingObj.word2vec_processing_pipeline(
-        gene_gtf=gene_gtf,
-    )
+    with open("data/corpus_removed_genes.pkl", "wb") as f:
+        pickle.dump(new_corpus, f)
+
+    # # instantiate object
+    # modelprocessingObj = ProcessWord2VecModel(
+    #     abstracts=abstracts,
+    #     date=date.today(),
+    #     min_count=5,
+    #     dimensions=250,
+    #     workers=8,
+    #     sample=0.0001,
+    #     alpha=0.01,
+    #     min_alpha=0.0001,
+    #     negative=15,
+    #     sg=1,
+    #     hs=1,
+    #     epochs=30,
+    #     sentence_model=uSIF,
+    # )
+
+    # # run pipeline!
+    # modelprocessingObj.word2vec_processing_pipeline(
+    #     gene_gtf=gene_gtf,
+    # )
 
 
 if __name__ == "__main__":
