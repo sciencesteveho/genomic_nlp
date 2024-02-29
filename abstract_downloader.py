@@ -149,7 +149,10 @@ TEST_SET_JOURNALS = [
 
 
 def create_scopus_search(
-    query: str, start_year: int, end_year: int, interval: bool
+    query: str,
+    start_year: int,
+    end_year: int = None,
+    interval: bool = False,
 ) -> ScopusSearch:
     """Creates a ScopusSearch object with the specified query, start year, end year, and interval.
 
@@ -202,11 +205,14 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    search_query = f"TITLE-ABS-KEY({' OR '.join(GENERAL_SEARCH_TERMS)}) AND (DOCTYPE(ar) OR DOCTYPE(le) OR DOCTYPE(re)"
+    search_query = f"TITLE-ABS-KEY({' OR '.join(GENERAL_SEARCH_TERMS)}) AND (DOCTYPE(ar) OR DOCTYPE(le) OR DOCTYPE(re))"
     scopus_general = create_scopus_search(
-        search_query, args.start, args.end, args.interval
+        query=search_query,
+        start_year=args.start,
+        end_year=args.end or None,
+        interval=args.interval or False,
     )
-    year = f"{args.start}_{args.end}" if args.interval else args.year
+    year = f"{args.start}_{args.end}" if args.interval else args.start
 
     # save all abstracts w/ metadata
     df = pd.DataFrame(pd.DataFrame(scopus_general.results))
