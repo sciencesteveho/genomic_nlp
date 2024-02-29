@@ -9,14 +9,13 @@
 """Tokenization, token clean-up, and gene removal. Model training for word
 embeddings for bio-nlp model!"""
 
+from collections import Counter
+from collections import defaultdict
 from datetime import date
-import gc
 import logging
-import multiprocessing
 import pickle
 import re
-import string
-from typing import Dict, List
+from typing import Dict, List, Set
 
 from fse.models import uSIF
 from gensim.models import Word2Vec
@@ -39,7 +38,7 @@ logging.basicConfig(
 )
 
 
-def gene_symbol_from_gencode(gencode_ref) -> List[str]:
+def gene_symbol_from_gencode(gencode_ref: pybedtools.BedTool) -> List[str]:
     """Returns deduped list of gencode V43 genes"""
     return [
         line[8].split('gene_name "')[1].split('";')[0]
@@ -48,18 +47,12 @@ def gene_symbol_from_gencode(gencode_ref) -> List[str]:
     ]
 
 
-def normalization_list(entity_file: str, type: str = "gene"):
-    """Uses gtf_parser to parse a GTF to a dataframe. Grabs a list
-    of gene_names in the GTf, removes duplicates, and adds fixers
-    for the weirdly named genes.
+def normalization_list(entity_file: str, type: str = "gene") -> Set[str]:
+    def handle_ents(entity_file):
+        ents = [entity[0].casefold() for entity in entity_file]
+        return set(ents)
 
-    # Arguments
-        entity_file: either a list of tuples or GTF file
-        type: ents(scispaCy entities), gene(GTF)
-    # Returns
-        gene_names_list: list of unique genes from GTF
-    """
-    if type == "gene":
+    def handle_gene(entity_file):
         print("Grabbing genes from GTF")
         gtf = pybedtools.BedTool(entity_file)
         genes = [gene.lower() for gene in gene_symbol_from_gencode(gtf)]
@@ -67,19 +60,21 @@ def normalization_list(entity_file: str, type: str = "gene"):
             genes.remove(key)
             genes.append(COPY_GENES[key])
         return set(genes)
-    elif type == "ents":
-        pass
-    else:
+
+    type_handlers = {
+        "ents": handle_ents,
+        "gene": handle_gene,
+    }
+
+    if type not in type_handlers:
         raise ValueError("type must be either 'gene' or 'ents'")
 
-    # elif type == "ents":
-    #     ent_list = [entity[0].casefold() for entity in entity_file]
-    #     return set(ent_list)
+    return type_handlers[type](entity_file)
 
 
 def dict_from_gene_symbol_and_name_list(gene_file_path):
     """Takes a tab delimited file organized as 'symbol'\t''name' and
-    parses as a dictionary, removing entries with values in remove_list,
+    parses as a dictionary, removing entries with values in remove_words,
     which includes duplicates."
 
     # Arguments
@@ -88,23 +83,41 @@ def dict_from_gene_symbol_and_name_list(gene_file_path):
     # Returns
         dictionary of values
     """
-    remove_list = ["novel transcript", ""]
+    remove_words = {"novel transcript", ""}
     namedict = {}
     with open(gene_file_path) as f:
         for line in f:
-            line = line.strip("\n")
-            a, b = line.split("\t")
-            b = "".join(e for e in b if e.isalnum() or e in string.whitespace)
-            b = re.sub("  ", " ", b)
-            b = b.rstrip()
-            b = re.sub(" ", "_", b)
-            namedict.update({b.lower(): a.lower()})
-    dup_list = list(namedict.values())
-    val_dupes = set([item for item in dup_list if dup_list.count(item) > 1])
-    for dupe in val_dupes:
-        remove_list.append(dupe)
-    set(remove_list)
-    return {key: value for key, value in namedict.items() if value not in remove_list}
+            symbol, name = line.strip().split("\t")
+            name = re.sub(r"[^\w\s]|_", "", name).replace("  ", " ").strip().lower()
+            namedict[name] = symbol.lower()
+
+    # Find duplicates
+    duplicates = {
+        symbol for symbol, count in Counter(namedict.values()).items() if count > 1
+    }
+    remove_words.update(duplicates)
+
+    # Filter out remove_words and duplicates
+    return {
+        name: symbol for name, symbol in namedict.items() if symbol not in remove_words
+    }
+    # remove_words = ["novel transcript", ""]
+    # namedict = {}
+    # with open(gene_file_path) as f:
+    #     for line in f:
+    #         line = line.strip("\n")
+    #         a, b = line.split("\t")
+    #         b = "".join(e for e in b if e.isalnum() or e in string.whitespace)
+    #         b = re.sub("  ", " ", b)
+    #         b = b.rstrip()
+    #         b = re.sub(" ", "_", b)
+    #         namedict.update({b.lower(): a.lower()})
+    # dup_list = list(namedict.values())
+    # val_dupes = set([item for item in dup_list if dup_list.count(item) > 1])
+    # for dupe in val_dupes:
+    #     remove_words.append(dupe)
+    # set(remove_words)
+    # return {key: value for key, value in namedict.items() if value not in remove_words}
 
 
 class EpochSaver(CallbackAny2Vec):
@@ -113,9 +126,9 @@ class EpochSaver(CallbackAny2Vec):
     def __init__(self):
         self.epoch = 0
 
-    def on_epoch_end(self, model):
-        print("Save model number {}.".format(self.epoch))
-        model.save("models/model_epoch{}.pkl".format(self.epoch))
+    def on_epoch_end(self, model: Word2Vec) -> None:
+        print(f"Save model number {self.epoch}.")
+        model.save(f"models/model_epoch{self.epoch}.pkl")
         self.epoch += 1
 
 
@@ -247,13 +260,12 @@ class ProcessWord2VecModel:
         """Takes each token, splits into sentences, and tokenizes
         each sentence, before saving to a file
         """
+        nlp = spacy.load("en_core_sci_scibert" if use_gpu else "en_core_sci_sm")
         if use_gpu:
             spacy.prefer_gpu()
-            nlp = spacy.load("en_core_sci_scibert")
             n_process = 1
             batch_size = 16
         else:
-            nlp = spacy.load("en_core_sci_sm")
             nlp.add_pipe("sentencizer")
             n_process = 8
             batch_size = 512
@@ -268,11 +280,9 @@ class ProcessWord2VecModel:
             ),
             total=len(self.abstracts),
         ):
-            sentences = [i for i in doc.sents]
-            split_tokens = [
-                [word.text for word in sentence] for sentence in sentences
-            ]  # generates list of tokenized sentences
-            dataset_tokens.extend(split_tokens)
+            dataset_tokens.extend(
+                [[word.text for word in sentence] for sentence in doc.sents]
+            )
 
         with open(f"data/tokens_from_cleaned_abstracts_{self.date}.pkl", "wb") as f:
             pickle.dump(dataset_tokens, f)
@@ -287,15 +297,12 @@ class ProcessWord2VecModel:
         pbar = ProgressBar()
         new_corpus = []
         for sentence in pbar(abstracts):
-            new_sentence = [token for token in sentence if token not in self.EXTRAS]
-            new_sentence_2 = []
-            for new_token in new_sentence:
-                if is_number(new_token) is True:
-                    new_token = "<nUm>"
-                    new_sentence_2.append(new_token)
-                else:
-                    new_sentence_2.append(new_token)
-            new_corpus.append(new_sentence_2)
+            new_sentence = [
+                "<nUm>" if is_number(token) else token
+                for token in sentence
+                if token not in self.EXTRAS
+            ]
+            new_corpus.append(new_sentence)
 
         with open(
             f"data/tokens_from_cleaned_abstracts_remove_punct{self.date}.pkl", "wb"
@@ -311,16 +318,19 @@ class ProcessWord2VecModel:
         # Arguments
             gene_list: genes from GTF
         """
-        pbar = ProgressBar()
-        new_corpus = []
-        for sentence in pbar(abstracts):
-            new_sentence = [token for token in sentence if token not in entity_list]
-            new_corpus.append(new_sentence)
+        with open(f"data/corpus_removed_genes_{self.date}.pkl", "wb") as f:
+            pickle.dump(
+                [
+                    [token for token in sentence if token not in entity_list]
+                    for sentence in abstracts
+                ],
+                f,
+            )
 
-        with open("data/corpus_removed_genes_{}.pkl".format(self.date), "wb") as f:
-            pickle.dump(new_corpus, f)
-
-        return new_corpus
+        return [
+            [token for token in sentence if token not in entity_list]
+            for sentence in abstracts
+        ]
 
     @time_decorator(print_args=False)
     def gram_generator(self, abstracts_without_entities, abstracts, minimum, score):
@@ -332,78 +342,45 @@ class ProcessWord2VecModel:
         """
         maxlen = len(self.GRAMDICT) - 1
 
-        for index in range(0, maxlen + 1):
+        for index in range(maxlen + 1):
             if index == 0:
-                gram_model = Phrases(
-                    abstracts_without_entities, min_count=minimum, threshold=score
-                )
-                gram_model.save(
-                    f"models/gram_models/{self.GRAMLIST[index]}_model_{self.date}.pkl"
-                )
-                gram_model_phraser = Phraser(gram_model)
-                gram_sentence = [
-                    gram_model_phraser[sentence]
-                    for i, sentence in enumerate(abstracts_without_entities)
-                ]
-                gram_main = [
-                    gram_model_phraser[sentence] for i, sentence in enumerate(abstracts)
-                ]
-            elif index > 0:
-                gram_model = Phrases(
-                    self.GRAMDICT[self.GRAMLIST[index - 1]][1],
-                    min_count=minimum,
-                    threshold=score,
-                )
-                gram_model.save(
-                    f"models/gram_models/{self.GRAMLIST[index]}_model_{self.date}.pkl"
-                )
-                gram_model_phraser = Phraser(gram_model)
-                gram_sentence = [
-                    gram_model_phraser[sentence]
-                    for i, sentence in enumerate(
-                        self.GRAMDICT[self.GRAMLIST[index - 1]][1]
-                    )
-                ]
-                gram_main = [
-                    gram_model_phraser[sentence]
-                    for i, sentence in enumerate(
-                        self.GRAMDICT[self.GRAMLIST[index - 1]][2]
-                    )
-                ]
-            self.GRAMDICT[self.GRAMLIST[index]] = [
-                gram_model,
-                gram_sentence,
-                gram_main,
-            ]
-            del gram_model, gram_sentence, gram_main
-            gc.collect()
+                source_sentences = abstracts_without_entities
+                source_main = abstracts
+            else:
+                source_sentences = self.GRAMDICT[self.GRAMLIST[index - 1]][1]
+                source_main = self.GRAMDICT[self.GRAMLIST[index - 1]][2]
+
+            gram_model = Phrases(source_sentences, min_count=minimum, threshold=score)
+            gram_model_phraser = Phraser(gram_model)
+            gram_sentence = (
+                gram_model_phraser[sentence] for sentence in source_sentences
+            )
+            gram_main = (gram_model_phraser[sentence] for sentence in source_main)
+
+            self.GRAMDICT[self.GRAMLIST[index]] = [gram_model, gram_sentence, gram_main]
 
         quintgram_main = self.GRAMDICT[self.GRAMLIST[maxlen]][2]
+
+        gram_model.save(
+            f"models/gram_models/{self.GRAMLIST[maxlen]}_model_{self.date}.pkl"
+        )
 
         with open(f"data/gram_applied_dataset_{self.date}.pkl", "wb") as f:
             pickle.dump(quintgram_main, f)
         return quintgram_main
 
-    @time_decorator(print_args=False)
     def normalize_gene_name_to_symbol(self, gene_dict):
         """Looks for grams in corpus that are equivalent to gene names and
         converts them to gene symbols for training.
         """
         pbar = ProgressBar()
-        checklist = set(gene_dict.keys())
-        gram_corpus_gene_standardized = []
-        for sentence in pbar(self.gram_corpus):
-            new_sentence = []
-            for token in sentence:
-                if token in checklist:
-                    new_sentence.append(token.replace(token, gene_dict.get(token)))
-                else:
-                    new_sentence.append(token)
-            gram_corpus_gene_standardized.append(new_sentence)
-        return gram_corpus_gene_standardized
+        return [
+            [gene_dict.get(token, token) for token in sentence]
+            for sentence in pbar(self.gram_corpus)
+        ]
 
     @time_decorator(print_args=False)
-    def initialize_build_vocab_and_train_word2vec_model(self):
+    def initialize_build_vocab_and_train_word2vec_model(self) -> None:
         """Initializes vocab build for corpus, then trains W2v model
         according to parameters set during object init
         """
@@ -411,47 +388,50 @@ class ProcessWord2VecModel:
         self.gram_corpus_gene_standardized = self.abstracts
 
         model = Word2Vec(
-            min_count=self.min_count,  # init word2vec class with alpha values from Tshitoyan et al.
-            window=20,
-            size=self.dimensions,
-            workers=self.workers,
-            sample=self.sample,
-            alpha=self.alpha,
-            min_alpha=self.min_alpha,
-            negative=self.negative,
-            sg=self.sg,
-            hs=self.hs,
-        )
+            **{
+                attr: getattr(self, attr)
+                for attr in [
+                    "min_count",
+                    "window",
+                    "size",
+                    "workers",
+                    "sample",
+                    "alpha",
+                    "min_alpha",
+                    "negative",
+                    "sg",
+                    "hs",
+                ]
+            }
+        )  # init word2vec class with alpha values from Tshitoyan et al.
 
         model.build_vocab(self.gram_corpus_gene_standardized)  # build vocab
 
         model.train(
-            self.gram_corpus_gene_standardized,  # train the w2v model
+            self.gram_corpus_gene_standardized,
             total_examples=model.corpus_count,
             epochs=30,
             report_delay=15,
             compute_loss=True,
             callbacks=[EpochSaver()],
-        )  # optionally add the callback class
+        )
 
-        model.save(
-            f"models/w2v_models/word2vec_{self.dimensions}d_{self.date}.model"
-        )  # save model!
+        model.save(f"models/w2v_models/word2vec_{self.dimensions}d_{self.date}.model")
 
     def word2vec_processing_pipeline(self, gene_gtf: str) -> None:
-        "Runs the entire pipeline for word2vec model training"
+        """Runs the entire pipeline for word2vec model training"""
         # prepare genes for removal
         genes = normalization_list(gene_gtf, "gene")
         genes = set(genes)
 
         # tokenize abstracts
         # self.processing_and_tokenization(use_gpu=True)
-        # self.processing_and_tokenization()
+        self.processing_and_tokenization()
 
         # remove punctuation and standardize numbers with replacement
-        # abstracts_standard = self.exclude_punctuation_tokens_replace_standalone_numbers(
-        #     abstracts=self.abstracts
-        # )
+        abstracts_standard = self.exclude_punctuation_tokens_replace_standalone_numbers(
+            abstracts=self.abstracts
+        )
 
         # remove genes so they are not used for gram generation
         abstracts_without_entities = self.remove_entities_in_tokenized_corpus(
@@ -467,7 +447,7 @@ class ProcessWord2VecModel:
         )
 
         # train model for 30 epochs
-        # self.initialize_build_vocab_and_train_word2vec_model()
+        self.initialize_build_vocab_and_train_word2vec_model()
 
 
 def main(
@@ -476,20 +456,20 @@ def main(
 ) -> None:
     """Main function"""
     # # load classified abstracts
-    # abstracts = pd.read_pickle(abstracts)
-    # abstracts = abstracts.loc[abstracts["predictions"] == 1]["abstracts"].to_list()
+    abstracts = pd.read_pickle(abstracts)
+    abstracts = abstracts.loc[abstracts["predictions"] == 1]["abstracts"].to_list()
 
     # load pretokenized, extend list, and save for later
-    # tokenized_abs = []
-    # for i in range(0, 15):
-    #     with open(
-    #         f"data/abstracts_classified_tfidf_20000_chunk_{i}.pkl",
-    #         "rb",
-    #     ) as file:
-    #         tokenized_abs.extend(pickle.load(file))
+    tokenized_abs = []
+    for i in range(0, 15):
+        with open(
+            f"data/abstracts_classified_tfidf_20000_chunk_{i}.pkl",
+            "rb",
+        ) as file:
+            tokenized_abs.extend(pickle.load(file))
 
-    # with open("data/tokenized_classified_abstracts", "wb") as f:
-    #     pickle.dump(tokenized_abs, f, protocol=4)
+    with open("data/tokenized_classified_abstracts", "wb") as f:
+        pickle.dump(tokenized_abs, f, protocol=4)
     genes = normalization_list(gene_gtf, "gene")
     genes = set(genes)
 
@@ -507,27 +487,27 @@ def main(
     with open("data/corpus_removed_genes.pkl", "wb") as f:
         pickle.dump(new_corpus, f)
 
-    # # instantiate object
-    # modelprocessingObj = ProcessWord2VecModel(
-    #     abstracts=abstracts,
-    #     date=date.today(),
-    #     min_count=5,
-    #     dimensions=250,
-    #     workers=8,
-    #     sample=0.0001,
-    #     alpha=0.01,
-    #     min_alpha=0.0001,
-    #     negative=15,
-    #     sg=1,
-    #     hs=1,
-    #     epochs=30,
-    #     sentence_model=uSIF,
-    # )
+    # instantiate object
+    modelprocessingObj = ProcessWord2VecModel(
+        abstracts=abstracts,
+        date=date.today(),
+        min_count=5,
+        dimensions=250,
+        workers=8,
+        sample=0.0001,
+        alpha=0.01,
+        min_alpha=0.0001,
+        negative=15,
+        sg=1,
+        hs=1,
+        epochs=30,
+        sentence_model=uSIF,
+    )
 
-    # # run pipeline!
-    # modelprocessingObj.word2vec_processing_pipeline(
-    #     gene_gtf=gene_gtf,
-    # )
+    # run pipeline!
+    modelprocessingObj.word2vec_processing_pipeline(
+        gene_gtf=gene_gtf,
+    )
 
 
 if __name__ == "__main__":

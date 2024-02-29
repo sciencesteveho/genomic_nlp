@@ -3,18 +3,19 @@
 
 """Utilities for bio-genetics-NLP"""
 
+
+import contextlib
 from datetime import timedelta
 import functools
 import inspect
 import os
-import pickle
+from pathlib import Path
 import random
 import time
-from tqdm import tqdm
 from typing import Any, Callable, List
 
 import pandas as pd
-
+from tqdm import tqdm
 
 SUBLIST = [
     "\[Figure not available\: see fulltext.\]\.",
@@ -292,75 +293,74 @@ SPECIFIC_TERMS = [
 ]
 
 COPY_GENES = {
-'was' : 'wasgene',
-'she' : 'shegene',
-'impact' : 'impactgene',
-'mice' : 'micegene',
-'rest' : 'restgene',
-'set' : 'setgene',
-'met' : 'metgene',
-'gc' : 'gcgene',
-'ca2': 'ca2gene',
-'atm' : 'atmgene',
-'mb' : 'mbgene',
-'pigs' : 'pigsgene',
-'cat' : 'catgene',
-'coil' : 'coilgene',
+    "was": "wasgene",
+    "she": "shegene",
+    "impact": "impactgene",
+    "mice": "micegene",
+    "rest": "restgene",
+    "set": "setgene",
+    "met": "metgene",
+    "gc": "gcgene",
+    "ca2": "ca2gene",
+    "atm": "atmgene",
+    "mb": "mbgene",
+    "pigs": "pigsgene",
+    "cat": "catgene",
+    "coil": "coilgene",
 }
 
 
-def dir_check_make(dir: str) -> None:
-    """Utility to make directories only if they do not already exist"""
-    try:
-        os.makedirs(dir)
-    except FileExistsError:
-        pass
+def dir_check_make(dir_path: str) -> None:
+    """Check if a directory exists, if not, create it."""
+    Path(dir_path).mkdir(exist_ok=True)
 
 
 def time_decorator(print_args: bool = False, display_arg: str = "") -> Callable:
+    """Decorator to time functions.
+
+    Args:
+        print_args (bool, optional): Whether to print the function arguments.
+        Defaults to False. display_arg (str, optional): The argument to display
+        in the print statement. Defaults to "".
+
+    Returns:
+        Callable: The decorated function.
+    """
+
     def _time_decorator_func(function: Callable) -> Callable:
         @functools.wraps(function)
         def _execute(*args: Any, **kwargs: Any) -> Any:
             start_time = time.monotonic()
             fxn_args = inspect.signature(function).bind(*args, **kwargs).arguments
-            try:
-                result = function(*args, **kwargs)
-                return result
-            except Exception as error:
-                result = str(error)
-                raise
-            finally:
-                end_time = time.monotonic()
-                if print_args == True:
-                    print(
-                        f"Finished {function.__name__} {[val for val in fxn_args.values()]} - Time: {timedelta(seconds=end_time - start_time)}"
-                    )
-                else:
-                    print(
-                        f"Finished {function.__name__} {display_arg} - Time: {timedelta(seconds=end_time - start_time)}"
-                    )
+            result = function(*args, **kwargs)
+            end_time = time.monotonic()
+            args_to_print = list(fxn_args.values()) if print_args else display_arg
+            print(
+                f"Finished {function.__name__} {args_to_print} - Time: {timedelta(seconds=end_time - start_time)}"
+            )
+            return result
 
         return _execute
 
     return _time_decorator_func
 
 
-def filter_abstract_by_terms(string, substr, matches, remove, keep):
-    filtered_list = []
+def filter_abstract_by_terms(string: str, substr: str, matches, remove, keep):
+    filtered = []
     for s in tqdm(string):
         if keep == "match":
             if len(substr.intersection(s.split())) >= matches:
                 if len(remove) > 0:
                     if len(remove.intersection(s.split())) == 0:
-                        filtered_list.append(s)
+                        filtered.append(s)
                 else:
-                    filtered_list.append(s)
+                    filtered.append(s)
         elif keep == "remove ":
             if len(substr.intersection(s.split())) <= matches:
-                filtered_list.append(s)
+                filtered.append(s)
         else:
             raise ValueError("keep must be either 'match' or 'remove'")
-    return filtered_list
+    return filtered
 
 
 def _abstract_retrieval_concat(data_path: str, save: bool) -> None:
@@ -381,20 +381,16 @@ def _abstract_retrieval_concat(data_path: str, save: bool) -> None:
 
 def _random_subset_abstract_printer(n: int, abstracts: List) -> None:
     """Prints N random abstracts"""
-    for num in random.sample(range(0, len(abstracts)), n):
+    for num in random.sample(range(len(abstracts)), n):
         print(abstracts[num])
 
 
-def _listdir_isfile_wrapper(dir: str) -> List[str]:
-    """
-    Returns a list of bedfiles within the directory.
-    """
-    return [file for file in os.listdir(dir) if os.path.isfile(f"{dir}/{file}")]
+def _listdir_isfile_wrapper(dir_path: str) -> List[str]:
+    return [file.name for file in Path(dir_path).iterdir() if file.is_file()]
 
 
-def is_number(entry):
+def is_number(entry: str) -> bool:
     """
-
     # Arguments
         entry: the string to be checked
     # Returns
@@ -417,7 +413,4 @@ def avg_len(lst: List[str]) -> int:
         int
     """
     total_lengths = [len(i) for i in lst]
-    if len(total_lengths) == 0:
-        return 0
-    else:
-        return int(sum(total_lengths)) / len(total_lengths)
+    return int(sum(total_lengths)) / len(total_lengths) if total_lengths else 0

@@ -11,7 +11,7 @@ frequency. Implements a logistic classifier and a simple multi-layer perceptron,
 validated by 10-fold cross validation."""
 
 import argparse
-import csv
+from pathlib import Path
 import pickle
 from typing import Set, Tuple, Union
 
@@ -46,9 +46,8 @@ def prepare_annotated_classification_set(
     Returns:
         pd.DataFrame
     """
-    data = [line for line in csv.reader(open(abstracts, "r"), delimiter="\n")]
-    df = pd.DataFrame(data, columns=["abstracts"])
-    df["encoding"] = encoding
+    df = pd.read_csv(abstracts, header=None, names=["abstracts"], sep="\n")
+    df = df.assign(encoding=encoding)
     return df.sample(frac=1).reset_index(drop=True)
 
 
@@ -79,18 +78,15 @@ def vectorize_and_train_logistic_classifier(
     )
     classifier = LogisticRegression(C=20.0, max_iter=500, random_state=RANDOM_SEED)
 
-    y = trainset["encoding"].values
-    y = y.astype(int)
-    x_vectorized = vectorizer.fit_transform(
-        [abstract for abstract in trainset["abstracts"]]
-    )
-    x_train = selector.fit_transform(x_vectorized, y)
+    y_train = trainset["encoding"].astype(int).values
+    x_vectorized = vectorizer.fit_transform(trainset["abstracts"])
+    x_train = selector.fit_transform(x_vectorized, y_train)
 
-    classifier.fit(x_train, y)
+    classifier.fit(x_train, y_train)
     cv_accuracy = cross_val_score(
         classifier,
         x_train,
-        y,
+        y_train,
         scoring="f1",
         cv=5,
         n_jobs=-1,
@@ -105,21 +101,28 @@ def classify_corpus(
     selector: SelectKBest,
     classifier: LogisticRegression,
     test: bool = False,
-) -> pd.DataFrame:
-    if test:
-        corpora = corpus["abstracts"].values
-    else:
-        corpora = list(corpus)
-    predictions = []
-    for abstract in corpora:
-        ex = vectorizer.transform([abstract])
-        ex2 = selector.transform(ex)
-        predictions.append(classifier.predict(ex2))
-    predictions = np.array(predictions).flatten()
-    if test:
-        print(f"Accuracy: {accuracy_score(corpus['encoding'].values, predictions)}")
+) -> Union[pd.DataFrame, tuple]:
+    """Classifies a corpus of abstracts using the provided vectorizer, feature selector, and classifier.
+
+    Args:
+        corpus (Union[Set[str], pd.DataFrame]): The corpus of abstracts to classify.
+        vectorizer (TfidfVectorizer): The vectorizer used to transform the abstracts into feature vectors.
+        selector (SelectKBest): The feature selector used to select the most informative features.
+        classifier (LogisticRegression): The classifier used to predict the class labels.
+        test (bool, optional): Flag indicating whether the corpus is a test set. Defaults to False.
+
+    Returns:
+        pd.DataFrame: A DataFrame containing the classified abstracts.
+    """
+    corpora = corpus["abstracts"].values if test else list(corpus)
+    ex = vectorizer.transform(corpora)
+    ex2 = selector.transform(ex)
+    predictions = classifier.predict(ex2)
     df = pd.DataFrame(corpora, columns=["abstracts"])
     df["predictions"] = predictions
+    if test:
+        accuracy = accuracy_score(corpus["encoding"].values, predictions)
+        return df, accuracy
     return df
 
 
@@ -138,33 +141,25 @@ def _get_testset(
         pd.DataFrame: _description_
     """
     if positive:
-        df = _abstract_retrieval_concat(data_path=data_path, save=False)
-        df = df.sample(n=20000, random_state=RANDOM_SEED).reset_index(
-            drop=True
-        )  # get random 20k
-        testCorpus = AbstractCollection(
-            df["title"].astype(str) + ". " + df["description"].astype(str)
+        df = (
+            _abstract_retrieval_concat(data_path=data_path, save=False)
+            .sample(n=20000, random_state=RANDOM_SEED)
+            .reset_index(drop=True)
         )
     else:
         df = pd.read_csv(data_path)
-        testCorpus = AbstractCollection(
-            df["Title"].astype(str) + ". " + df["Abstract"].astype(str)
-        )
+
+    testCorpus = AbstractCollection(
+        df[df.columns[0]].astype(str) + ". " + df[df.columns[1]].astype(str)
+    )
     testCorpus.process_abstracts()
     newdf = pd.DataFrame(testCorpus.cleaned_abstracts, columns=["abstracts"])
     newdf["encoding"] = 1 if positive else 0
     return newdf
 
 
-def main(
-    corpus: str,
-    relevant_abstracts: str,
-    negative_abstracts: str,
-    pos_set_path: str,
-    negative_set_file: str,
-    model_save_dir: str,
-) -> None:
-    """Main function"""
+def _parse_args() -> argparse.Namespace:
+    """Parse command-line arguments"""
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-k",
@@ -172,18 +167,35 @@ def main(
         help="number of features for tf-idf",
         type=int,
     )
-    args = parser.parse_args()
+    parser.add_argument("corpus", help="Path to the corpus file")
+    parser.add_argument(
+        "relevant_abstracts", help="Path to the relevant abstracts file"
+    )
+    parser.add_argument(
+        "negative_abstracts", help="Path to the negative abstracts file"
+    )
+    parser.add_argument("pos_set_path", help="Path to the positive set directory")
+    parser.add_argument("negative_set_file", help="Path to the negative set file")
+    parser.add_argument("model_save_dir", help="Directory to save the model")
+    return parser.parse_args()
+
+
+def main() -> None:
+    """Main function to classify relevancy of abstracts based on term
+    frequency"""
+    args = _parse_args()
+    savepath = Path(args.model_save_dir)
 
     # get training data and set-up annotated abstracts
-    abstract_corpus = pd.read_pickle(corpus)
+    abstract_corpus = pd.read_pickle(args.corpus)
 
     classification_trainset = pd.concat(
         [
             prepare_annotated_classification_set(
-                abstracts=relevant_abstracts, encoding=1
+                abstracts=args.relevant_abstracts, encoding=1
             ),
             prepare_annotated_classification_set(
-                abstracts=negative_abstracts, encoding=0
+                abstracts=args.negative_abstracts, encoding=0
             ),
         ],
         ignore_index=True,
@@ -191,13 +203,13 @@ def main(
 
     # get positive test set data
     positive_test_data = _get_testset(
-        data_path=pos_set_path,
+        data_path=args.pos_set_path,
         positive=True,
     )
 
     # get negative test set data
     negative_test_data = _get_testset(
-        data_path=negative_set_file,
+        data_path=args.negative_set_file,
         positive=False,
     )
 
@@ -211,17 +223,17 @@ def main(
         selector,
         classifier,
     ) = vectorize_and_train_logistic_classifier(trainset=classification_trainset, k=num)
-    joblib.dump(classifier, f"{model_save_dir}/logistic_classifier_{num}.pkl")
+    joblib.dump(classifier, savepath / f"logistic_classifier_{num}.pkl")
 
-    # testset_classified = classify_corpus(
-    #     corpus=testset,
-    #     vectorizer=vectorizer,
-    #     selector=selector,
-    #     classifier=classifier,
-    #     test=True,
-    # )
-    # with open(f'{model_save_dir}/testset_classified_tfidf_{num}.pkl', 'wb') as f:
-    #     pickle.dump(testset_classified, f)
+    testset_classified = classify_corpus(
+        corpus=testset,
+        vectorizer=vectorizer,
+        selector=selector,
+        classifier=classifier,
+        test=True,
+    )
+    with open(savepath / f"testset_classified_tfidf_{num}.pkl", "wb") as f:
+        pickle.dump(testset_classified, f)
 
     abstracts_classified = classify_corpus(
         corpus=abstract_corpus,
@@ -229,16 +241,17 @@ def main(
         selector=selector,
         classifier=classifier,
     )
-    with open(f"{model_save_dir}/abstracts_classified_tfidf_{num}.pkl", "wb") as f:
+    with open(savepath / f"abstracts_classified_tfidf_{num}.pkl", "wb") as f:
         pickle.dump(abstracts_classified, f)
 
 
 if __name__ == "__main__":
-    main(
-        corpus="abstracts/cleaned_abstracts.pkl",
-        relevant_abstracts="classification/relevant_sorted.txt",
-        negative_abstracts="classification/negative_sorted.txt",
-        pos_set_path="abstracts/test",
-        negative_set_file="classification/irrelevant_texts.csv",
-        model_save_dir="classification",
-    )
+    main()
+    # main(
+    #     corpus="abstracts/cleaned_abstracts.pkl",
+    #     relevant_abstracts="classification/relevant_sorted.txt",
+    #     negative_abstracts="classification/negative_sorted.txt",
+    #     pos_set_path="abstracts/test",
+    #     negative_set_file="classification/irrelevant_texts.csv",
+    #     model_save_dir="classification",
+    # )

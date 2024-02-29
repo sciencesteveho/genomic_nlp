@@ -50,21 +50,19 @@ def main() -> None:
     n_process = 4
     batch_size = 256
 
-    dataset_tokens = []
-    for doc in tqdm(
-        nlp.pipe(
-            abstracts,
-            n_process=n_process,
-            batch_size=batch_size,
-            disable=["parser", "tagger", "ner", "lemmatizer"],
-        ),
-        total=len(abstracts),
-    ):
-        sentences = [i for i in doc.sents]
-        split_tokens = [
-            [word.text for word in sentence] for sentence in sentences
-        ]  # generates list of tokenized sentences
-        dataset_tokens.extend(split_tokens)
+    dataset_tokens = [
+        [word.text for word in sentence]
+        for doc in tqdm(
+            nlp.pipe(
+                abstracts,
+                n_process=n_process,
+                batch_size=batch_size,
+                disable=["parser", "tagger", "ner", "lemmatizer"],
+            ),
+            total=len(abstracts),
+        )
+        for sentence in doc.sents
+    ]
 
     with open(f"data/tokens_from_cleaned_abstracts_chunk_{args.idx}.pkl", "wb") as f:
         pickle.dump(dataset_tokens, f)

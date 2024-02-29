@@ -5,7 +5,9 @@
 
 """Mine abstracts from scopus API"""
 
+
 import argparse
+import contextlib
 import os
 import pickle
 import re
@@ -14,17 +16,15 @@ from typing import Any, Dict, List, Tuple
 import pandas as pd
 from pybliometrics.scopus import ScopusSearch
 
-from utils import (
-    SUBLIST,
-    SUBLIST_INITIAL,
-    SUBLIST_TOKEN_ZERO,
-    SUBLIST_TOKEN_ONE,
-    SUBLIST_POST,
-    SUBLIST_TITLE,
-)
+from utils import dir_check_make
+from utils import SUBLIST
+from utils import SUBLIST_INITIAL
+from utils import SUBLIST_POST
+from utils import SUBLIST_TITLE
+from utils import SUBLIST_TOKEN_ONE
+from utils import SUBLIST_TOKEN_ZERO
 
-
-general_search_terms = [
+GENERAL_SEARCH_TERMS = [
     "ATAC-seq",
     "ChIA-PET",
     "DNA",
@@ -150,71 +150,42 @@ general_search_terms = [
     "{translational regulation}",
 ]
 
-test_set_journals = [
-    'American Journal of Human Genetics',
-    'Human Genetics',
-    'Human Molecular Genetics',
-    'European Journal of Human Genetics',
+TEST_SET_JOURNALS = [
+    "American Journal of Human Genetics",
+    "Human Genetics",
+    "Human Molecular Genetics",
+    "European Journal of Human Genetics",
 ]
 
 
-def make_directories(dir: str) -> None:
-    try:
-        os.makedirs(dir)
-    except FileExistsError:
-        pass
+def create_scopus_search(
+    query: str, start_year: int, end_year: int, interval: bool
+) -> ScopusSearch:
+    """Creates a ScopusSearch object with the specified query, start year, end year, and interval.
 
+    Args:
+        query (str): The search query.
+        start_year (int): The start year for filtering the search results.
+        end_year (int): The end year for filtering the search results.
+        interval (bool): Flag indicating whether to include a range of years or a single year.
 
-def _abstract_cleaning(abstract):
-    """Lorem Ipsum"""
-    for pattern in SUBLIST:
-        abstract = re.sub(pattern, "", abstract)
-    for pattern in SUBLIST_INITIAL:
-        abstract = re.sub(pattern, "", abstract, flags=re.IGNORECASE)
-    tokens = abstract.split(". ")
-    if tokens[0].startswith("©"):
-        for pattern in SUBLIST_TOKEN_ZERO:
-            abstract = re.sub(pattern, r"\4", abstract)
-        abstract = re.sub("^©(.*?)\.", "", abstract)
-    elif (("©") in tokens[0]) and (not tokens[0].startswith("©")):
-        for pattern in SUBLIST_TOKEN_ONE:
-            abstract = re.sub(pattern, r"\4", abstract)
-        abstract = re.sub(
-            "^[0-9][0-9][0-9][0-9](.*?)©(.*?)the (authors|author|author(s))",
-            "",
-            abstract,
-            flags=re.IGNORECASE,
-        )
-    for idx in (-2, -1):
-        tokens = abstract.split(". ")
-        try:
-            if "©" in tokens[idx]:
-                abstract = ". ".join(tokens[:idx]) + "."
-        except:
-            pass
+    Returns:
+        ScopusSearch: The created ScopusSearch object.
+
+    Examples:
+        >>> create_scopus_search("machine learning", 2010, 2020, True)
+        <ScopusSearch object at 0x7f9a3a2b5a90>
+    """
+    if interval:
+        query += f" AND (PUBYEAR > {start_year}) AND (PUBYEAR < {end_year})"
     else:
-        abstract = abstract
-    for pattern in SUBLIST_POST:
-        abstract = re.sub(pattern, "", abstract)
-    return abstract
-
-
-def clean_dict(d):
-    """Lorem Ipsum"""
-    new_dict = {}
-    for key, value in d.items():
-        for pattern in SUBLIST_TITLE:
-            try:
-                key = re.sub(pattern, "", key)
-            except TypeError:
-                key = ''
-        new_dict[_abstract_cleaning(value)] = key
-    return new_dict
+        query += f" AND (PUBYEAR = {start_year})"
+    return ScopusSearch(query, cursor=True, refresh=False, verbose=True, download=True)
 
 
 def main() -> None:
     """Download some abstracts!"""
-    make_directories("abstracts")
+    dir_check_make("abstracts")
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -246,42 +217,33 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    if args.interval:
-        scopus_general = ScopusSearch(
-            f"TITLE-ABS-KEY({' OR '.join(general_search_terms)}) AND (DOCTYPE(ar) OR DOCTYPE(le) OR DOCTYPE(re) AND (PUBYEAR > {args.start}) AND (PUBYEAR < {args.end}))",
-            cursor=True,
-            refresh=False,
-            verbose=True,
-            download=True,
-        )
-        year = f"{args.start}_{args.end}"
-    else:
-        scopus_general = ScopusSearch(
-            f"TITLE-ABS-KEY({' OR '.join(general_search_terms)}) AND (DOCTYPE(ar) OR DOCTYPE(le) OR DOCTYPE(re) AND (PUBYEAR = {args.year}))",
-            cursor=True,
-            refresh=False,
-            verbose=True,
-            download=True,
-        )
-        year = args.year
-    
+    search_query = f"TITLE-ABS-KEY({' OR '.join(GENERAL_SEARCH_TERMS)}) AND (DOCTYPE(ar) OR DOCTYPE(le) OR DOCTYPE(re)"
+    scopus_general = create_scopus_search(
+        search_query, args.start, args.end, args.interval
+    )
+    year = f"{args.start}_{args.end}" if args.interval else args.year
+
     # save all abstracts w/ metadata
     df = pd.DataFrame(pd.DataFrame(scopus_general.results))
     df.to_pickle(f"abstracts/abstracts_results_{year}.pkl")
-    
+
     # save just title and abstract
-    subdf = df[df['description'].str.len() > 1].reset_index()  # filter out empty descriptions
-    subdf["combined"] = subdf["title"].astype(str) + ". " + subdf["description"].astype(str)
+    subdf = df[
+        df["description"].str.len() > 1
+    ].reset_index()  # filter out empty descriptions
+    subdf["combined"] = (
+        subdf["title"].astype(str) + ". " + subdf["description"].astype(str)
+    )
     subdf["combined"].to_pickle(f"abstracts/abstracts_{year}.pkl")
-    
+
     # save subset where publicationName matches journal in the test set
-    testdf = df[df['publicationName'].isin(test_set_journals)].reset_index()
+    testdf = df[df["publicationName"].isin(TEST_SET_JOURNALS)].reset_index()
     testdf.to_pickle(f"abstracts/test/abstracts_testset_{year}.pkl")
 
     # save as a dict for matching
-    # ab_dict = dict(zip(df.title, df.description)) 
+    # ab_dict = dict(zip(df.title, df.description))
     # with open(f'abstract_dicts/abstract_retrieval_{year}_dict.pkl', 'wb') as output:
-    #     pickle.dump(clean_dict(ab_dict), output)
+    #     pickle.dump(clean_abstract_collection(ab_dict), output)
 
 
 if __name__ == "__main__":

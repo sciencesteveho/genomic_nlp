@@ -7,6 +7,8 @@
 """Abstract df concatenation, cleaning with regular expressions, and relevancy
 classification"""
 
+
+import contextlib
 import os
 import pickle
 import re
@@ -14,16 +16,14 @@ from typing import Any, Dict, List, Tuple
 
 import pandas as pd
 
-from utils import (
-    _abstract_retrieval_concat,
-    SUBLIST,
-    SUBLIST_INITIAL,
-    SUBLIST_TOKEN_ZERO,
-    SUBLIST_TOKEN_ONE,
-    SUBLIST_POST,
-    SUBLIST_TITLE,
-    time_decorator,
-)
+from utils import _abstract_retrieval_concat
+from utils import SUBLIST
+from utils import SUBLIST_INITIAL
+from utils import SUBLIST_POST
+from utils import SUBLIST_TITLE
+from utils import SUBLIST_TOKEN_ONE
+from utils import SUBLIST_TOKEN_ZERO
+from utils import time_decorator
 
 
 class AbstractCollection:
@@ -90,34 +90,27 @@ class AbstractCollection:
                 )
             for idx in (-2, -1):
                 tokens = abstract.split(". ")
-                try:
+                with contextlib.suppress(Exception):
                     if "©" in tokens[idx]:
                         abstract = ". ".join(tokens[:idx]) + "."
-                except:
-                    pass
-            else:
-                abstract = abstract
+            abstract = abstract
             for pattern in SUBLIST_POST:
                 abstract = re.sub(pattern, "", abstract)
             cleaned_abstracts.append(abstract)
-        cleaned_abstracts = set([i for i in cleaned_abstracts if i])
-        return cleaned_abstracts
+        return {i for i in cleaned_abstracts if i}
 
-    def process_abstracts(self):
+    def process_abstracts(self) -> None:
         """Process abstracts through regex, NER, and classification"""
         self.cleaned_abstracts = self._abstract_cleaning()
 
 
-def main(path):
+def main(path: str) -> None:
     """Processing pipeline"""
     abstract_file = f"{path}/abstracts_combined.pkl"
 
     if not os.path.exists(abstract_file):
-        try:
+        with contextlib.suppress(FileExistsError):
             _abstract_retrieval_concat(data_path=path, save=True)
-        except FileExistsError:
-            pass
-
     abstractcollectionObj = AbstractCollection(abstracts=pd.read_pickle(abstract_file))
 
     # run processing!
@@ -129,6 +122,4 @@ def main(path):
 
 
 if __name__ == "__main__":
-    main(
-        path="/scratch/remills_root/remills/stevesho/bio_nlp/nlp/abstracts"
-    )
+    main(path="/scratch/remills_root/remills/stevesho/bio_nlp/nlp/abstracts")
