@@ -7,22 +7,12 @@
 
 
 import argparse
-import contextlib
-import os
-import pickle
-import re
-from typing import Any, Dict, List, Tuple
+from pathlib import Path
 
 import pandas as pd
 from pybliometrics.scopus import ScopusSearch
 
 from utils import dir_check_make
-from utils import SUBLIST
-from utils import SUBLIST_INITIAL
-from utils import SUBLIST_POST
-from utils import SUBLIST_TITLE
-from utils import SUBLIST_TOKEN_ONE
-from utils import SUBLIST_TOKEN_ZERO
 
 GENERAL_SEARCH_TERMS = [
     "ATAC-seq",
@@ -185,20 +175,15 @@ def create_scopus_search(
 
 def main() -> None:
     """Download some abstracts!"""
-    dir_check_make("abstracts")
+    working_dir = Path("/nfs/turbo/remillsscr/stevesho/nlp")
+    abstract_dir = working_dir / "abstracts"
+    dir_check_make(abstract_dir)
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--interval",
         help="search over an internal of time",
         action="store_true",
-        required=False,
-    )
-    parser.add_argument(
-        "--year",
-        type=int,
-        default=1898,
-        help="year abstracts are published",
         required=False,
     )
     parser.add_argument(
@@ -225,7 +210,7 @@ def main() -> None:
 
     # save all abstracts w/ metadata
     df = pd.DataFrame(pd.DataFrame(scopus_general.results))
-    df.to_pickle(f"abstracts/abstracts_results_{year}.pkl")
+    df.to_pickle(abstract_dir / f"abstracts_results_{year}.pkl")
 
     # save just title and abstract
     subdf = df[
@@ -234,11 +219,11 @@ def main() -> None:
     subdf["combined"] = (
         subdf["title"].astype(str) + ". " + subdf["description"].astype(str)
     )
-    subdf["combined"].to_pickle(f"abstracts/abstracts_{year}.pkl")
+    subdf["combined"].to_pickle(abstract_dir / f"abstracts_{year}.pkl")
 
     # save subset where publicationName matches journal in the test set
     testdf = df[df["publicationName"].isin(TEST_SET_JOURNALS)].reset_index()
-    testdf.to_pickle(f"abstracts/test/abstracts_testset_{year}.pkl")
+    testdf.to_pickle(abstract_dir / "test" / f"abstracts_testset_{year}.pkl")
 
     # save as a dict for matching
     # ab_dict = dict(zip(df.title, df.description))
