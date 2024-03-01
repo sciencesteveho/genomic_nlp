@@ -7,6 +7,7 @@
 import contextlib
 from datetime import timedelta
 import functools
+import glob
 import inspect
 import os
 from pathlib import Path
@@ -363,18 +364,17 @@ def filter_abstract_by_terms(string: str, substr: str, matches, remove, keep):
     return filtered
 
 
-def _abstract_retrieval_concat(data_path: str, save: bool) -> None:
+def _abstract_retrieval_concat(data_path: str, save: bool = True) -> None:
     """Take abstract outputs and combine into a single pd.series. Only needs to
     be done initially after downloading abstracts"""
-    files = os.listdir(data_path)
     frames = [
-        pd.read_pickle((os.path.join(data_path, file)), compression=None)
-        for file in files
-        if not file.startswith(".")
+        pd.read_pickle(file, compression=None)
+        for file in glob.glob(f"{data_path}/*.pkl")
     ]
     df = pd.concat(frames, ignore_index=True)
     if save:
-        df.to_pickle(f"{data_path}/abstracts_combined.pkl")
+        with open(f"{data_path}/abstracts_combined.pkl", "wb") as f:
+            df.to_pickle(f)
     else:
         return df
 
