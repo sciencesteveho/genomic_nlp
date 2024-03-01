@@ -130,4 +130,4 @@ def main(path: str) -> None:
 
 
 if __name__ == "__main__":
-    main(path="/scratch/remills_root/remills/stevesho/bio_nlp/nlp/abstracts")
+    main(path="/nfs/turbo/remillsscr/stevesho/nlp/abstracts")
