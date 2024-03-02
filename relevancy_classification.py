@@ -167,16 +167,16 @@ def _parse_args() -> argparse.Namespace:
         help="number of features for tf-idf",
         type=int,
     )
-    parser.add_argument("corpus", help="Path to the corpus file")
+    parser.add_argument("--corpus", help="Path to the corpus file")
     parser.add_argument(
-        "relevant_abstracts", help="Path to the relevant abstracts file"
+        "--relevant_abstracts", help="Path to the relevant abstracts file"
     )
     parser.add_argument(
-        "negative_abstracts", help="Path to the negative abstracts file"
+        "--negative_abstracts", help="Path to the negative abstracts file"
     )
-    parser.add_argument("pos_set_path", help="Path to the positive set directory")
-    parser.add_argument("negative_set_file", help="Path to the negative set file")
-    parser.add_argument("model_save_dir", help="Directory to save the model")
+    parser.add_argument("--pos_set_path", help="Path to the positive set directory")
+    parser.add_argument("--negative_set_file", help="Path to the negative set file")
+    parser.add_argument("--model_save_dir", help="Directory to save the model")
     return parser.parse_args()
 
 
