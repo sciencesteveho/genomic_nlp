@@ -11,6 +11,7 @@ frequency. Implements a logistic classifier and a simple multi-layer perceptron,
 validated by 10-fold cross validation."""
 
 import argparse
+import csv
 from pathlib import Path
 import pickle
 from typing import Set, Tuple, Union
@@ -46,7 +47,9 @@ def prepare_annotated_classification_set(
     Returns:
         pd.DataFrame
     """
-    df = pd.read_csv(abstracts, header=None, names=["abstracts"], sep="\n")
+    with open(abstracts, "r") as f:
+        lines = f.readlines()
+    df = pd.DataFrame(lines, columns=["abstracts"])
     df = df.assign(encoding=encoding)
     return df.sample(frac=1).reset_index(drop=True)
 
