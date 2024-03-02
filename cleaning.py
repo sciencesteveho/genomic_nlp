@@ -70,13 +70,19 @@ class AbstractCollection:
     def _abstract_cleaning(self):
         """Clean abstracts through a series of regex substitutions."""
         cleaned_abstracts = self.abstracts.copy()
-        for pattern in SUBLIST:
-            cleaned_abstracts = cleaned_abstracts.str.replace(pattern, "", regex=True)
-        for pattern in SUBLIST_INITIAL:
-            cleaned_abstracts = cleaned_abstracts.str.replace(
-                pattern, "", flags=re.IGNORECASE, regex=True
-            )
+
+        # Apply regex substitutions using vectorized replace
+        cleaned_abstracts = cleaned_abstracts.str.replace(
+            "|".join(SUBLIST), "", regex=True
+        )
+        cleaned_abstracts = cleaned_abstracts.str.replace(
+            "|".join(SUBLIST_INITIAL), "", flags=re.IGNORECASE, regex=True
+        )
+
+        # Split abstracts into tokens
         tokens = cleaned_abstracts.str.split(". ")
+
+        # Apply vectorized replacements based on conditions
         mask = tokens.str[0].str.startswith("©")
         cleaned_abstracts.loc[mask] = cleaned_abstracts.loc[mask].str.replace(
             SUBLIST_TOKEN_ZERO, r"\4", regex=True
@@ -84,6 +90,7 @@ class AbstractCollection:
         cleaned_abstracts.loc[mask] = cleaned_abstracts.loc[mask].str.replace(
             "^©(.*?)\.", "", regex=True
         )
+
         mask = (~tokens.str[0].str.startswith("©")) & (tokens.str[0].str.contains("©"))
         cleaned_abstracts.loc[mask] = cleaned_abstracts.loc[mask].str.replace(
             SUBLIST_TOKEN_ONE, r"\4", regex=True
@@ -94,15 +101,20 @@ class AbstractCollection:
             flags=re.IGNORECASE,
             regex=True,
         )
-        tokens = cleaned_abstracts.str.split(". ")
+
+        # Apply vectorized replacements based on conditions
         cleaned_abstracts.loc[tokens.str[-2].str.contains("©")] = tokens.loc[
             tokens.str[-2].str.contains("©")
         ].apply(lambda x: ". ".join(x[:-2]) + ".", axis=1)
         cleaned_abstracts.loc[tokens.str[-1].str.contains("©")] = tokens.loc[
             tokens.str[-1].str.contains("©")
         ].apply(lambda x: ". ".join(x[:-1]) + ".", axis=1)
-        for pattern in SUBLIST_POST:
-            cleaned_abstracts = cleaned_abstracts.str.replace(pattern, "", regex=True)
+
+        # Apply regex substitutions using vectorized replace
+        cleaned_abstracts = cleaned_abstracts.str.replace(
+            "|".join(SUBLIST_POST), "", regex=True
+        )
+
         return cleaned_abstracts.dropna().unique()
 
     def process_abstracts(self) -> None:
