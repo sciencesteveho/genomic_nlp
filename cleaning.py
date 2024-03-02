@@ -21,10 +21,8 @@ from utils import _abstract_retrieval_concat
 from utils import SUBLIST
 from utils import SUBLIST_INITIAL
 from utils import SUBLIST_POST
-from utils import SUBLIST_TITLE
 from utils import SUBLIST_TOKEN_ONE
 from utils import SUBLIST_TOKEN_ZERO
-from utils import time_decorator
 
 
 class AbstractCollection:
@@ -62,60 +60,43 @@ class AbstractCollection:
 
     SUBLIST_SPACES = ["-", "\s+"]
 
-    def __init__(self, abstracts: pd.Series) -> None:
+    def __init__(self, abstracts) -> None:
         """Initialize the class, only adding abstracts that are not empty"""
-        self.abstracts = abstracts[abstracts.notnull()]
+        self.abstracts = [abstract for abstract in abstracts if abstract]
 
     # @time_decorator
     def _abstract_cleaning(self):
-        """Clean abstracts through a series of regex substitutions."""
-        cleaned_abstracts = self.abstracts.copy()
-
-        # Apply regex substitutions using vectorized replace
-        cleaned_abstracts = cleaned_abstracts.str.replace(
-            "|".join(SUBLIST), "", regex=True
-        )
-        cleaned_abstracts = cleaned_abstracts.str.replace(
-            "|".join(SUBLIST_INITIAL), "", flags=re.IGNORECASE, regex=True
-        )
-
-        # Split abstracts into tokens
-        tokens = cleaned_abstracts.str.split(". ")
-
-        # Apply vectorized replacements based on conditions
-        mask = tokens.str[0].str.startswith("©")
-        cleaned_abstracts.loc[mask] = cleaned_abstracts.loc[mask].str.replace(
-            SUBLIST_TOKEN_ZERO, r"\4", regex=True
-        )
-        cleaned_abstracts.loc[mask] = cleaned_abstracts.loc[mask].str.replace(
-            "^©(.*?)\.", "", regex=True
-        )
-
-        mask = (~tokens.str[0].str.startswith("©")) & (tokens.str[0].str.contains("©"))
-        cleaned_abstracts.loc[mask] = cleaned_abstracts.loc[mask].str.replace(
-            SUBLIST_TOKEN_ONE, r"\4", regex=True
-        )
-        cleaned_abstracts.loc[mask] = cleaned_abstracts.loc[mask].str.replace(
-            "^[0-9][0-9][0-9][0-9](.*?)©(.*?)the (authors|author|author(s))",
-            "",
-            flags=re.IGNORECASE,
-            regex=True,
-        )
-
-        # Apply vectorized replacements based on conditions
-        cleaned_abstracts.loc[tokens.str[-2].str.contains("©")] = tokens.loc[
-            tokens.str[-2].str.contains("©")
-        ].apply(lambda x: ". ".join(x[:-2]) + ".", axis=1)
-        cleaned_abstracts.loc[tokens.str[-1].str.contains("©")] = tokens.loc[
-            tokens.str[-1].str.contains("©")
-        ].apply(lambda x: ". ".join(x[:-1]) + ".", axis=1)
-
-        # Apply regex substitutions using vectorized replace
-        cleaned_abstracts = cleaned_abstracts.str.replace(
-            "|".join(SUBLIST_POST), "", regex=True
-        )
-
-        return cleaned_abstracts.dropna().unique()
+        """Lorem Ipsum"""
+        cleaned_abstracts = []
+        for abstract in self.abstracts:
+            for pattern in SUBLIST:
+                abstract = re.sub(pattern, "", abstract)
+            for pattern in SUBLIST_INITIAL:
+                abstract = re.sub(pattern, "", abstract, flags=re.IGNORECASE)
+            tokens = abstract.split(". ")
+            if tokens[0].startswith("©"):
+                for pattern in SUBLIST_TOKEN_ZERO:
+                    abstract = re.sub(pattern, r"\4", abstract)
+                abstract = re.sub("^©(.*?)\.", "", abstract)
+            elif (("©") in tokens[0]) and (not tokens[0].startswith("©")):
+                for pattern in SUBLIST_TOKEN_ONE:
+                    abstract = re.sub(pattern, r"\4", abstract)
+                abstract = re.sub(
+                    "^[0-9][0-9][0-9][0-9](.*?)©(.*?)the (authors|author|author(s))",
+                    "",
+                    abstract,
+                    flags=re.IGNORECASE,
+                )
+            for idx in (-2, -1):
+                tokens = abstract.split(". ")
+                with contextlib.suppress(Exception):
+                    if "©" in tokens[idx]:
+                        abstract = ". ".join(tokens[:idx]) + "."
+            abstract = abstract
+            for pattern in SUBLIST_POST:
+                abstract = re.sub(pattern, "", abstract)
+            cleaned_abstracts.append(abstract)
+        return {i for i in cleaned_abstracts if i}
 
     def process_abstracts(self) -> None:
         """Process abstracts through regex, NER, and classification"""
