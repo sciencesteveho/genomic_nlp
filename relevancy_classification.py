@@ -103,8 +103,7 @@ def _classify_test_corpus(corpus, vectorizer, selector, classifier):
     y_test = corpus["encoding"].values
     predictions = _classify_full_corpus(vectorizer, corpora, selector, classifier)
     accuracy = accuracy_score(y_test, predictions)
-    df = pd.DataFrame({"abstracts": corpora, "predictions": predictions})
-    return df, accuracy
+    yield from zip(corpora, predictions)
 
 
 def _classify_full_corpus(vectorizer, corpora, selector, classifier):
@@ -119,7 +118,7 @@ def classify_corpus(
     selector: SelectKBest,
     classifier: LogisticRegression,
     test: bool = False,
-) -> Union[pd.DataFrame, tuple]:
+) -> pd.DataFrame:
     """Classifies a corpus of abstracts using the provided vectorizer, feature selector, and classifier.
 
     Args:
@@ -133,10 +132,51 @@ def classify_corpus(
         pd.DataFrame: A DataFrame containing the classified abstracts.
     """
     if test:
-        return _classify_test_corpus(corpus, vectorizer, selector, classifier)
-    corpora = list(corpus)
-    predictions = _classify_full_corpus(vectorizer, corpora, selector, classifier)
-    return pd.DataFrame({"abstracts": corpora, "predictions": predictions})
+        generator = _classify_test_corpus(corpus, vectorizer, selector, classifier)
+    else:
+        generator = (
+            (
+                abstract,
+                _classify_single_abstract(vectorizer, abstract, selector, classifier),
+            )
+            for abstract in corpus["abstracts"]
+        )
+
+    results = list(generator)
+    abstracts, predictions = zip(*results[:-1])
+    accuracy = results[-1]
+
+    df = pd.DataFrame({"abstracts": abstracts, "predictions": predictions})
+    df["accuracy"] = accuracy
+
+    return df
+
+
+# def classify_corpus(
+#     corpus: Union[Set[str], pd.DataFrame],
+#     vectorizer: TfidfVectorizer,
+#     selector: SelectKBest,
+#     classifier: LogisticRegression,
+#     test: bool = False,
+# ) -> Generator[Tuple[str, int], None, None]:
+#     """Classifies a corpus of abstracts using the provided vectorizer, feature selector, and classifier.
+
+#     Args:
+#         corpus (Union[Set[str], pd.DataFrame]): The corpus of abstracts to classify.
+#         vectorizer (TfidfVectorizer): The vectorizer used to transform the abstracts into feature vectors.
+#         selector (SelectKBest): The feature selector used to select the most informative features.
+#         classifier (LogisticRegression): The classifier used to predict the class labels.
+#         test (bool, optional): Flag indicating whether the corpus is a test set. Defaults to False.
+
+#     Yields:
+#         Tuple[str, int]: A tuple containing the classified abstract and its prediction label.
+#     """
+#     if test:
+#         yield from _classify_test_corpus(corpus, vectorizer, selector, classifier)
+#     else:
+#         for abstract in corpus:
+#             prediction = _classify_single_abstract(vectorizer, abstract, selector, classifier)
+#             yield abstract, prediction
 
 
 def _get_testset(
