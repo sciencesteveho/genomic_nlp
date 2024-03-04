@@ -98,6 +98,21 @@ def vectorize_and_train_logistic_classifier(
     return vectorizer, selector, classifier
 
 
+def _classify_test_corpus(corpus, vectorizer, selector, classifier):
+    corpora = corpus["abstracts"].values
+    y_test = corpus["encoding"].values
+    predictions = _classify_full_corpus(vectorizer, corpora, selector, classifier)
+    accuracy = accuracy_score(y_test, predictions)
+    df = pd.DataFrame({"abstracts": corpora, "predictions": predictions})
+    return df, accuracy
+
+
+def _classify_full_corpus(vectorizer, corpora, selector, classifier):
+    ex = vectorizer.transform(corpora)
+    ex2 = selector.transform(ex)
+    return classifier.predict(ex2)
+
+
 def classify_corpus(
     corpus: Union[Set[str], pd.DataFrame],
     vectorizer: TfidfVectorizer,
@@ -117,16 +132,11 @@ def classify_corpus(
     Returns:
         pd.DataFrame: A DataFrame containing the classified abstracts.
     """
-    corpora = corpus["abstracts"].values if test else list(corpus)
-    ex = vectorizer.transform(corpora)
-    ex2 = selector.transform(ex)
-    predictions = classifier.predict(ex2)
-    df = pd.DataFrame(corpora, columns=["abstracts"])
-    df["predictions"] = predictions
     if test:
-        accuracy = accuracy_score(corpus["encoding"].values, predictions)
-        return df, accuracy
-    return df
+        return _classify_test_corpus(corpus, vectorizer, selector, classifier)
+    corpora = list(corpus)
+    predictions = _classify_full_corpus(vectorizer, corpora, selector, classifier)
+    return pd.DataFrame({"abstracts": corpora, "predictions": predictions})
 
 
 def _get_testset(
