@@ -179,11 +179,14 @@ def create_scopus_search(
 
 def main() -> None:
     """Download some abstracts!"""
-    working_dir = Path("/nfs/turbo/remillsscr/stevesho/nlp")
-    abstract_dir = working_dir / "abstracts"
-    dir_check_make(abstract_dir)
-
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--working_dir",
+        help="working directory",
+        type=str,
+        default="/ocean/projects/bio210019p/stevesho/nlp",
+        required=False,
+    )
     parser.add_argument(
         "--interval",
         help="search over an internal of time",
@@ -205,6 +208,10 @@ def main() -> None:
         required=False,
     )
     args = parser.parse_args()
+
+    working_dir = Path(args.working_dir)
+    abstract_dir = working_dir / "abstracts"
+    dir_check_make(abstract_dir)
 
     search_query = f"TITLE-ABS-KEY({' OR '.join(GENERAL_SEARCH_TERMS)}) AND (DOCTYPE(ar) OR DOCTYPE(le) OR DOCTYPE(re))"
     scopus_general = create_scopus_search(
