@@ -8,9 +8,10 @@
 
 import argparse
 from pathlib import Path
+from typing import List, Tuple, Union
 
 import pandas as pd
-from pybliometrics.scopus import ScopusSearch
+from pybliometrics.scopus import ScopusSearch  # type: ignore
 
 from utils import dir_check_make
 
@@ -151,7 +152,7 @@ TEST_SET_JOURNALS = [
 def create_scopus_search(
     query: str,
     start_year: int,
-    end_year: int = None,
+    end_year: Union[int, None] = None,
     interval: bool = False,
 ) -> ScopusSearch:
     """Creates a ScopusSearch object with the specified query, start year, end year, and interval.

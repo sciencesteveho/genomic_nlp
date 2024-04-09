@@ -13,10 +13,10 @@ import os
 from pathlib import Path
 import random
 import time
-from typing import Any, Callable, List
+from typing import Any, Callable, List, Union
 
 import pandas as pd
-from tqdm import tqdm
+from tqdm import tqdm  # type: ignore
 
 SUBLIST = [
     "\[Figure not available\: see fulltext.\]\.",
@@ -311,7 +311,7 @@ COPY_GENES = {
 }
 
 
-def dir_check_make(dir_path: str) -> None:
+def dir_check_make(dir_path: Union[str, Path]) -> None:
     """Check if a directory exists, if not, create it."""
     Path(dir_path).mkdir(exist_ok=True)
 

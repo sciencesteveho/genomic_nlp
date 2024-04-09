@@ -17,16 +17,16 @@ import pickle
 import re
 from typing import Dict, List, Set
 
-from fse.models import uSIF
-from gensim.models import Word2Vec
-from gensim.models.callbacks import CallbackAny2Vec
-from gensim.models.phrases import Phraser
-from gensim.models.phrases import Phrases
+from fse.models import uSIF  # type: ignore
+from gensim.models import Word2Vec  # type: ignore
+from gensim.models.callbacks import CallbackAny2Vec  # type: ignore
+from gensim.models.phrases import Phraser  # type: ignore
+from gensim.models.phrases import Phrases  # type: ignore
 import pandas as pd
-from progressbar import ProgressBar
-import pybedtools
-import spacy
-from tqdm import tqdm
+from progressbar import ProgressBar  # type: ignore
+import pybedtools  # type: ignore
+import spacy  # type: ignore
+from tqdm import tqdm  # type: ignore
 
 from utils import COPY_GENES
 from utils import dir_check_make
