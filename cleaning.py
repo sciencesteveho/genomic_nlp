@@ -104,7 +104,12 @@ class AbstractCollection:
 def main() -> None:
     """Processing pipeline"""
     parser = argparse.ArgumentParser()
-    parser.add_argument("--path", type=str, help="Path to abstracts")
+    parser.add_argument(
+        "--path",
+        type=str,
+        default="/ocean/projects/bio210019p/stevesho/nlp/abstracts",
+        help="Path to abstracts",
+    )
     args = parser.parse_args()
 
     working_path = Path(args.path)

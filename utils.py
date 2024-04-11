@@ -364,7 +364,7 @@ def filter_abstract_by_terms(string: str, substr: str, matches, remove, keep):
     return filtered
 
 
-def _abstract_retrieval_concat(data_path: str, save: bool = True) -> None:
+def _abstract_retrieval_concat(data_path: Union[Path, str], save: bool = True) -> None:
     """Take abstract outputs and combine into a single pd.series. Only needs to
     be done initially after downloading abstracts"""
     frames = [
