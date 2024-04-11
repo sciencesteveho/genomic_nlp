@@ -1,13 +1,11 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
-#
-# // TO-DO //
-# - [ ]
-
-"""Abstract df concatenation, cleaning with regular expressions, and relevancy
-classification"""
 
 
+"""Abstract dataframe concatenation and cleaning with regular expressions."""
+
+
+import argparse
 import contextlib
 import os
 from pathlib import Path
@@ -98,29 +96,33 @@ class AbstractCollection:
             cleaned_abstracts.append(abstract)
         return {i for i in cleaned_abstracts if i}
 
-    def process_abstracts(self) -> None:
+    def clean_abstracts(self) -> None:
         """Process abstracts through regex, NER, and classification"""
         self.cleaned_abstracts = self._abstract_cleaning()
 
 
-def main(path: str) -> None:
+def main() -> None:
     """Processing pipeline"""
-    path = Path(path)
-    abstract_file = path / "abstracts_combined.pkl"
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--path", type=str, help="Path to abstracts")
+    args = parser.parse_args()
+
+    working_path = Path(args.path)
+    abstract_file = working_path / "abstracts_combined.pkl"
 
     if not os.path.exists(abstract_file):
         with contextlib.suppress(FileExistsError):
-            _abstract_retrieval_concat(data_path=path, save=True)
+            _abstract_retrieval_concat(data_path=working_path, save=True)
 
     abstractcollectionObj = AbstractCollection(abstracts=pd.read_pickle(abstract_file))
 
     # run processing!
-    abstractcollectionObj.process_abstracts()
+    abstractcollectionObj.clean_abstracts()
 
     # save
-    with open(path / "cleaned_abstracts.pkl", "wb") as f:
+    with open(working_path / "cleaned_abstracts.pkl", "wb") as f:
         pickle.dump(abstractcollectionObj.cleaned_abstracts, f)
 
 
 if __name__ == "__main__":
-    main(path="/nfs/turbo/remillsscr/stevesho/nlp/abstracts")
+    main()
