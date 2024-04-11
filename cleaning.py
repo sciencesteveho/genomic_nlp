@@ -119,9 +119,12 @@ def main() -> None:
         with contextlib.suppress(FileExistsError):
             _abstract_retrieval_concat(data_path=working_path, save=True)
 
+    print(f"Abstract file found or created without issue {abstract_file}")
+
     abstractcollectionObj = AbstractCollection(abstracts=pd.read_pickle(abstract_file))
 
     # run processing!
+    print("Cleaning abstracts...")
     abstractcollectionObj.clean_abstracts()
 
     # save
