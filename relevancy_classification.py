@@ -16,16 +16,16 @@ from pathlib import Path
 import pickle
 from typing import Set, Tuple, Union
 
-import joblib
+import joblib  # type: ignore
 import numpy as np
 import pandas as pd
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.feature_selection import f_classif
-from sklearn.feature_selection import SelectKBest
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score
-from sklearn.model_selection import cross_val_score
-from sklearn.neural_network import MLPClassifier
+from sklearn.feature_extraction.text import TfidfVectorizer  # type: ignore
+from sklearn.feature_selection import f_classif  # type: ignore
+from sklearn.feature_selection import SelectKBest  # type: ignore
+from sklearn.linear_model import LogisticRegression  # type: ignore
+from sklearn.metrics import accuracy_score  # type: ignore
+from sklearn.model_selection import cross_val_score  # type: ignore
+from sklearn.neural_network import MLPClassifier  # type: ignore
 
 from cleaning import AbstractCollection
 from utils import _abstract_retrieval_concat
@@ -33,7 +33,7 @@ from utils import _abstract_retrieval_concat
 RANDOM_SEED = 42
 
 
-def prepare_annotated_classification_set(
+def _prepare_annotated_classification_set(
     abstracts: str,
     encoding: int,
 ) -> pd.DataFrame:
@@ -99,6 +99,17 @@ def vectorize_and_train_logistic_classifier(
 
 
 def _classify_test_corpus(corpus, vectorizer, selector, classifier):
+    """Classify a test corpus using the provided vectorizer, selector, and classifier.
+
+    Args:
+        corpus (pd.DataFrame): The test corpus containing abstracts and encodings.
+        vectorizer: The vectorizer used to transform the text data.
+        selector: The feature selector for transforming the vectorized data.
+        classifier: The classification model for predicting labels.
+
+    Yields:
+        tuple: A generator yielding tuples of abstracts and their corresponding predictions.
+    """
     corpora = corpus["abstracts"].values
     y_test = corpus["encoding"].values
     predictions = _classify_full_corpus(vectorizer, corpora, selector, classifier)
@@ -107,9 +118,37 @@ def _classify_test_corpus(corpus, vectorizer, selector, classifier):
 
 
 def _classify_full_corpus(vectorizer, corpora, selector, classifier):
+    """Classify a full corpus using the provided vectorizer, selector, and classifier.
+
+    Args:
+        vectorizer: The vectorizer used to transform the text data.
+        corpora: The corpus to be classified.
+        selector: The feature selector for transforming the vectorized data.
+        classifier: The classification model for predicting labels.
+
+    Returns:
+        array-like: Predicted labels for the input corpus.
+    """
     ex = vectorizer.transform(corpora)
     ex2 = selector.transform(ex)
     return classifier.predict(ex2)
+
+
+def _classify_single_abstract(vectorizer, abstract, selector, classifier):
+    """Classify a single abstract using the provided vectorizer, selector, and classifier.
+
+    Args:
+        vectorizer: The vectorizer used to transform the text data.
+        abstract: The single abstract to be classified.
+        selector: The feature selector for transforming the vectorized data.
+        classifier: The classification model for predicting labels.
+
+    Returns:
+        array-like: Predicted label for the input abstract.
+    """
+    ex = vectorizer.transform([abstract])
+    ex2 = selector.transform(ex)
+    return classifier.predict(ex2)[0]
 
 
 def classify_corpus(
@@ -205,7 +244,7 @@ def _get_testset(
     testCorpus = AbstractCollection(
         df[df.columns[0]].astype(str) + ". " + df[df.columns[1]].astype(str)
     )
-    testCorpus.process_abstracts()
+    testCorpus.clean_abstracts()
     newdf = pd.DataFrame(testCorpus.cleaned_abstracts, columns=["abstracts"])
     newdf["encoding"] = 1 if positive else 0
     return newdf
@@ -244,10 +283,10 @@ def main() -> None:
 
     classification_trainset = pd.concat(
         [
-            prepare_annotated_classification_set(
+            _prepare_annotated_classification_set(
                 abstracts=args.relevant_abstracts, encoding=1
             ),
-            prepare_annotated_classification_set(
+            _prepare_annotated_classification_set(
                 abstracts=args.negative_abstracts, encoding=0
             ),
         ],

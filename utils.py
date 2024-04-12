@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 import random
 import time
-from typing import Any, Callable, List, Union
+from typing import Any, Callable, List, Optional, Union
 
 import pandas as pd
 from tqdm import tqdm  # type: ignore
@@ -364,7 +364,9 @@ def filter_abstract_by_terms(string: str, substr: str, matches, remove, keep):
     return filtered
 
 
-def _abstract_retrieval_concat(data_path: Union[Path, str], save: bool = True) -> None:
+def _abstract_retrieval_concat(
+    data_path: Union[Path, str], save: bool = True
+) -> pd.DataFrame:
     """Take abstract outputs and combine into a single pd.series. Only needs to
     be done initially after downloading abstracts"""
     frames = [
@@ -375,8 +377,7 @@ def _abstract_retrieval_concat(data_path: Union[Path, str], save: bool = True) -
     if save:
         with open(f"{data_path}/abstracts_combined.pkl", "wb") as f:
             df.to_pickle(f)
-    else:
-        return df
+    return df
 
 
 def _random_subset_abstract_printer(n: int, abstracts: List) -> None:
