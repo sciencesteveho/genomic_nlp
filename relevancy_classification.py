@@ -154,7 +154,9 @@ def classify_corpus(
         pd.DataFrame: A DataFrame containing the classified abstracts.
     """
     if test:
-        results, accuracy = _classify_test_corpus(corpus, vectorizer, selector, classifier)
+        results, accuracy = _classify_test_corpus(
+            corpus, vectorizer, selector, classifier
+        )
         abstracts, predictions = zip(*results)
     else:
         predictions = _classify_full_corpus(vectorizer, corpus, selector, classifier)

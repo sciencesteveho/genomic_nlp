@@ -66,8 +66,8 @@ class AbstractCollection:
                 + ". "
                 + abstracts["description"].astype(str)
             )
-        elif isinstance(abstracts, list):
-            self.abstracts = [abstract for abstract in abstracts if abstract]
+        elif isinstance(abstracts, pd.Series):
+            self.abstracts = abstracts
 
     # @time_decorator
     def _abstract_cleaning(self):
