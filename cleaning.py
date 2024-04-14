@@ -60,7 +60,7 @@ class AbstractCollection:
 
     def __init__(self, abstracts) -> None:
         """Initialize the class, only adding abstracts that are not empty"""
-        self.abstracts = [abstract for abstract in abstracts if abstract]
+        self.abstracts = abstracts['title'].astype(str) + ". " + abstracts['abstract'].astype(str)
 
     # @time_decorator
     def _abstract_cleaning(self):
@@ -121,7 +121,9 @@ def main() -> None:
 
     print(f"Abstract file found or created without issue {abstract_file}")
 
-    abstractcollectionObj = AbstractCollection(abstracts=pd.read_pickle(abstract_file))
+    abstractcollectionObj = AbstractCollection(
+        abstracts=pd.read_pickle(abstract_file)
+    )
 
     # run processing!
     print("Cleaning abstracts...")
