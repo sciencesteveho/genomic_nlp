@@ -173,13 +173,7 @@ def classify_corpus(
     if test:
         generator = _classify_test_corpus(corpus, vectorizer, selector, classifier)
     else:
-        generator = (
-            (
-                abstract,
-                _classify_single_abstract(vectorizer, abstract, selector, classifier),
-            )
-            for abstract in corpus["abstracts"]
-        )
+        generator = _classify_full_corpus(corpus, vectorizer, selector, classifier)
 
     results = list(generator)
     abstracts, predictions = zip(*results[:-1])
