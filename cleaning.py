@@ -60,7 +60,7 @@ class AbstractCollection:
 
     def __init__(self, abstracts) -> None:
         """Initialize the class, only adding abstracts that are not empty"""
-        self.abstracts = abstracts['title'].astype(str) + ". " + abstracts['abstract'].astype(str)
+        self.abstracts = abstracts['title'].astype(str) + ". " + abstracts['description'].astype(str)
 
     # @time_decorator
     def _abstract_cleaning(self):
