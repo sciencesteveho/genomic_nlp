@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 import pickle
 import re
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Union
 
 import pandas as pd
 
@@ -58,9 +58,16 @@ class AbstractCollection:
 
     SUBLIST_SPACES = ["-", "\s+"]
 
-    def __init__(self, abstracts) -> None:
+    def __init__(self, abstracts: Union[List[str], pd.DataFrame]) -> None:
         """Initialize the class, only adding abstracts that are not empty"""
-        self.abstracts = abstracts['title'].astype(str) + ". " + abstracts['description'].astype(str)
+        if isinstance(abstracts, pd.DataFrame):
+            self.abstracts = (
+                abstracts["title"].astype(str)
+                + ". "
+                + abstracts["description"].astype(str)
+            )
+        elif isinstance(abstracts, list):
+            self.abstracts = [abstract for abstract in abstracts if abstract]
 
     # @time_decorator
     def _abstract_cleaning(self):
@@ -121,9 +128,7 @@ def main() -> None:
 
     print(f"Abstract file found or created without issue {abstract_file}")
 
-    abstractcollectionObj = AbstractCollection(
-        abstracts=pd.read_pickle(abstract_file)
-    )
+    abstractcollectionObj = AbstractCollection(abstracts=pd.read_pickle(abstract_file))
 
     # run processing!
     print("Cleaning abstracts...")
