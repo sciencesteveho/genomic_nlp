@@ -114,7 +114,7 @@ def _classify_test_corpus(corpus, vectorizer, selector, classifier):
     y_test = corpus["encoding"].values
     predictions = _classify_full_corpus(vectorizer, corpora, selector, classifier)
     accuracy = accuracy_score(y_test, predictions)
-    yield from zip(corpora, predictions)
+    return zip(corpora, predictions), accuracy
 
 
 def _classify_full_corpus(vectorizer, corpora, selector, classifier):
@@ -171,13 +171,19 @@ def classify_corpus(
         pd.DataFrame: A DataFrame containing the classified abstracts.
     """
     if test:
-        results = _classify_test_corpus(corpus, vectorizer, selector, classifier)
+        results, accuracy = _classify_test_corpus(corpus, vectorizer, selector, classifier)
     else:
-        results = _classify_full_corpus(corpus, vectorizer, selector, classifier)
+        results = _classify_full_corpus(vectorizer, corpus, selector, classifier)
+        accuracy = None
 
-    abstracts, predictions, accuracy = zip(*results)
-    
-    return pd.DataFrame({"abstracts": abstracts, "predictions": predictions, "accuracy": accuracy})
+    abstracts, predictions = zip(*results)
+
+    df = pd.DataFrame({"abstracts": abstracts, "predictions": predictions})
+    if accuracy is not None:
+        df["accuracy"] = accuracy
+
+    return df
+
 
 
 # def classify_corpus(
