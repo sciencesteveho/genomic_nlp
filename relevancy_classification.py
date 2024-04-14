@@ -134,23 +134,6 @@ def _classify_full_corpus(vectorizer, corpora, selector, classifier):
     return classifier.predict(ex2)
 
 
-def _classify_single_abstract(vectorizer, abstract, selector, classifier):
-    """Classify a single abstract using the provided vectorizer, selector, and classifier.
-
-    Args:
-        vectorizer: The vectorizer used to transform the text data.
-        abstract: The single abstract to be classified.
-        selector: The feature selector for transforming the vectorized data.
-        classifier: The classification model for predicting labels.
-
-    Returns:
-        array-like: Predicted label for the input abstract.
-    """
-    ex = vectorizer.transform([abstract])
-    ex2 = selector.transform(ex)
-    return classifier.predict(ex2)[0]
-
-
 def classify_corpus(
     corpus: Union[Set[str], pd.DataFrame],
     vectorizer: TfidfVectorizer,
@@ -172,11 +155,11 @@ def classify_corpus(
     """
     if test:
         results, accuracy = _classify_test_corpus(corpus, vectorizer, selector, classifier)
+        abstracts, predictions = zip(*results)
     else:
-        results = _classify_full_corpus(vectorizer, corpus, selector, classifier)
+        predictions = _classify_full_corpus(vectorizer, corpus, selector, classifier)
         accuracy = None
-
-    abstracts, predictions = zip(*results)
+        abstracts = corpus
 
     df = pd.DataFrame({"abstracts": abstracts, "predictions": predictions})
     if accuracy is not None:
@@ -184,6 +167,22 @@ def classify_corpus(
 
     return df
 
+
+# def _classify_single_abstract(vectorizer, abstract, selector, classifier):
+#     """Classify a single abstract using the provided vectorizer, selector, and classifier.
+
+#     Args:
+#         vectorizer: The vectorizer used to transform the text data.
+#         abstract: The single abstract to be classified.
+#         selector: The feature selector for transforming the vectorized data.
+#         classifier: The classification model for predicting labels.
+
+#     Returns:
+#         array-like: Predicted label for the input abstract.
+#     """
+#     ex = vectorizer.transform([abstract])
+#     ex2 = selector.transform(ex)
+#     return classifier.predict(ex2)[0]
 
 
 # def classify_corpus(
