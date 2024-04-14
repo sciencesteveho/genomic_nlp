@@ -159,7 +159,7 @@ def classify_corpus(
     else:
         predictions = _classify_full_corpus(vectorizer, corpus, selector, classifier)
         accuracy = None
-        abstracts = corpus
+        abstracts = list(corpus)
 
     df = pd.DataFrame({"abstracts": abstracts, "predictions": predictions})
     if accuracy is not None:
