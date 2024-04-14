@@ -171,18 +171,13 @@ def classify_corpus(
         pd.DataFrame: A DataFrame containing the classified abstracts.
     """
     if test:
-        generator = _classify_test_corpus(corpus, vectorizer, selector, classifier)
+        results = _classify_test_corpus(corpus, vectorizer, selector, classifier)
     else:
-        generator = _classify_full_corpus(corpus, vectorizer, selector, classifier)
+        results = _classify_full_corpus(corpus, vectorizer, selector, classifier)
 
-    results = list(generator)
-    abstracts, predictions = zip(*results[:-1])
-    accuracy = results[-1]
-
-    df = pd.DataFrame({"abstracts": abstracts, "predictions": predictions})
-    df["accuracy"] = accuracy
-
-    return df
+    abstracts, predictions, accuracy = zip(*results)
+    
+    return pd.DataFrame({"abstracts": abstracts, "predictions": predictions, "accuracy": accuracy})
 
 
 # def classify_corpus(
