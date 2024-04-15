@@ -1,17 +1,15 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
-#
-# // TO-DO //
-# - [ ] first TODO
-#   - [ ] nested TODO
 
 
 """Classify relevancy of abstracts based on term frequency and inverse document
-frequency. Implements a logistic classifier and a simple multi-layer perceptron,
-validated by 10-fold cross validation."""
+frequency. Implements a logistic classifier validated by 5-fold cross
+validation."""
+
 
 import argparse
-import csv
+import contextlib
+import os
 from pathlib import Path
 import pickle
 from typing import Set, Tuple, Union
@@ -27,10 +25,26 @@ from sklearn.metrics import accuracy_score  # type: ignore
 from sklearn.model_selection import cross_val_score  # type: ignore
 from sklearn.neural_network import MLPClassifier  # type: ignore
 
-from cleaning import AbstractCollection
+from abstractcollection import AbstractCollection
 from utils import _abstract_retrieval_concat
 
 RANDOM_SEED = 42
+
+
+def get_training_data(corpus_path: str) -> pd.DataFrame:
+    """Prepares and cleans an abstract collection object."""
+    # if corpus file exists, load it
+    if os.path.exists(corpus_path):
+        return pd.read_pickle(corpus_path)
+
+    # if corpus file does not exist, create, clean, and save
+    with contextlib.suppress(FileExistsError):
+        _abstract_retrieval_concat(data_path=corpus_path, save=True)
+    abstractcollectionObj = AbstractCollection(pd.read_pickle(corpus_path))
+    abstractcollectionObj.clean_abstracts()
+    with open(corpus_path, "wb") as f:
+        pickle.dump(abstractcollectionObj.cleaned_abstracts, f)
+    return abstractcollectionObj.cleaned_abstracts
 
 
 def _prepare_annotated_classification_set(
@@ -170,50 +184,6 @@ def classify_corpus(
     return df
 
 
-# def _classify_single_abstract(vectorizer, abstract, selector, classifier):
-#     """Classify a single abstract using the provided vectorizer, selector, and classifier.
-
-#     Args:
-#         vectorizer: The vectorizer used to transform the text data.
-#         abstract: The single abstract to be classified.
-#         selector: The feature selector for transforming the vectorized data.
-#         classifier: The classification model for predicting labels.
-
-#     Returns:
-#         array-like: Predicted label for the input abstract.
-#     """
-#     ex = vectorizer.transform([abstract])
-#     ex2 = selector.transform(ex)
-#     return classifier.predict(ex2)[0]
-
-
-# def classify_corpus(
-#     corpus: Union[Set[str], pd.DataFrame],
-#     vectorizer: TfidfVectorizer,
-#     selector: SelectKBest,
-#     classifier: LogisticRegression,
-#     test: bool = False,
-# ) -> Generator[Tuple[str, int], None, None]:
-#     """Classifies a corpus of abstracts using the provided vectorizer, feature selector, and classifier.
-
-#     Args:
-#         corpus (Union[Set[str], pd.DataFrame]): The corpus of abstracts to classify.
-#         vectorizer (TfidfVectorizer): The vectorizer used to transform the abstracts into feature vectors.
-#         selector (SelectKBest): The feature selector used to select the most informative features.
-#         classifier (LogisticRegression): The classifier used to predict the class labels.
-#         test (bool, optional): Flag indicating whether the corpus is a test set. Defaults to False.
-
-#     Yields:
-#         Tuple[str, int]: A tuple containing the classified abstract and its prediction label.
-#     """
-#     if test:
-#         yield from _classify_test_corpus(corpus, vectorizer, selector, classifier)
-#     else:
-#         for abstract in corpus:
-#             prediction = _classify_single_abstract(vectorizer, abstract, selector, classifier)
-#             yield abstract, prediction
-
-
 def _get_testset(
     data_path: str,
     positive: bool,
@@ -265,6 +235,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--pos_set_path", help="Path to the positive set directory")
     parser.add_argument("--negative_set_file", help="Path to the negative set file")
     parser.add_argument("--model_save_dir", help="Directory to save the model")
+    parser.add_argument(
+        "--classify_only",
+        help="Run only classification without creating and cleaning abstract collection",
+        action="store_true",
+    )
     return parser.parse_args()
 
 
@@ -275,7 +250,7 @@ def main() -> None:
     savepath = Path(args.model_save_dir)
 
     # get training data and set-up annotated abstracts
-    abstract_corpus = pd.read_pickle(args.corpus)
+    abstract_corpus = get_training_data(args.corpus)
 
     classification_trainset = pd.concat(
         [
@@ -335,11 +310,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-    # main(
-    #     corpus="abstracts/cleaned_abstracts.pkl",
-    #     relevant_abstracts="classification/relevant_sorted.txt",
-    #     negative_abstracts="classification/negative_sorted.txt",
-    #     pos_set_path="abstracts/test",
-    #     negative_set_file="classification/irrelevant_texts.csv",
-    #     model_save_dir="classification",
-    # )

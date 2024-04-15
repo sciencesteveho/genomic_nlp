@@ -5,17 +5,12 @@
 """Abstract dataframe concatenation and cleaning with regular expressions."""
 
 
-import argparse
 import contextlib
-import os
-from pathlib import Path
-import pickle
 import re
-from typing import Any, Dict, List, Tuple, Union
+from typing import Union
 
 import pandas as pd
 
-from utils import _abstract_retrieval_concat
 from utils import SUBLIST
 from utils import SUBLIST_INITIAL
 from utils import SUBLIST_POST
@@ -26,17 +21,15 @@ from utils import SUBLIST_TOKEN_ZERO
 class AbstractCollection:
     """Collection of scientific abstracts.
 
-    # Properties
-        abstracts
-        date
+    Attributes:
+        abstracts: A pandas Series or DataFrame containing abstracts.
 
-    # Methods
-        parse_abstracts_for_regex
-        abstract_processing
-        check_cleaning_fidelity_and_save
+    Methods
+    ----------
+        clean_abstracts: Process abstracts with regex.
 
     # Helpers
-        GENE_REPLACEMENTS
+        GENE_REPLACEMENTS -- A dictionary of gene replacements for genes that look like names.
         SUBLIST
     """
 
@@ -58,16 +51,15 @@ class AbstractCollection:
 
     SUBLIST_SPACES = ["-", "\s+"]
 
-    def __init__(self, abstracts: Union[List[str], pd.DataFrame]) -> None:
+    def __init__(self, abstracts: Union[pd.Series, pd.DataFrame]) -> None:
         """Initialize the class, only adding abstracts that are not empty"""
+        self.abstracts = abstracts
         if isinstance(abstracts, pd.DataFrame):
             self.abstracts = (
-                abstracts["title"].astype(str)
+                self.abstracts["title"].astype(str)
                 + ". "
-                + abstracts["description"].astype(str)
+                + self.abstracts["description"].astype(str)
             )
-        elif isinstance(abstracts, pd.Series):
-            self.abstracts = abstracts
 
     # @time_decorator
     def _abstract_cleaning(self):
@@ -104,40 +96,5 @@ class AbstractCollection:
         return {i for i in cleaned_abstracts if i}
 
     def clean_abstracts(self) -> None:
-        """Process abstracts through regex, NER, and classification"""
+        """Process abstracts with regex"""
         self.cleaned_abstracts = self._abstract_cleaning()
-
-
-def main() -> None:
-    """Processing pipeline"""
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--path",
-        type=str,
-        default="/ocean/projects/bio210019p/stevesho/nlp/abstracts",
-        help="Path to abstracts",
-    )
-    args = parser.parse_args()
-
-    working_path = Path(args.path)
-    abstract_file = working_path / "abstracts_combined.pkl"
-
-    if not os.path.exists(abstract_file):
-        with contextlib.suppress(FileExistsError):
-            _abstract_retrieval_concat(data_path=working_path, save=True)
-
-    print(f"Abstract file found or created without issue {abstract_file}")
-
-    abstractcollectionObj = AbstractCollection(abstracts=pd.read_pickle(abstract_file))
-
-    # run processing!
-    print("Cleaning abstracts...")
-    abstractcollectionObj.clean_abstracts()
-
-    # save
-    with open(working_path / "cleaned_abstracts.pkl", "wb") as f:
-        pickle.dump(abstractcollectionObj.cleaned_abstracts, f)
-
-
-if __name__ == "__main__":
-    main()
