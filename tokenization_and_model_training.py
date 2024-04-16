@@ -1,14 +1,12 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
-#
-# // TO-DO //
-# - [ ] first TODO
-#   - [ ] nested TODO
 
 
 """Tokenization, token clean-up, and gene removal. Model training for word
 embeddings for bio-nlp model!"""
 
+
+import argparse
 from collections import Counter
 from collections import defaultdict
 from datetime import date
@@ -38,18 +36,32 @@ logging.basicConfig(
 )
 
 
-def gene_symbol_from_gencode(gencode_ref: pybedtools.BedTool) -> List[str]:
-    """Returns deduped list of gencode V43 genes"""
-    return [
+def gene_symbol_from_gencode(gencode_ref: pybedtools.BedTool) -> Set[str]:
+    """Returns deduped set of genes from a gencode gtf. Written for the gencode
+    45 and avoids header"""
+    return {
         line[8].split('gene_name "')[1].split('";')[0]
         for line in gencode_ref
-        if "gene_name" in line[8]
-    ]
+        if not line[0].startswith("#") and "gene_name" in line[8]
+    }
 
 
-def normalization_list(entity_file: str, type: str = "gene") -> Set[str]:
+def normalization_list(
+    entity_file: str, genes: Set[str], type: str = "gene"
+) -> Set[str]:
+    """_summary_
+
+    Args:
+        entity_file (str): _description_
+        genes (Set[str]): _description_
+        type (str, optional): _description_. Defaults to "gene".
+
+    Returns:
+        Set[str]: _description_
+    """
+
     def handle_ents(entity_file):
-        ents = [entity[0].casefold() for entity in entity_file]
+        ents = [entity[0].casefold() for entity in entity_file if entity not in genes]
         return set(ents)
 
     def handle_gene(entity_file):
@@ -450,14 +462,25 @@ class ProcessWord2VecModel:
         self.initialize_build_vocab_and_train_word2vec_model()
 
 
+def _get_relevant_abstracts(abstract_file: str) -> List[str]:
+    """Get abstracts classified as relevant"""
+    abstracts_df = pd.read_pickle(abstract_file)
+    return abstracts_df.loc[abstracts_df["predictions"] == 1]["abstracts"].to_list()
+
+
 def main(
     abstracts: str,
     gene_gtf: str,
 ) -> None:
     """Main function"""
-    # # load classified abstracts
-    abstracts = pd.read_pickle(abstracts)
-    abstracts = abstracts.loc[abstracts["predictions"] == 1]["abstracts"].to_list()
+    # load classified abstracts
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--classified_abstracts", type=str)
+    parser.add_argument("--gene_gtf", type=str)
+    args = parser.parse_args()
+
+    # get relevant abstracts
+    abstracts = _get_relevant_abstracts(abstract_file=args.classified_abstracts)
 
     # load pretokenized, extend list, and save for later
     tokenized_abs = []
@@ -470,13 +493,14 @@ def main(
 
     with open("data/tokenized_classified_abstracts", "wb") as f:
         pickle.dump(tokenized_abs, f, protocol=4)
+
     genes = normalization_list(gene_gtf, "gene")
     genes = set(genes)
 
-    with open(
-        "data/tokens_from_cleaned_abstracts_remove_punct2023-07-12.pkl", "rb"
-    ) as f:
-        abstracts = pickle.load(f)
+    # with open(
+    #     "data/tokens_from_cleaned_abstracts_remove_punct2023-07-12.pkl", "rb"
+    # ) as f:
+    #     abstracts = pickle.load(f)
 
     pbar = ProgressBar()
     new_corpus = []
@@ -484,8 +508,8 @@ def main(
         new_sentence = [token for token in sentence if token not in genes]
         new_corpus.append(new_sentence)
 
-    with open("data/corpus_removed_genes.pkl", "wb") as f:
-        pickle.dump(new_corpus, f)
+    # with open("data/corpus_removed_genes.pkl", "wb") as f:
+    #     pickle.dump(new_corpus, f)
 
     # instantiate object
     modelprocessingObj = ProcessWord2VecModel(
@@ -511,7 +535,4 @@ def main(
 
 
 if __name__ == "__main__":
-    main(
-        abstracts="/scratch/remills_root/remills/stevesho/bio_nlp/nlp/classification/abstracts_classified_tfidf_20000.pkl",
-        gene_gtf="data/gencode.v43.basic.annotation.gtf",
-    )
+    main()

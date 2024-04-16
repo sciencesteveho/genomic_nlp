@@ -11,10 +11,10 @@
 import argparse
 import pickle
 
-import more_itertools
+import more_itertools  # type: ignore
 import pandas as pd
-import spacy
-from tqdm import tqdm
+import spacy  # type: ignore
+from tqdm import tqdm  # type: ignore
 
 
 def main() -> None:
