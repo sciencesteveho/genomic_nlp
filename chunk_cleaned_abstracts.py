@@ -45,7 +45,7 @@ def main() -> None:
         abstracts = pickle.load(file)
 
     # start tokenization
-    nlp = spacy.load("en_core_sci_sm")
+    nlp = spacy.load("en_core_sci_scibert")
     nlp.add_pipe("sentencizer")
     n_process = 4
     batch_size = 256
