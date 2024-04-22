@@ -288,12 +288,13 @@ class ProcessWord2VecModel:
             list: Tokens extracted from the cleaned abstracts.
         """
         nlp = spacy.load("en_core_sci_scibert" if use_gpu else "en_core_sci_sm")
+        nlp.add_pipe("sentencizer")
+
         if use_gpu:
             spacy.require_gpu()
             n_process = 1
             batch_size = 32
         else:
-            nlp.add_pipe("sentencizer")
             n_process = 4
             batch_size = 256
 
