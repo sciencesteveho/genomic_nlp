@@ -238,6 +238,7 @@ class ProcessWord2VecModel:
 
     def __init__(
         self,
+        root_dir,
         abstracts,
         date,
         min_count,
@@ -253,6 +254,7 @@ class ProcessWord2VecModel:
         sentence_model,
     ):
         """Initialize the class"""
+        self.root_dir = root_dir
         self.abstracts = abstracts
         self.date = date
         self.min_count = min_count
@@ -313,7 +315,8 @@ class ProcessWord2VecModel:
             )
 
         self._save_wrapper(
-            dataset_tokens, f"data/tokens_from_cleaned_abstracts_{self.date}.pkl"
+            dataset_tokens,
+            f"{self.root_dir}/data/tokens_from_cleaned_abstracts_{self.date}.pkl",
         )
 
         return dataset_tokens
@@ -337,7 +340,7 @@ class ProcessWord2VecModel:
 
         self._save_wrapper(
             new_corpus,
-            f"data/tokens_from_cleaned_abstracts_remove_punct{self.date}.pkl",
+            f"{self.root_dir}/data/tokens_from_cleaned_abstracts_remove_punct{self.date}.pkl",
         )
 
         return new_corpus
@@ -392,10 +395,12 @@ class ProcessWord2VecModel:
         quintgram_main = self.GRAMDICT[self.GRAMLIST[maxlen]][2]
 
         gram_model.save(
-            f"models/gram_models/{self.GRAMLIST[maxlen]}_model_{self.date}.pkl"
+            f"{self.root_dir}/models/gram_models/{self.GRAMLIST[maxlen]}_model_{self.date}.pkl"
         )
 
-        self._save_wrapper(gram_model, f"data/gram_model_{self.date}.pkl")
+        self._save_wrapper(
+            gram_model, f"{self.root_dir}/data/gram_model_{self.date}.pkl"
+        )
 
         return quintgram_main
 
@@ -448,7 +453,9 @@ class ProcessWord2VecModel:
             callbacks=[EpochSaver()],
         )
 
-        model.save(f"models/w2v_models/word2vec_{self.dimensions}d_{self.date}.model")
+        model.save(
+            f"{self.root_dir}/models/w2v_models/word2vec_{self.dimensions}d_{self.date}.model"
+        )
 
     def processing_pipeline(self, gene_gtf: str) -> None:
         """Runs the entire pipeline for word2vec model training"""
@@ -496,7 +503,8 @@ def main() -> None:
     args = parser.parse_args()
 
     # get relevant abstracts
-    relevant_abstracts = "data/relevant_abstracts.pkl"
+    root_dir = "/ocean/projects/bio210019p/stevesho/nlp"
+    relevant_abstracts = f"{root_dir}/data/relevant_abstracts.pkl"
     if not os.path.exists(relevant_abstracts):
         abstracts = _get_relevant_abstracts(abstract_file=args.classified_abstracts)
         with open(relevant_abstracts, "wb") as output:
@@ -507,6 +515,7 @@ def main() -> None:
 
     # instantiate object
     modelprocessingObj = ProcessWord2VecModel(
+        root_dir=root_dir,
         abstracts=abstracts,
         date=date.today(),
         min_count=5,
