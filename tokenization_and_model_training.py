@@ -495,9 +495,6 @@ def main() -> None:
     parser.add_argument("--gene_gtf", type=str)
     args = parser.parse_args()
 
-    # set up GPU
-    spacy.require_gpu()
-
     # get relevant abstracts
     relevant_abstracts = "data/relevant_abstracts.pkl"
     if not os.path.exists(relevant_abstracts):
