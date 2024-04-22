@@ -9,9 +9,9 @@ embeddings for bio-nlp model!"""
 
 import argparse
 from collections import Counter
-from collections import defaultdict
 from datetime import date
 import logging
+import os
 import pickle
 import re
 from typing import Any, Dict, List, Set
@@ -287,7 +287,7 @@ class ProcessWord2VecModel:
         Returns:
             list: Tokens extracted from the cleaned abstracts.
         """
-        nlp = spacy.load("en_core_sci_scibert" if use_gpu else "en_core_sci_sm")
+        nlp = spacy.load("en_core_sci_scibert" if use_gpu else "en_core_sci_md")
         nlp.add_pipe("sentencizer")
 
         if use_gpu:
@@ -296,7 +296,7 @@ class ProcessWord2VecModel:
             batch_size = 32
         else:
             n_process = 4
-            batch_size = 256
+            batch_size = 500
 
         dataset_tokens = []
         for doc in tqdm(
@@ -456,7 +456,8 @@ class ProcessWord2VecModel:
         genes = normalization_list(gene_gtf, "gene")
 
         # tokenize abstracts
-        abstracts = self.tokenization(use_gpu=True)
+        # abstracts = self.tokenization(use_gpu=True)
+        abstracts = self.tokenization(use_gpu=False)
 
         # # remove punctuation and standardize numbers with replacement
         # abstracts_standard = self.exclude_punctuation_tokens_replace_standalone_numbers(
@@ -498,7 +499,14 @@ def main() -> None:
     spacy.require_gpu()
 
     # get relevant abstracts
-    abstracts = _get_relevant_abstracts(abstract_file=args.classified_abstracts)
+    relevant_abstracts = "data/relevant_abstracts.pkl"
+    if not os.path.exists(relevant_abstracts):
+        abstracts = _get_relevant_abstracts(abstract_file=args.classified_abstracts)
+        with open(relevant_abstracts, "wb") as output:
+            pickle.dump(abstracts, output)
+    else:
+        with open(relevant_abstracts, "rb") as f:
+            abstracts = pickle.load(f)
 
     # instantiate object
     modelprocessingObj = ProcessWord2VecModel(
