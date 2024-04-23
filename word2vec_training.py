@@ -16,15 +16,13 @@ from gensim.models import Word2Vec  # type: ignore
 from gensim.models.callbacks import CallbackAny2Vec  # type: ignore
 from gensim.models.phrases import Phraser  # type: ignore
 from gensim.models.phrases import Phrases  # type: ignore
-import pandas as pd
+import pandas as pd  # type: ignore
 from progressbar import ProgressBar  # type: ignore
 import pybedtools  # type: ignore
 import spacy  # type: ignore
 from tqdm import tqdm  # type: ignore
 
 from utils import COPY_GENES
-from utils import dir_check_make
-from utils import is_number
 from utils import time_decorator
 
 logging.basicConfig(
@@ -40,7 +38,8 @@ def gene_symbol_from_gencode(gencode_ref: pybedtools.BedTool) -> Set[str]:
         for line in gencode_ref
         if not line[0].startswith("#") and "gene_name" in line[8]
     }
-    
+
+
 def normalization_list(entity_file: str, type: str = "gene") -> Set[str]:
     """_summary_
 
@@ -80,6 +79,7 @@ def normalization_list(entity_file: str, type: str = "gene") -> Set[str]:
     # return type_handlers[type](entity_file)
     return type_handlers[type]()
 
+
 class EpochSaver(CallbackAny2Vec):
     """Callback to save model after every epoch."""
 
@@ -92,10 +92,11 @@ class EpochSaver(CallbackAny2Vec):
         model.save(f"models/model_epoch{self.epoch}.pkl")
         self.epoch += 1
 
+
 class Word2VecCorpus:
     """Object class to process a chunk of abstracts before model training.
 
-    # Properties
+    Attributes:
         abstracts
         date
         min_count
@@ -113,21 +114,35 @@ class Word2VecCorpus:
         gram_corpus
         model
 
-    # Methods
-        remove_genes_in_tokenized_corpus
-        gram_generator
-        initialize_build_vocab_and_train_word2vec_model
-        generate_sentence_embeddings
-        save
-
+    Methods
+    ----------
+    _remove_entities_in_tokenized_corpus:
+        Remove genes in gene_list from tokenized corpus
+    _gram_generator:
+        Iterates through prefix list to generate n-grams from 2-8!
+    _normalize_gene_name_to_symbol:
+        Looks for grams in corpus that are equivalent to gene names and
+        converts them to gene symbols for training
+    _build_vocab_and_train:
+        Initializes vocab build for corpus, then trains W2v model
+        according to parameters set during object init
+        
     # Helpers
-
+        PREFS - list of n-gram prefixes
+        GRAMDICT - dictionary of n-gram models
+        GRAMLIST - list of n-gram models
+    
+    Examples:
+    ----------
     """
+    PREFS = ["bigram", "trigram", "quadgram", "quintigram"]
+    GRAMDICT = dict.fromkeys(PREFS)
+    GRAMLIST = list(GRAMDICT)
 
     def __init__(
         self,
         root_dir,
-        abstracts,
+        abstract_dir,
         date,
         min_count,
         dimensions,
@@ -143,7 +158,7 @@ class Word2VecCorpus:
     ):
         """Initialize the class"""
         self.root_dir = root_dir
-        self.abstracts = abstracts
+        self.abstract_dir = abstract_dir
         self.date = date
         self.min_count = min_count
         self.dimensions = dimensions
@@ -157,14 +172,18 @@ class Word2VecCorpus:
         self.epochs = epochs
         self.sentence_model = sentence_model
         
+    def _concat_chunks(self, chunks: List[pd.DataFrame]) -> pd.DataFrame:
+        """Concatenates chunks of abstracts"""
+        return pd.concat(chunks, axis=0)
+        
     @time_decorator(print_args=False)
-    def remove_entities_in_tokenized_corpus(
+    def _remove_entities_in_tokenized_corpus(
         self, entity_list: Set[str], abstracts: List[List[str]]
     ) -> List[List[str]]:
         """Remove genes in gene_list from tokenized corpus
 
         # Arguments
-            gene_list: genes from GTF
+            entity_list: genes from GTF
         """
         return [
             [token for token in sentence if token not in entity_list]
@@ -172,7 +191,7 @@ class Word2VecCorpus:
         ]
 
     @time_decorator(print_args=False)
-    def gram_generator(
+    def _gram_generator(
         self,
         abstracts_without_entities: List[List[str]],
         abstracts: List[List[str]],
@@ -216,7 +235,7 @@ class Word2VecCorpus:
 
         return quintgram_main
 
-    def normalize_gene_name_to_symbol(
+    def _normalize_gene_name_to_symbol(
         self, gene_dict: Dict[str, str], corpus: List[List[str]]
     ) -> List[List[str]]:
         """Looks for grams in corpus that are equivalent to gene names and
@@ -229,12 +248,11 @@ class Word2VecCorpus:
         ]
 
     @time_decorator(print_args=False)
-    def initialize_build_vocab_and_train_word2vec_model(self) -> None:
+    def _build_vocab_and_train(self) -> None:
         """Initializes vocab build for corpus, then trains W2v model
         according to parameters set during object init
         """
         # avg_len = averageLen(self.gram_corpus_gene_standardized)
-        self.gram_corpus_gene_standardized = self.abstracts
 
         model = Word2Vec(
             **{
@@ -254,10 +272,10 @@ class Word2VecCorpus:
             }
         )  # init word2vec class with alpha values from Tshitoyan et al.
 
-        model.build_vocab(self.gram_corpus_gene_standardized)  # build vocab
+        model.build_vocab(self.abstracts)  # build vocab
 
         model.train(
-            self.gram_corpus_gene_standardized,
+            self.abstracts,
             total_examples=model.corpus_count,
             epochs=30,
             report_delay=15,
@@ -269,15 +287,22 @@ class Word2VecCorpus:
             f"{self.root_dir}/models/w2v_models/word2vec_{self.dimensions}d_{self.date}.model"
         ) 
 
-PREFS = ["bigram", "trigram", "quadgram", "quintigram"]
-GRAMDICT = dict.fromkeys(PREFS)
-GRAMLIST = list(GRAMDICT)
 
-
+def main() -> None:
+    """Main function"""
+    parser = argparse.ArgumentParser(description="Train a word2vec model")
+    parser.add_argument(
+        "--root_dir", type=str, required=True, help="Root directory for data"
+    )
+    parser.add_argument(
+        "--abstracts_dir", type=str, required=True, help="Path to abstracts"
+    )
+    args = parser.parse_args()
+    
     # instantiate object
-    modelprocessingObj = ProcessWord2VecModel(
-        root_dir=root_dir,
-        abstracts=abstracts,
+    modelprocessingObj = Word2VecCorpus(
+        root_dir=args.root_dir,
+        abstract_dir=args.abstracts_dir,
         date=date.today(),
         min_count=5,
         dimensions=250,
@@ -291,3 +316,7 @@ GRAMLIST = list(GRAMDICT)
         epochs=30,
         sentence_model=uSIF,
     )
+
+
+if __name__ == "__main__":
+    main()

@@ -3,7 +3,7 @@
 # -*- coding: utf-8 -*-
 
 
-"""Sentence splitting, tokenization, lemmatization, and some additional
+"""Sentence splitting, tokenization, optional lemmatization, and some additional
 cleanup"""
 
 
@@ -37,7 +37,8 @@ class ChunkedDocumentProcessor:
     tokenization:
         Tokenize the abstracts using spaCy
     exclude_punctuation_tokens_replace_standalone_numbers:
-        Removes standalone symbols if they exist as tokens. Replaces numbers with a number based symbol
+        Removes standalone symbols if they exist as tokens. Replaces numbers
+        with a number based symbol
     remove_entities_in_tokenized_corpus:
         Remove genes in gene_list from tokenized corpus
     processing_pipeline:
@@ -180,7 +181,7 @@ class ChunkedDocumentProcessor:
     def processing_pipeline(self) -> None:
         """Runs the initial cleaning pipeline."""
         # tokenize abstracts
-        self.tokenization(abstracts=self.abstracts, use_gpu=False)
+        self.tokenization(abstracts=self.abstracts, lemmatizer=False, use_gpu=False)
 
         # remove punctuation and standardize numbers with replacement
         self.exclude_punctuation_tokens_replace_standalone_numbers(
@@ -221,6 +222,7 @@ def main() -> None:
     
     # run processing pipeline
     documentProcessor.processing_pipeline()
+
 
 if __name__ == "__main__":
     main()
