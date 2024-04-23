@@ -10,15 +10,67 @@ cleanup"""
 import argparse
 import os
 import pickle
-from typing import List, Union
+from typing import List, Optional, Set, Union
 
 from progressbar import ProgressBar  # type: ignore
+import pybedtools  # type: ignore
 import spacy  # type: ignore
 from tqdm import tqdm  # type: ignore
 
+from utils import COPY_GENES
 from utils import dir_check_make
 from utils import is_number
 from utils import time_decorator
+
+
+def gene_symbol_from_gencode(gencode_ref: pybedtools.BedTool) -> Set[str]:
+    """Returns deduped set of genes from a gencode gtf. Written for the gencode
+    45 and avoids header"""
+    return {
+        line[8].split('gene_name "')[1].split('";')[0]
+        for line in gencode_ref
+        if not line[0].startswith("#") and "gene_name" in line[8]
+    }
+
+
+def normalization_list(entity_file: str, type: str = "gene") -> Set[str]:
+    """_summary_
+
+    Args:
+        entity_file (str): _description_
+        genes (Set[str]): _description_
+        type (str, optional): _description_. Defaults to "gene".
+
+    Returns:
+        Set[str]: _description_
+    """
+
+    # def handle_ents(entity_file:) -> Set[str]:
+    #     """Remove gene tokens"""
+    #     ents = [entity[0].casefold() for entity in entity_file if entity not in genes]
+    #     return set(ents)
+
+    def handle_gene() -> Set[str]:
+        """Remove copy genes from gene list"""
+        for key in COPY_GENES:
+            genes.remove(key)
+            genes.append(COPY_GENES[key])
+        return set(genes)
+
+    type_handlers = {
+        # "ents": handle_ents,
+        "gene": handle_gene,
+    }
+
+    print("Grabbing genes from GTF")
+    gtf = pybedtools.BedTool(entity_file)
+    genes = [gene.lower() for gene in gene_symbol_from_gencode(gtf)]
+
+    if type not in type_handlers:
+        raise ValueError("type must be either 'gene' or 'ents'")
+
+    # return type_handlers[type](entity_file)
+    return type_handlers[type]()
 
 
 class ChunkedDocumentProcessor:
@@ -28,6 +80,8 @@ class ChunkedDocumentProcessor:
         root_dir: root directory for the project
         abstracts: list of abstracts
         date: date of processing
+        lemmatizer: bool to apply lemmatization, which gets root stem of words
+        word2vec: bool to apply additional word2vec processing steps
 
     Methods
     ----------
@@ -104,12 +158,16 @@ class ChunkedDocumentProcessor:
         abstracts: Union[List[str], List[List[str]]],
         chunk: int,
         lemmatizer: bool,
+        word2vec: bool,
+        gene_gtf: str,
     ):
         """Initialize the class"""
         self.root_dir = root_dir
         self.abstracts = abstracts
         self.chunk = chunk
         self.lemmatizer = lemmatizer
+        self.word2vec = word2vec
+        self.gene_gtf = gene_gtf
 
     def _make_directories(self) -> None:
         """Make directories for processing"""
@@ -183,33 +241,61 @@ class ChunkedDocumentProcessor:
 
         self.abstracts = new_corpus
 
+    @time_decorator(print_args=False)
+    def _remove_entities_in_tokenized_corpus(
+        self, entity_list: Set[str], abstracts: List[List[str]]
+    ) -> None:
+        """Remove genes in gene_list from tokenized corpus
+
+        # Arguments
+            entity_list: genes from GTF
+        """
+        self.abstracts = [
+            [token for token in sentence if token not in entity_list]
+            for sentence in abstracts
+        ]
+
+    def _save_processed_abstracts_checkpoint(self, outname: str) -> None:
+        """
+        Save processed abstracts to a pickle file after cleaning and lemmatization.
+
+        Returns:
+            None
+        """
+        outname += "_lemmatized.pkl" if self.lemmatizer else ".pkl"
+        with open(outname, "wb") as output:
+            pickle.dump(self.abstracts, output)
+
     def processing_pipeline(self) -> None:
         """Runs the initial cleaning pipeline."""
         # tokenize abstracts
-        self.tokenization(
-            abstracts=self.abstracts, use_gpu=False
-        )
+        self.tokenization(abstracts=self.abstracts, use_gpu=False)
 
         # remove punctuation and standardize numbers with replacement
         self.exclude_punctuation_tokens_replace_standalone_numbers(
             abstracts=self.abstracts
         )
 
-        outname = (
-            f"{self.root_dir}/data/tokens_cleaned_abstracts_remove_punct_{self.chunk}"
+        # save the cleaned abstracts
+        self._save_processed_abstracts_checkpoint(
+            outname=f"{self.root_dir}/data/tokens_cleaned_abstracts_remove_punct_{self.chunk}"
         )
-        outname += "_lemmatized.pkl" if self.lemmatizer else ".pkl"
-        with open(outname, "wb") as output:
-            pickle.dump(self.abstracts, output)
 
-    # @staticmethod
-    # def _check_before_processing(file_path, process_func, *args, **kwargs):
-    #     if not os.path.exists(file_path):
-    #         data = process_func(*args, **kwargs)
-    #     else:
-    #         with open(file_path, "rb") as f:
-    #             data = pickle.load(f)
-    #     return data
+        if not self.word2vec:
+            return
+
+        # additional processing steps
+        genes = normalization_list(
+            entity_file=self.gene_gtf,
+            type="gene",
+        )
+        self._remove_entities_in_tokenized_corpus(
+            abstracts=self.abstracts, entity_list=genes
+        )
+
+        self._save_processed_abstracts_checkpoint(
+            outname=f"{self.root_dir}/data/tokens_cleaned_abstracts_remove_genes_{self.chunk}"
+        )
 
 
 def main() -> None:
@@ -220,7 +306,11 @@ def main() -> None:
     parser.add_argument(
         "--root_dir", type=str, default="/ocean/projects/bio210019p/stevesho/nlp"
     )
+    parser.add_argument(
+        "--gene_gtf", type=str, default="../data/gencode.v45.annotation.gtf"
+    )
     parser.add_argument("--lemmatizer", action="store_true")
+    parser.add_argument("--prep_word2vec", action="store_true")
     args = parser.parse_args()
 
     # get relevant abstracts
@@ -236,6 +326,8 @@ def main() -> None:
         abstracts=abstracts,
         chunk=args.chunk,
         lemmatizer=args.lemmatizer,
+        word2vec=args.prep_word2vec,
+        gene_gtf=args.gene_gtf,
     )
 
     # run processing pipeline
