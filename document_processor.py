@@ -187,7 +187,7 @@ class ChunkedDocumentProcessor:
         """Runs the initial cleaning pipeline."""
         # tokenize abstracts
         self.tokenization(
-            abstracts=self.abstracts, lemmatizer=self.lemmatizer, use_gpu=False
+            abstracts=self.abstracts, use_gpu=False
         )
 
         # remove punctuation and standardize numbers with replacement
