@@ -10,13 +10,12 @@ cleanup"""
 import argparse
 import os
 import pickle
-from typing import Any, List, Set
+from typing import List, Union
 
 from progressbar import ProgressBar  # type: ignore
 import spacy  # type: ignore
 from tqdm import tqdm  # type: ignore
 
-from utils import COPY_GENES
 from utils import dir_check_make
 from utils import is_number
 from utils import time_decorator
@@ -100,14 +99,16 @@ class ChunkedDocumentProcessor:
 
     def __init__(
         self,
-        root_dir,
-        abstracts,
-        chunk,
+        root_dir: str,
+        abstracts: Union[List[str], List[List[str]]],
+        chunk: int,
+        lemmatizer: bool,
     ):
         """Initialize the class"""
         self.root_dir = root_dir
         self.abstracts = abstracts
         self.chunk = chunk
+        self.lemmatizer = lemmatizer
 
     def _make_directories(self) -> None:
         """Make directories for processing"""
@@ -120,7 +121,7 @@ class ChunkedDocumentProcessor:
             dir_check_make(dir)
 
     @time_decorator(print_args=False)
-    def tokenization(self, abstracts: List[str], lemmatizer: bool = True, use_gpu: bool = False) -> None:
+    def tokenization(self, abstracts: List[str], use_gpu: bool = False) -> None:
         """Tokenize the abstracts using spaCy.
         Args:
             use_gpu (bool, optional): Flag to indicate whether to use GPU for
@@ -138,9 +139,9 @@ class ChunkedDocumentProcessor:
         n_process = 1 if use_gpu else 4
         batch_size = 32 if use_gpu else 500
 
-        word_attr = 'lemma_' if lemmatizer else 'text'
+        word_attr = 'lemma_' if self.lemmatizer else 'text'
         disable_pipes = ["parser", "tagger", "ner"]
-        if not lemmatizer:
+        if not self.lemmatizer:
             disable_pipes.append("lemmatizer")
 
         dataset_tokens = []
@@ -187,8 +188,10 @@ class ChunkedDocumentProcessor:
         self.exclude_punctuation_tokens_replace_standalone_numbers(
             abstracts = self.abstracts
         )
-        
-        with open(f"{self.root_dir}/data/tokens_cleaned_abstracts_remove_punct_{self.chunk}.pkl", "rb") as output:
+
+        outname = f"{self.root_dir}/data/tokens_cleaned_abstracts_remove_punct_{self.chunk}"
+        outname += "_lemmatized.pkl" if self.lemmatizer else ".pkl"
+        with open(outname, "wb") as output:
             pickle.dump(self.abstracts, output)
 
     @staticmethod
@@ -207,6 +210,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--chunk", type=str, required=True)
     parser.add_argument("--root_dir", type=str, default="/ocean/projects/bio210019p/stevesho/nlp")
+    parser.add_argument("--lemmatizer", action="store_true")
     args = parser.parse_args()
 
     # get relevant abstracts
@@ -218,6 +222,7 @@ def main() -> None:
         root_dir=args.root_dir,
         abstracts=abstracts,
         chunk=args.chunk,
+        lemmatizer=args.lemmatizer,
     )
     
     # run processing pipeline
