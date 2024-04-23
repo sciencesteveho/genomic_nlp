@@ -42,3 +42,189 @@ class EpochSaver(CallbackAny2Vec):
         print(f"Save model number {self.epoch}.")
         model.save(f"models/model_epoch{self.epoch}.pkl")
         self.epoch += 1
+
+class Word2VecCorpus:
+    """Object class to process a chunk of abstracts before model training.
+
+    # Properties
+        abstracts
+        date
+        min_count
+        workers
+        dimensions
+        sample
+        alpha
+        min_alpha
+        negative
+        sg
+        hs
+        epochs
+        sentence_model
+        abstracts_without_entities
+        gram_corpus
+        model
+
+    # Methods
+        remove_genes_in_tokenized_corpus
+        gram_generator
+        initialize_build_vocab_and_train_word2vec_model
+        generate_sentence_embeddings
+        save
+
+    # Helpers
+
+    """
+
+    def __init__(
+        self,
+        root_dir,
+        abstracts,
+        date,
+        min_count,
+        dimensions,
+        workers,
+        sample,
+        alpha,
+        min_alpha,
+        negative,
+        sg,
+        hs,
+        epochs,
+        sentence_model,
+    ):
+        """Initialize the class"""
+        self.root_dir = root_dir
+        self.abstracts = abstracts
+        self.date = date
+        self.min_count = min_count
+        self.dimensions = dimensions
+        self.workers = workers
+        self.sample = sample
+        self.alpha = alpha
+        self.min_alpha = min_alpha
+        self.negative = negative
+        self.sg = sg
+        self.hs = hs
+        self.epochs = epochs
+        self.sentence_model = sentence_model
+
+    @time_decorator(print_args=False)
+    def gram_generator(
+        self,
+        abstracts_without_entities: List[List[str]],
+        abstracts: List[List[str]],
+        minimum: int,
+        score: int,
+    ):
+        """Iterates through prefix list to generate n-grams from 2-8!
+
+        # Arguments
+            minimum:
+            score:
+        """
+        maxlen = len(self.GRAMDICT) - 1
+
+        for index in range(maxlen + 1):
+            if index == 0:
+                source_sentences = abstracts_without_entities
+                source_main = abstracts
+            else:
+                source_sentences = self.GRAMDICT[self.GRAMLIST[index - 1]][1]
+                source_main = self.GRAMDICT[self.GRAMLIST[index - 1]][2]
+
+            gram_model = Phrases(source_sentences, min_count=minimum, threshold=score)
+            gram_model_phraser = Phraser(gram_model)
+            gram_sentence = (
+                gram_model_phraser[sentence] for sentence in source_sentences
+            )
+            gram_main = (gram_model_phraser[sentence] for sentence in source_main)
+
+            self.GRAMDICT[self.GRAMLIST[index]] = [gram_model, gram_sentence, gram_main]
+
+        quintgram_main = self.GRAMDICT[self.GRAMLIST[maxlen]][2]
+
+        gram_model.save(
+            f"{self.root_dir}/models/gram_models/{self.GRAMLIST[maxlen]}_model_{self.date}.pkl"
+        )
+
+        self._save_wrapper(
+            gram_model, f"{self.root_dir}/data/gram_model_{self.date}.pkl"
+        )
+
+        return quintgram_main
+
+    def normalize_gene_name_to_symbol(
+        self, gene_dict: Dict[str, str], corpus: List[List[str]]
+    ) -> List[List[str]]:
+        """Looks for grams in corpus that are equivalent to gene names and
+        converts them to gene symbols for training.
+        """
+        pbar = ProgressBar()
+        return [
+            [gene_dict.get(token, token) for token in sentence]
+            for sentence in pbar(corpus)
+        ]
+
+    @time_decorator(print_args=False)
+    def initialize_build_vocab_and_train_word2vec_model(self) -> None:
+        """Initializes vocab build for corpus, then trains W2v model
+        according to parameters set during object init
+        """
+        # avg_len = averageLen(self.gram_corpus_gene_standardized)
+        self.gram_corpus_gene_standardized = self.abstracts
+
+        model = Word2Vec(
+            **{
+                attr: getattr(self, attr)
+                for attr in [
+                    "min_count",
+                    "window",
+                    "size",
+                    "workers",
+                    "sample",
+                    "alpha",
+                    "min_alpha",
+                    "negative",
+                    "sg",
+                    "hs",
+                ]
+            }
+        )  # init word2vec class with alpha values from Tshitoyan et al.
+
+        model.build_vocab(self.gram_corpus_gene_standardized)  # build vocab
+
+        model.train(
+            self.gram_corpus_gene_standardized,
+            total_examples=model.corpus_count,
+            epochs=30,
+            report_delay=15,
+            compute_loss=True,
+            callbacks=[EpochSaver()],
+        )
+
+        model.save(
+            f"{self.root_dir}/models/w2v_models/word2vec_{self.dimensions}d_{self.date}.model"
+        ) 
+
+PREFS = ["bigram", "trigram", "quadgram", "quintigram"]
+GRAMDICT = dict.fromkeys(PREFS)
+GRAMLIST = list(GRAMDICT)
+
+
+    # instantiate object
+    modelprocessingObj = ProcessWord2VecModel(
+        root_dir=root_dir,
+        abstracts=abstracts,
+        date=date.today(),
+        min_count=5,
+        dimensions=250,
+        workers=8,
+        sample=0.0001,
+        alpha=0.01,
+        min_alpha=0.0001,
+        negative=15,
+        sg=1,
+        hs=1,
+        epochs=30,
+        sentence_model=uSIF,
+    )

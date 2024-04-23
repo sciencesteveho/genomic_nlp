@@ -1,71 +1,57 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
-#
-# // TO-DO //
-# - [ ] first TODO
-#   - [ ] nested TODO
 
 
-"""_summary_ of project"""
+"""Chunk abstracts"""
+
 
 import argparse
 import pickle
+from typing import List
 
 import more_itertools  # type: ignore
-import pandas as pd
+import pandas as pd  # type: ignore
 import spacy  # type: ignore
 from tqdm import tqdm  # type: ignore
+from math import ceil
+
+
+def chunk_corpus(corpus: List[str], parts: int, output_base_path: str) -> None:
+    """Splits the corpus into a specified number of parts and saves each part as
+    a pickle file.
+
+    Args:
+        corpus (list): List of documents to be split into chunks.
+        parts (int): Number of parts to split the corpus into.
+        output_base_path (str): Base output path for the chunks.
+    """
+    # get size of each chunk
+    chunk_size = ceil(len(corpus) / parts)
+    
+    for idx, batch in enumerate(more_itertools.chunked(corpus, chunk_size)):
+        output_path = f"{output_base_path}_part_{idx}.pkl"
+        with open(output_path, 'wb') as f:
+            pickle.dump(batch, f)
 
 
 def main() -> None:
     """Main function"""
-    # abstracts = "/scratch/remills_root/remills/stevesho/bio_nlp/nlp/classification/abstracts_classified_tfidf_20000.pkl"
-    # abstracts = pd.read_pickle(abstracts)
-    # abstracts = list(abstracts.loc[abstracts["predictions"] == 1]["abstracts"])
-    # for idx, batch in enumerate(more_itertools.batched(abstracts, 250000)):
-    #     with open(
-    #         f"data/abstracts_classified_tfidf_20000_chunk_{idx}.pkl",
-    #         "wb",
-    #     ) as f:
-    #         pickle.dump(batch, f)
-
-    # perform tokenization per batched chunk
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "-i",
-        "--idx",
-        type=int,
-    )
+    parser.add_argument("--relevant_abstracts", type=str, default='../data/relevant_abstracts.pkl')
+    parser.add_argument("--num_parts", type=int, default=10)
+    parser.add_argument("--output_base_path", type=str, default="../data/abstracts_classified_tfidf_20000_chunk")
     args = parser.parse_args()
-
-    with open(
-        f"data/abstracts_classified_tfidf_20000_chunk_{args.idx}.pkl",
-        "rb",
-    ) as file:
-        abstracts = pickle.load(file)
-
-    # start tokenization
-    nlp = spacy.load("en_core_sci_scibert")
-    nlp.add_pipe("sentencizer")
-    n_process = 4
-    batch_size = 256
-
-    dataset_tokens = [
-        [word.text for word in sentence]
-        for doc in tqdm(
-            nlp.pipe(
-                abstracts,
-                n_process=n_process,
-                batch_size=batch_size,
-                disable=["parser", "tagger", "ner", "lemmatizer"],
-            ),
-            total=len(abstracts),
-        )
-        for sentence in doc.sents
-    ]
-
-    with open(f"data/tokens_from_cleaned_abstracts_chunk_{args.idx}.pkl", "wb") as f:
-        pickle.dump(dataset_tokens, f)
+    
+    # load abstracts
+    with open(args.relevant_abstracts, 'rb') as f:
+        corpus = pickle.load(f)
+    
+    # chunk the corpus
+    chunk_corpus(
+        corpus=corpus,
+        parts=args.num_parts,
+        output_base_path=args.output_base_path
+    )
 
 
 if __name__ == "__main__":

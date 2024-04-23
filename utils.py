@@ -415,3 +415,51 @@ def avg_len(lst: List[str]) -> int:
     """
     total_lengths = [len(i) for i in lst]
     return int(sum(total_lengths)) / len(total_lengths) if total_lengths else 0
+
+
+def dict_from_gene_symbol_and_name_list(gene_file_path):
+    """Takes a tab delimited file organized as 'symbol'\t''name' and
+    parses as a dictionary, removing entries with values in remove_words,
+    which includes duplicates."
+
+    # Arguments
+        gene_file_path: filepath for gene tab file
+
+    # Returns
+        dictionary of values
+    """
+    remove_words = {"novel transcript", ""}
+    namedict = {}
+    with open(gene_file_path) as f:
+        for line in f:
+            symbol, name = line.strip().split("\t")
+            name = re.sub(r"[^\w\s]|_", "", name).replace("  ", " ").strip().lower()
+            namedict[name] = symbol.lower()
+
+    # Find duplicates
+    duplicates = {
+        symbol for symbol, count in Counter(namedict.values()).items() if count > 1
+    }
+    remove_words.update(duplicates)
+
+    # Filter out remove_words and duplicates
+    return {
+        name: symbol for name, symbol in namedict.items() if symbol not in remove_words
+    }
+    # remove_words = ["novel transcript", ""]
+    # namedict = {}
+    # with open(gene_file_path) as f:
+    #     for line in f:
+    #         line = line.strip("\n")
+    #         a, b = line.split("\t")
+    #         b = "".join(e for e in b if e.isalnum() or e in string.whitespace)
+    #         b = re.sub("  ", " ", b)
+    #         b = b.rstrip()
+    #         b = re.sub(" ", "_", b)
+    #         namedict.update({b.lower(): a.lower()})
+    # dup_list = list(namedict.values())
+    # val_dupes = set([item for item in dup_list if dup_list.count(item) > 1])
+    # for dupe in val_dupes:
+    #     remove_words.append(dupe)
+    # set(remove_words)
+    # return {key: value for key, value in namedict.items() if value not in remove_words}
