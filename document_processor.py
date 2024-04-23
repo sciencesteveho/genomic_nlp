@@ -209,7 +209,7 @@ def main() -> None:
     args = parser.parse_args()
 
     # get relevant abstracts
-    with open(f'{args.root_dir}/data/abstracts_classified_tfidf_20000_chunk_part_{args.abstract_chunk}.pkl', "rb") as f:
+    with open(f'{args.root_dir}/data/abstracts_classified_tfidf_20000_chunk_part_{args.chunk}.pkl', "rb") as f:
         abstracts = pickle.load(f)
     
     # instantiate document processor
