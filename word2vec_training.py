@@ -126,15 +126,16 @@ class Word2VecCorpus:
     _build_vocab_and_train:
         Initializes vocab build for corpus, then trains W2v model
         according to parameters set during object init
-        
+
     # Helpers
         PREFS - list of n-gram prefixes
         GRAMDICT - dictionary of n-gram models
         GRAMLIST - list of n-gram models
-    
+
     Examples:
     ----------
     """
+
     PREFS = ["bigram", "trigram", "quadgram", "quintigram"]
     GRAMDICT = dict.fromkeys(PREFS)
     GRAMLIST = list(GRAMDICT)
@@ -171,11 +172,11 @@ class Word2VecCorpus:
         self.hs = hs
         self.epochs = epochs
         self.sentence_model = sentence_model
-        
+
     def _concat_chunks(self, chunks: List[pd.DataFrame]) -> pd.DataFrame:
         """Concatenates chunks of abstracts"""
         return pd.concat(chunks, axis=0)
-        
+
     @time_decorator(print_args=False)
     def _remove_entities_in_tokenized_corpus(
         self, entity_list: Set[str], abstracts: List[List[str]]
@@ -285,7 +286,7 @@ class Word2VecCorpus:
 
         model.save(
             f"{self.root_dir}/models/w2v_models/word2vec_{self.dimensions}d_{self.date}.model"
-        ) 
+        )
 
 
 def main() -> None:
@@ -298,7 +299,7 @@ def main() -> None:
         "--abstracts_dir", type=str, required=True, help="Path to abstracts"
     )
     args = parser.parse_args()
-    
+
     # instantiate object
     modelprocessingObj = Word2VecCorpus(
         root_dir=args.root_dir,
