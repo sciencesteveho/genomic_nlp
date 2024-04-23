@@ -464,34 +464,55 @@ class ProcessWord2VecModel:
 
         # tokenize abstracts
         # abstracts = self.tokenization(use_gpu=True)
-        abstracts = self.tokenization(use_gpu=False)
+        abstracts_file_path = (
+            f"{self.root_dir}/data/tokens_from_cleaned_abstracts_{self.date}.pkl"
+        )
+        abstracts = self._check_before_processing(
+            abstracts_file_path, self.tokenization, use_gpu=False
+        )
 
-        # # remove punctuation and standardize numbers with replacement
-        # abstracts_standard = self.exclude_punctuation_tokens_replace_standalone_numbers(
-        #     abstracts=abstracts
-        # )
+        # remove punctuation and standardize numbers with replacement
+        abstracts_standard_file_path = f"{self.root_dir}/data/tokens_from_cleaned_abstracts_remove_punct{self.date}.pkl"
+        abstracts_standard = self._check_before_processing(
+            abstracts_standard_file_path,
+            self.exclude_punctuation_tokens_replace_standalone_numbers,
+            abstracts=abstracts,
+        )
 
-        # # remove genes so they are not used for gram generation
-        # abstracts_without_entities = self.remove_entities_in_tokenized_corpus(
-        #     entity_list=genes, abstracts=abstracts_standard
-        # )
+        # remove genes so they are not used for gram generation
+        abstracts_without_entitites_file_path = f"{self.root_dir}/data/tokens_from_cleaned_abstracts_remove_genes{self.date}.pkl"
+        abstracts_without_entities = self._check_before_processing(
+            abstracts_without_entitites_file_path,
+            self.remove_entities_in_tokenized_corpus,
+            entity_list=genes,
+            abstracts=abstracts_standard,
+        )
 
-        # # generate ngrams
-        # self.gram_generator(
-        #     abstracts_without_entities=abstracts_without_entities,
-        #     abstracts=self.abstracts,
-        #     min_count=50,
-        #     threshold=30,
-        # )
+        # generate ngrams
+        self.gram_generator(
+            abstracts_without_entities=abstracts_without_entities,
+            abstracts=self.abstracts,
+            min_count=50,
+            threshold=30,
+        )
 
-        # # train model for 30 epochs
-        # self.initialize_build_vocab_and_train_word2vec_model()
+        # train model for 30 epochs
+        self.initialize_build_vocab_and_train_word2vec_model()
 
     @staticmethod
     def _save_wrapper(obj: Any, filename: str) -> None:
         """Save object to file"""
         with open(filename, "wb") as f:
             pickle.dump(obj, f)
+
+    @staticmethod
+    def _check_before_processing(file_path, process_func, *args, **kwargs):
+        if not os.path.exists(file_path):
+            data = process_func(*args, **kwargs)
+        else:
+            with open(file_path, "rb") as f:
+                data = pickle.load(f)
+        return data
 
 
 def main() -> None:
