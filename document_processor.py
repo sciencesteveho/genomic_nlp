@@ -177,7 +177,7 @@ class ChunkedDocumentProcessor:
 
         self.abstracts = new_corpus
 
-    def processing_pipeline(self, gene_gtf: str) -> None:
+    def processing_pipeline(self) -> None:
         """Runs the initial cleaning pipeline."""
         # tokenize abstracts
         self.tokenization(abstracts=self.abstracts, use_gpu=False)
@@ -220,7 +220,7 @@ def main() -> None:
     )
     
     # run processing pipeline
-    documentProcessor.processing_pipeline(gene_gtf=args.gene_gtf)
+    documentProcessor.processing_pipeline()
 
 if __name__ == "__main__":
     main()
