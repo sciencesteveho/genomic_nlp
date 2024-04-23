@@ -204,7 +204,7 @@ def main() -> None:
     """Main function"""
     # load classified abstracts
     parser = argparse.ArgumentParser()
-    parser.add_argument("--abstract_chunk", type=str, required=True)
+    parser.add_argument("--chunk", type=str, required=True)
     parser.add_argument("--root_dir", type=str, default="/ocean/projects/bio210019p/stevesho/nlp")
     args = parser.parse_args()
 
@@ -216,7 +216,7 @@ def main() -> None:
     documentProcessor = ChunkedDocumentProcessor(
         root_dir=args.root_dir,
         abstracts=abstracts,
-        chunk=args.abstract_chunk,
+        chunk=args.chunk,
     )
     
     # run processing pipeline
