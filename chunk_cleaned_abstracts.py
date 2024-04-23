@@ -16,6 +16,12 @@ from tqdm import tqdm  # type: ignore
 from math import ceil
 
 
+def _get_relevant_abstracts(abstract_file: str) -> List[str]:
+    """Get abstracts classified as relevant"""
+    abstracts_df = pd.read_pickle(abstract_file)
+    return abstracts_df.loc[abstracts_df["predictions"] == 1]["abstracts"].to_list()
+
+
 def chunk_corpus(corpus: List[str], parts: int, output_base_path: str) -> None:
     """Splits the corpus into a specified number of parts and saves each part as
     a pickle file.

@@ -31,6 +31,55 @@ logging.basicConfig(
     format="%(asctime)s : %(levelname)s : %(message)s", level=logging.INFO
 )
 
+
+def gene_symbol_from_gencode(gencode_ref: pybedtools.BedTool) -> Set[str]:
+    """Returns deduped set of genes from a gencode gtf. Written for the gencode
+    45 and avoids header"""
+    return {
+        line[8].split('gene_name "')[1].split('";')[0]
+        for line in gencode_ref
+        if not line[0].startswith("#") and "gene_name" in line[8]
+    }
+    
+def normalization_list(entity_file: str, type: str = "gene") -> Set[str]:
+    """_summary_
+
+    Args:
+        entity_file (str): _description_
+        genes (Set[str]): _description_
+        type (str, optional): _description_. Defaults to "gene".
+
+    Returns:
+        Set[str]: _description_
+    """
+
+    # def handle_ents(entity_file:) -> Set[str]:
+    #     """Remove gene tokens"""
+    #     ents = [entity[0].casefold() for entity in entity_file if entity not in genes]
+    #     return set(ents)
+
+    def handle_gene() -> Set[str]:
+        """Remove copy genes from gene list"""
+        for key in COPY_GENES:
+            genes.remove(key)
+            genes.append(COPY_GENES[key])
+        return set(genes)
+
+    type_handlers = {
+        # "ents": handle_ents,
+        "gene": handle_gene,
+    }
+
+    print("Grabbing genes from GTF")
+    gtf = pybedtools.BedTool(entity_file)
+    genes = [gene.lower() for gene in gene_symbol_from_gencode(gtf)]
+
+    if type not in type_handlers:
+        raise ValueError("type must be either 'gene' or 'ents'")
+
+    # return type_handlers[type](entity_file)
+    return type_handlers[type]()
+
 class EpochSaver(CallbackAny2Vec):
     """Callback to save model after every epoch."""
 
@@ -107,6 +156,20 @@ class Word2VecCorpus:
         self.hs = hs
         self.epochs = epochs
         self.sentence_model = sentence_model
+        
+    @time_decorator(print_args=False)
+    def remove_entities_in_tokenized_corpus(
+        self, entity_list: Set[str], abstracts: List[List[str]]
+    ) -> List[List[str]]:
+        """Remove genes in gene_list from tokenized corpus
+
+        # Arguments
+            gene_list: genes from GTF
+        """
+        return [
+            [token for token in sentence if token not in entity_list]
+            for sentence in abstracts
+        ]
 
     @time_decorator(print_args=False)
     def gram_generator(
