@@ -182,7 +182,7 @@ class ChunkedDocumentProcessor:
     def processing_pipeline(self) -> None:
         """Runs the initial cleaning pipeline."""
         # tokenize abstracts
-        self.tokenization(abstracts=self.abstracts, lemmatizer=False, use_gpu=False)
+        self.tokenization(abstracts=self.abstracts, lemmatizer=self.lemmatizer, use_gpu=False)
 
         # remove punctuation and standardize numbers with replacement
         self.exclude_punctuation_tokens_replace_standalone_numbers(
