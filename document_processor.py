@@ -307,7 +307,7 @@ def main() -> None:
         "--root_dir", type=str, default="/ocean/projects/bio210019p/stevesho/nlp"
     )
     parser.add_argument(
-        "--gene_gtf", type=str, default="../data/gencode.v45.annotation.gtf"
+        "--gene_gtf", type=str, default="../data/gencode.v45.basic.annotation.gtf"
     )
     parser.add_argument("--lemmatizer", action="store_true")
     parser.add_argument("--prep_word2vec", action="store_true")
