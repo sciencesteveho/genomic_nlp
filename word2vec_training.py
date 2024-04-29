@@ -12,7 +12,7 @@ import glob
 import logging
 import os
 import pickle
-from typing import cast, Dict, List, Tuple
+from typing import cast, Dict, Generator, List, Tuple
 
 from fse.models import uSIF  # type: ignore
 from gensim.models import Word2Vec  # type: ignore
@@ -28,6 +28,32 @@ from utils import time_decorator
 logging.basicConfig(
     format="%(asctime)s : %(levelname)s : %(message)s", level=logging.INFO
 )
+
+
+def _write_chunks_to_text(args: argparse.Namespace, prefix: str) -> None:
+    """Write chunks of abstracts to text files"""
+    filenames = _chunk_locator(args.abstract_dir, prefix)
+    for filename in filenames:
+        with open(filename, "rb") as file:
+            abstracts = pickle.load(file)
+            with open(
+                f"{args.abstracts_dir}/combined/{prefix}_combined.txt",
+                "w",
+                encoding="utf-8",
+            ) as output:
+                for abstract in abstracts:
+                    line = " ".join(abstract) + "\n"
+                    output.write(line)
+
+
+def read_abstracts_line_by_line(
+    text_file_path: str,
+) -> Generator[List[str], None, None]:
+    """Stream corpus from text file line by line"""
+    with open(text_file_path, "r", encoding="utf-8") as text_file:
+        for line in text_file:
+            # split line back into tokens and yield the list of tokens
+            yield line.rstrip("\n").split()
 
 
 def _concat_chunks(filenames: List[str]) -> List[List[str]]:
@@ -169,8 +195,8 @@ class Word2VecCorpus:
     @time_decorator(print_args=False)
     def _gram_generator(
         self,
-        abstracts_without_entities: List[List[str]],
-        abstracts: List[List[str]],
+        # abstracts_without_entities: List[List[str]],
+        # abstracts: List[List[str]],
         minimum: int,
         score: int,
     ) -> None:
@@ -180,44 +206,81 @@ class Word2VecCorpus:
             minimum:
             score:
         """
-        self.GRAMDICT = cast(dict, self.GRAMDICT)
-        maxlen = len(self.GRAMDICT) - 1
+        source_stream = read_abstracts_line_by_line(
+            "/ocean/projects/bio210019p/stevesho/nlp/data/combined/tokens_cleaned_abstracts_remove_genes_combined.txt"
+        )
+        source_main = read_abstracts_line_by_line(
+            "/ocean/projects/bio210019p/stevesho/nlp/data/combined/tokens_cleaned_abstracts_remove_punct_combined.txt"
+        )
 
-        for index in range(maxlen + 1):
-            if index == 0:
-                source_sentences = abstracts_without_entities
-                source_main = abstracts
-            else:
-                source_sentences = self.GRAMDICT[self.GRAMLIST[index - 1]][1]
-                source_main = self.GRAMDICT[self.GRAMLIST[index - 1]][2]
-
-            print(f"Generating {self.GRAMLIST[index]} grams")
-            gram_model = Phrases(source_sentences, min_count=minimum, threshold=score)
-            gram_model_phraser = Phraser(gram_model)
-            gram_model.save(
-                f"{self.root_dir}/models/gram_models/{self.GRAMLIST[index]}_model_{self.date}.pkl"
+        # generate and train n-gram models
+        phrases = Phrases(source_stream, min_count=minimum, threshold=score)
+        bigram = Phraser(phrases)
+        trigram = Phraser(
+            Phrases(bigram[source_stream], min_count=minimum, threshold=score)
+        )
+        quintgram = Phraser(
+            Phrases(
+                trigram[trigram[bigram[source_stream]]],
+                min_count=minimum,
+                threshold=score,
             )
-            gram_sentence = (
-                gram_model_phraser[sentence] for sentence in source_sentences
-            )
-            gram_main = (gram_model_phraser[sentence] for sentence in source_main)
+        )
 
-            self.GRAMDICT[self.GRAMLIST[index]] = [gram_model, gram_sentence, gram_main]
+        # save models
+        bigram.save(f"{self.root_dir}/models/gram_models/bigram_model_{self.date}.pkl")
+        trigram.save(
+            f"{self.root_dir}/models/gram_models/trigram_model_{self.date}.pkl"
+        )
+        quintgram.save(
+            f"{self.root_dir}/models/gram_models/quintigram_model_{self.date}.pkl"
+        )
 
-        quintgram_main = self.GRAMDICT[self.GRAMLIST[maxlen]][2]
-        self.abstracts = quintgram_main
+        # transform corpus and write out to text
+        with open(
+            f"{self.root_dir}/data/corpus_phrased.txt", "w", encoding="utf-8"
+        ) as transformed:
+            for sent in source_main:
+                transformed.write(" ".join(quintgram[trigram[bigram[sent]]]) + "\n")
 
-    def _normalize_gene_name_to_symbol(
-        self, gene_dict: Dict[str, str], corpus: List[List[str]]
-    ) -> List[List[str]]:
-        """Looks for grams in corpus that are equivalent to gene names and
-        converts them to gene symbols for training.
-        """
-        pbar = ProgressBar()
-        return [
-            [gene_dict.get(token, token) for token in sentence]
-            for sentence in pbar(corpus)
-        ]
+        # self.GRAMDICT = cast(dict, self.GRAMDICT)
+        # maxlen = len(self.GRAMDICT) - 1
+
+        # for index in range(maxlen + 1):
+        #     if index == 0:
+        #         source_sentences = source_stream
+        #         source_main = source_main
+        #     else:
+        #         source_sentences = self.GRAMDICT[self.GRAMLIST[index - 1]][1]
+        #         source_main = self.GRAMDICT[self.GRAMLIST[index - 1]][2]
+
+        #     print(f"Generating {self.GRAMLIST[index]} grams")
+        #     gram_model = Phrases(source_sentences, min_count=minimum, threshold=score)
+        #     gram_model_phraser = Phraser(gram_model)
+        #     gram_model.save(
+        #         f"{self.root_dir}/models/gram_models/{self.GRAMLIST[index]}_model_{self.date}.pkl"
+        #     )
+        #     gram_sentence = (
+        #         gram_model_phraser[sentence] for sentence in source_sentences
+        #     )
+        #     gram_main = (gram_model_phraser[sentence] for sentence in source_main)
+
+        #     self.GRAMDICT[self.GRAMLIST[index]] = [gram_model, gram_sentence, gram_main]
+
+        # quintgram_main = self.GRAMDICT[self.GRAMLIST[maxlen]][2]
+        # self.abstracts = quintgram_main
+
+    # def _normalize_gene_name_to_symbol(
+    #     self, gene_dict: Dict[str, str], corpus: List[List[str]]
+    # ) -> List[List[str]]:
+    #     """Looks for grams in corpus that are equivalent to gene names and
+    #     converts them to gene symbols for training.
+    #     """
+    #     pbar = ProgressBar()
+    #     return [
+    #         [gene_dict.get(token, token) for token in sentence]
+    #         for sentence in pbar(corpus)
+    #     ]
 
     @time_decorator(print_args=False)
     def _build_vocab_and_train(self) -> None:
@@ -244,16 +307,16 @@ class Word2VecCorpus:
             }
         )  # init word2vec class with alpha values from Tshitoyan et al.
 
-        model.build_vocab(self.abstracts)  # build vocab
+        # model.build_vocab(self.abstracts)  # build vocab
 
-        model.train(
-            self.abstracts,
-            total_examples=model.corpus_count,
-            epochs=30,
-            report_delay=15,
-            compute_loss=True,
-            callbacks=[EpochSaver(savedir=f"{self.root_dir}/models")],
-        )
+        # model.train(
+        #     self.abstracts,
+        #     total_examples=model.corpus_count,
+        #     epochs=30,
+        #     report_delay=15,
+        #     compute_loss=True,
+        #     callbacks=[EpochSaver(savedir=f"{self.root_dir}/models")],
+        # )
 
         model.save(
             f"{self.root_dir}/models/w2v_models/word2vec_{self.dimensions}d_{self.date}.model"
@@ -278,23 +341,28 @@ def main() -> None:
     args = parser.parse_args()
     print("Arguments parsed. Preparing abstracts...")
 
-    # prepare abstracts by combining chunks
-    prepare_and_load_abstracts(args)
-    print("Abstracts chunked. Loading...")
+    # prepare abstracts by writing chunks out to text file
+    _write_chunks_to_text(args, "tokens_cleaned_abstracts_remove_punct")
+    print("Writing out cleaned_corpus...")
+    _write_chunks_to_text(args, "tokens_cleaned_abstracts_remove_genes")
+    print("Writing gene_remove corpus...")
 
-    # load abstracts
-    with open(
-        f"{args.abstracts_dir}/combined/tokens_cleaned_abstracts_remove_punct_combined.pkl",
-        "rb",
-    ) as file:
-        abstracts = pickle.load(file)
+    # prepare_and_load_abstracts(args)
+    # print("Abstracts chunked. Loading...")
 
-    with open(
-        f"{args.abstracts_dir}/combined/tokens_cleaned_abstracts_remove_genes_combined.pkl",
-        "rb",
-    ) as file:
-        abstracts_without_genes = pickle.load(file)
-    print("Abstracts loaded. Initializing model.")
+    # # load abstracts
+    # with open(
+    #     f"{args.abstracts_dir}/combined/tokens_cleaned_abstracts_remove_punct_combined.pkl",
+    #     "rb",
+    # ) as file:
+    #     abstracts = pickle.load(file)
+
+    # with open(
+    #     f"{args.abstracts_dir}/combined/tokens_cleaned_abstracts_remove_genes_combined.pkl",
+    #     "rb",
+    # ) as file:
+    #     abstracts_without_genes = pickle.load(file)
+    # print("Abstracts loaded. Initializing model.")
 
     # instantiate object
     modelprocessingObj = Word2VecCorpus(
@@ -317,15 +385,15 @@ def main() -> None:
 
     # build gram models
     modelprocessingObj._gram_generator(
-        abstracts_without_entities=abstracts_without_genes,
-        abstracts=abstracts,
+        # abstracts_without_entities=abstracts_without_genes,
+        # abstracts=abstracts,
         minimum=5,
         score=50,
     )
     print("Grams generated. Training word2vec model...")
 
     # train word2vec
-    modelprocessingObj._build_vocab_and_train()
+    # modelprocessingObj._build_vocab_and_train()
 
 
 if __name__ == "__main__":
