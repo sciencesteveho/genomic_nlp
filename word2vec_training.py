@@ -65,6 +65,7 @@ def prepare_and_load_abstracts(args: argparse.Namespace) -> None:
                         f"tokens_cleaned_abstracts_{suffix}",
                     ),
                     f,
+                    protocol=pickle.HIGHEST_PROTOCOL,
                 )
 
     file_suffixes = ["remove_punct", "remove_genes"]
@@ -275,9 +276,11 @@ def main() -> None:
         default="/ocean/projects/bio210019p/stevesho/nlp/data",
     )
     args = parser.parse_args()
+    print("Arguments parsed. Preparing abstracts...")
 
     # prepare abstracts by combining chunks
     prepare_and_load_abstracts(args)
+    print("Abstracts chunked. Loading...")
 
     # load abstracts
     with open(
@@ -291,6 +294,7 @@ def main() -> None:
         "rb",
     ) as file:
         abstracts_without_genes = pickle.load(file)
+    print("Abstracts loaded. Initializing model.")
 
     # instantiate object
     modelprocessingObj = Word2VecCorpus(
@@ -309,6 +313,7 @@ def main() -> None:
         epochs=30,
         sentence_model=uSIF,
     )
+    print("Model initialized. Generating grams...")
 
     # build gram models
     modelprocessingObj._gram_generator(
@@ -317,6 +322,7 @@ def main() -> None:
         minimum=5,
         score=50,
     )
+    print("Grams generated. Training word2vec model...")
 
     # train word2vec
     modelprocessingObj._build_vocab_and_train()
