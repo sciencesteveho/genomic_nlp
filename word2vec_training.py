@@ -275,14 +275,12 @@ def main() -> None:
     parser.add_argument(
         "--root_dir",
         type=str,
-        required=True,
         help="Root directory for data",
         default="/ocean/projects/bio210019p/stevesho/nlp",
     )
     parser.add_argument(
         "--abstracts_dir",
         type=str,
-        required=True,
         help="Path to abstracts",
         default="/ocean/projects/bio210019p/stevesho/nlp/data",
     )
