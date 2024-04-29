@@ -33,14 +33,10 @@ logging.basicConfig(
 def _write_chunks_to_text(args: argparse.Namespace, prefix: str) -> None:
     """Write chunks of abstracts to text files"""
     filenames = _chunk_locator(args.abstracts_dir, prefix)
-    for filename in filenames:
-        with open(filename, "rb") as file:
-            abstracts = pickle.load(file)
-            with open(
-                f"{args.abstracts_dir}/combined/{prefix}_combined.txt",
-                "w",
-                encoding="utf-8",
-            ) as output:
+    with open(f"{args.abstracts_dir}/combined/{prefix}_combined.txt", "w") as output:
+        for filename in filenames:
+            with open(filename, "rb") as file:
+                abstracts = pickle.load(file)
                 for abstract in abstracts:
                     line = " ".join(abstract) + "\n"
                     output.write(line)
