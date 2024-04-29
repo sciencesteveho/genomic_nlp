@@ -50,8 +50,8 @@ def _combine_chunks(path: str, prefix: str) -> List[List[str]]:
     return _concat_chunks(filenames)
 
 
-def prepare_and_load_abstracts(args: argparse.Namespace) -> Tuple[List[str], List[str]]:
-    """Prepare chunked abstracts for processing"""
+def prepare_and_load_abstracts(args: argparse.Namespace) -> None:
+    """Combine chunked abstracts if they do not exist"""
 
     def combine_chunks(suffix: str) -> None:
         """Combine chunks of abstracts if they do not exist"""
@@ -70,21 +70,6 @@ def prepare_and_load_abstracts(args: argparse.Namespace) -> Tuple[List[str], Lis
     file_suffixes = ["remove_punct", "remove_genes"]
     for suffix in file_suffixes:
         combine_chunks(suffix)
-
-    abstracts_without_genes = pickle.load(
-        open(
-            f"{args.abstracts_dir}/combined/tokens_cleaned_abstracts_remove_genes_combined.pkl",
-            "rb",
-        )
-    )
-    abstracts = pickle.load(
-        open(
-            f"{args.abstracts_dir}/combined/tokens_cleaned_abstracts_remove_punct_combined.pkl",
-            "rb",
-        )
-    )
-
-    return abstracts_without_genes, abstracts
 
 
 class EpochSaver(CallbackAny2Vec):
@@ -292,7 +277,20 @@ def main() -> None:
     args = parser.parse_args()
 
     # prepare abstracts by combining chunks
-    abstracts_without_genes, abstracts = prepare_and_load_abstracts(args)
+    prepare_and_load_abstracts(args)
+
+    # load abstracts
+    with open(
+        f"{args.abstracts_dir}/combined/tokens_cleaned_abstracts_remove_punct_combined.pkl",
+        "rb",
+    ) as file:
+        abstracts = pickle.load(file)
+
+    with open(
+        f"{args.abstracts_dir}/combined/tokens_cleaned_abstracts_remove_genes_combined.pkl",
+        "rb",
+    ) as file:
+        abstracts_without_genes = pickle.load(file)
 
     # instantiate object
     modelprocessingObj = Word2VecCorpus(
