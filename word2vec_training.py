@@ -90,13 +90,14 @@ def prepare_and_load_abstracts(args: argparse.Namespace) -> Tuple[List[str], Lis
 class EpochSaver(CallbackAny2Vec):
     """Callback to save model after every epoch."""
 
-    def __init__(self):
+    def __init__(self, savedir: str):
         self.epoch = 0
+        self.savedir = savedir
 
     def on_epoch_end(self, model: Word2Vec) -> None:
         """Save model after every epoch."""
         print(f"Save model number {self.epoch}.")
-        model.save(f"models/model_epoch{self.epoch}.pkl")
+        model.save(f"{self.savedir}/model_epoch{self.epoch}.pkl")
         self.epoch += 1
 
 
@@ -204,6 +205,7 @@ class Word2VecCorpus:
                 source_sentences = self.GRAMDICT[self.GRAMLIST[index - 1]][1]
                 source_main = self.GRAMDICT[self.GRAMLIST[index - 1]][2]
 
+            print(f"Generating {self.GRAMLIST[index]} grams")
             gram_model = Phrases(source_sentences, min_count=minimum, threshold=score)
             gram_model_phraser = Phraser(gram_model)
             gram_model.save(
@@ -264,7 +266,7 @@ class Word2VecCorpus:
             epochs=30,
             report_delay=15,
             compute_loss=True,
-            callbacks=[EpochSaver()],
+            callbacks=[EpochSaver(savedir=f"{self.root_dir}/models")],
         )
 
         model.save(
