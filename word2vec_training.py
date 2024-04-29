@@ -55,10 +55,21 @@ def prepare_and_load_abstracts(args: argparse.Namespace) -> Tuple[List[str], Lis
     def combine_chunks(suffix: str) -> None:
         """Combine chunks of abstracts if they do not exist"""
         if not os.path.isfile(
-            f"{args.abstracts_dir}/tokens_cleaned_abstracts_{suffix}_combined.pkl"
+            f"{args.abstracts_dir}/combined/tokens_cleaned_abstracts_{suffix}_combined.pkl"
         ):
             print(f"Combining abstract chunks for {suffix}")
             _combine_chunks(args.abstracts_dir, f"tokens_cleaned_abstracts_{suffix}")
+            with open(
+                f"{args.abstracts_dir}/tokens_cleaned_abstracts_{suffix}_combined.pkl",
+                "wb",
+            ) as f:
+                pickle.dump(
+                    _combine_chunks(
+                        f"{args.abstracts_dir}/combined",
+                        f"tokens_cleaned_abstracts_{suffix}",
+                    ),
+                    f,
+                )
 
     file_suffixes = ["remove_punct", "remove_genes"]
     for suffix in file_suffixes:
@@ -66,13 +77,13 @@ def prepare_and_load_abstracts(args: argparse.Namespace) -> Tuple[List[str], Lis
 
     abstracts_without_genes = pickle.load(
         open(
-            f"{args.abstracts_dir}/tokens_cleaned_abstracts_remove_genes_combined.pkl",
+            f"{args.abstracts_dir}/combined/tokens_cleaned_abstracts_remove_genes_combined.pkl",
             "rb",
         )
     )
     abstracts = pickle.load(
         open(
-            f"{args.abstracts_dir}/tokens_cleaned_abstracts_remove_punct_combined.pkl",
+            f"{args.abstracts_dir}/combined/tokens_cleaned_abstracts_remove_punct_combined.pkl",
             "rb",
         )
     )
