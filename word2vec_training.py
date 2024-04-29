@@ -1,3 +1,4 @@
+# sourcery skip: do-not-use-staticmethod
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
@@ -6,10 +7,12 @@
 
 
 import argparse
-from collections import Counter
 from datetime import date
+import glob
 import logging
-from typing import Any, Dict, List, Set
+import os
+import pickle
+from typing import cast, Dict, List, Tuple
 
 from fse.models import uSIF  # type: ignore
 from gensim.models import Word2Vec  # type: ignore
@@ -20,12 +23,61 @@ import pandas as pd  # type: ignore
 from progressbar import ProgressBar  # type: ignore
 from tqdm import tqdm  # type: ignore
 
-from utils import COPY_GENES
 from utils import time_decorator
 
 logging.basicConfig(
     format="%(asctime)s : %(levelname)s : %(message)s", level=logging.INFO
 )
+
+
+def _concat_chunks(filenames: List[str]) -> List[List[str]]:
+    """Concatenates chunks of abstracts"""
+    combined = []
+    combined += [pickle.load(open(file, "rb")) for file in filenames]
+    return combined
+
+
+def _chunk_locator(path: str, prefix: str) -> List[str]:
+    """Returns abstract chunks matching a specific prefix"""
+    pattern = f"{path}/{prefix}_*.pkl"
+    return glob.glob(pattern)
+
+
+def _combine_chunks(path: str, prefix: str) -> List[List[str]]:
+    """Combines chunks of abstracts"""
+    filenames = _chunk_locator(path, prefix)
+    return _concat_chunks(filenames)
+
+
+def prepare_and_load_abstracts(args: argparse.Namespace) -> Tuple[List[str], List[str]]:
+    """Prepare chunked abstracts for processing"""
+
+    def combine_chunks(suffix: str) -> None:
+        """Combine chunks of abstracts if they do not exist"""
+        if not os.path.isfile(
+            f"{args.abstracts_dir}/tokens_cleaned_abstracts_{suffix}_combined.pkl"
+        ):
+            print(f"Combining abstract chunks for {suffix}")
+            _combine_chunks(args.abstracts_dir, f"tokens_cleaned_abstracts_{suffix}")
+
+    file_suffixes = ["remove_punct", "remove_genes"]
+    for suffix in file_suffixes:
+        combine_chunks(suffix)
+
+    abstracts_without_genes = pickle.load(
+        open(
+            f"{args.abstracts_dir}/tokens_cleaned_abstracts_remove_genes_combined.pkl",
+            "rb",
+        )
+    )
+    abstracts = pickle.load(
+        open(
+            f"{args.abstracts_dir}/tokens_cleaned_abstracts_remove_punct_combined.pkl",
+            "rb",
+        )
+    )
+
+    return abstracts_without_genes, abstracts
 
 
 class EpochSaver(CallbackAny2Vec):
@@ -119,9 +171,8 @@ class Word2VecCorpus:
         self.epochs = epochs
         self.sentence_model = sentence_model
 
-    def _concat_chunks(self, chunks: List[pd.DataFrame]) -> pd.DataFrame:
-        """Concatenates chunks of abstracts"""
-        return pd.concat(chunks, axis=0)
+        # make directories for saved models
+        os.makedirs(f"{self.root_dir}/models/gram_models", exist_ok=True)
 
     @time_decorator(print_args=False)
     def _gram_generator(
@@ -130,13 +181,14 @@ class Word2VecCorpus:
         abstracts: List[List[str]],
         minimum: int,
         score: int,
-    ):
+    ) -> None:
         """Iterates through prefix list to generate n-grams from 2-8!
 
         # Arguments
             minimum:
             score:
         """
+        self.GRAMDICT = cast(dict, self.GRAMDICT)
         maxlen = len(self.GRAMDICT) - 1
 
         for index in range(maxlen + 1):
@@ -162,11 +214,7 @@ class Word2VecCorpus:
             f"{self.root_dir}/models/gram_models/{self.GRAMLIST[maxlen]}_model_{self.date}.pkl"
         )
 
-        self._save_wrapper(
-            gram_model, f"{self.root_dir}/data/gram_model_{self.date}.pkl"
-        )
-
-        return quintgram_main
+        self.abstracts = quintgram_main
 
     def _normalize_gene_name_to_symbol(
         self, gene_dict: Dict[str, str], corpus: List[List[str]]
@@ -225,12 +273,23 @@ def main() -> None:
     """Main function"""
     parser = argparse.ArgumentParser(description="Train a word2vec model")
     parser.add_argument(
-        "--root_dir", type=str, required=True, help="Root directory for data"
+        "--root_dir",
+        type=str,
+        required=True,
+        help="Root directory for data",
+        default="/ocean/projects/bio210019p/stevesho/nlp",
     )
     parser.add_argument(
-        "--abstracts_dir", type=str, required=True, help="Path to abstracts"
+        "--abstracts_dir",
+        type=str,
+        required=True,
+        help="Path to abstracts",
+        default="/ocean/projects/bio210019p/stevesho/nlp/data",
     )
     args = parser.parse_args()
+
+    # prepare abstracts by combining chunks
+    abstracts_without_genes, abstracts = prepare_and_load_abstracts(args)
 
     # instantiate object
     modelprocessingObj = Word2VecCorpus(
@@ -249,6 +308,17 @@ def main() -> None:
         epochs=30,
         sentence_model=uSIF,
     )
+
+    # build gram models
+    modelprocessingObj._gram_generator(
+        abstracts_without_entities=abstracts_without_genes,
+        abstracts=abstracts,
+        minimum=5,
+        score=50,
+    )
+
+    # train word2vec
+    modelprocessingObj._build_vocab_and_train()
 
 
 if __name__ == "__main__":
