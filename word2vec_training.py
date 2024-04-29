@@ -46,6 +46,7 @@ def _chunk_locator(path: str, prefix: str) -> List[str]:
 def _combine_chunks(path: str, prefix: str) -> List[List[str]]:
     """Combines chunks of abstracts"""
     filenames = _chunk_locator(path, prefix)
+    print(f"Combining chunks of abstracts: {filenames}")
     return _concat_chunks(filenames)
 
 
@@ -54,14 +55,10 @@ def prepare_and_load_abstracts(args: argparse.Namespace) -> Tuple[List[str], Lis
 
     def combine_chunks(suffix: str) -> None:
         """Combine chunks of abstracts if they do not exist"""
-        if not os.path.isfile(
-            f"{args.abstracts_dir}/combined/tokens_cleaned_abstracts_{suffix}_combined.pkl"
-        ):
-            print(f"Combining abstract chunks for {suffix}")
-            with open(
-                f"{args.abstracts_dir}/combined/tokens_cleaned_abstracts_{suffix}_combined.pkl",
-                "wb",
-            ) as f:
+        filename = f"{args.abstracts_dir}/combined/tokens_cleaned_abstracts_{suffix}_combined.pkl"
+        if not os.path.isfile(filename):
+            print(f"Combining abstract chunks for {filename}")
+            with open(filename, "wb") as f:
                 pickle.dump(
                     _combine_chunks(
                         f"{args.abstracts_dir}",
