@@ -133,17 +133,15 @@ class Word2VecCorpus:
         according to parameters set during object init
 
     # Helpers
-        PREFS - list of n-gram prefixes
+        GRAMLIST - list of n-gram prefixes
         GRAMDICT - dictionary of n-gram models
-        GRAMLIST - list of n-gram models
 
     Examples:
     ----------
     """
 
-    PREFS = ["bigram", "trigram", "quadgram", "quintigram"]
-    GRAMDICT = dict.fromkeys(PREFS)
-    GRAMLIST = list(GRAMDICT)
+    GRAMLIST = ["bigram", "trigram", "quadgram", "quintigram"]
+    GRAMDICT = dict.fromkeys(GRAMLIST)
 
     def __init__(
         self,
@@ -208,6 +206,9 @@ class Word2VecCorpus:
 
             gram_model = Phrases(source_sentences, min_count=minimum, threshold=score)
             gram_model_phraser = Phraser(gram_model)
+            gram_model.save(
+                f"{self.root_dir}/models/gram_models/{self.GRAMLIST[index]}_model_{self.date}.pkl"
+            )
             gram_sentence = (
                 gram_model_phraser[sentence] for sentence in source_sentences
             )
@@ -216,11 +217,6 @@ class Word2VecCorpus:
             self.GRAMDICT[self.GRAMLIST[index]] = [gram_model, gram_sentence, gram_main]
 
         quintgram_main = self.GRAMDICT[self.GRAMLIST[maxlen]][2]
-
-        gram_model.save(
-            f"{self.root_dir}/models/gram_models/{self.GRAMLIST[maxlen]}_model_{self.date}.pkl"
-        )
-
         self.abstracts = quintgram_main
 
     def _normalize_gene_name_to_symbol(
