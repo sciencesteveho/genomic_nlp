@@ -250,7 +250,7 @@ class Word2VecCorpus:
         according to parameters set during object instantiation.
         """
         # avg_len = averageLen(self.gram_corpus_gene_standardized)
-        # corpus = IterableCorpus(f"{self.root_dir}/data/corpus_phrased.txt")
+        vocab_corpus = IterableCorpus(f"{self.root_dir}/data/corpus_phrased.txt")
         corpus = f"{self.root_dir}/data/corpus_phrased.txt"
 
         model = Word2Vec(
@@ -270,7 +270,7 @@ class Word2VecCorpus:
             }
         )  # init word2vec class with alpha values from Tshitoyan et al.
 
-        model.build_vocab(corpus)  # build vocab
+        model.build_vocab(vocab_corpus)  # build vocab
 
         model.train(
             corpus_file=corpus,
