@@ -294,20 +294,19 @@ SPECIFIC_TERMS = [
 ]
 
 COPY_GENES = {
-    "was": "wasgene",
-    "she": "shegene",
-    "impact": "impactgene",
-    "mice": "micegene",
-    "rest": "restgene",
-    "set": "setgene",
-    "met": "metgene",
-    "gc": "gcgene",
-    "ca2": "ca2gene",
-    "atm": "atmgene",
-    "mb": "mbgene",
-    "pigs": "pigsgene",
-    "cat": "catgene",
-    "coil": "coilgene",
+    "WAS": "wasgene",
+    "SHE": "shegene",
+    "IMPACT": "impactgene",
+    "MICE": "micegene",
+    "REST": "restgene",
+    "SET": "setgene",
+    "MET": "metgene",
+    "GC": "gcgene",
+    "ATM": "atmgene",
+    "MB": "mbgene",
+    "PIGS": "pigsgene",
+    "CAT": "catgene",
+    "COIL": "coilgene",
 }
 
 
