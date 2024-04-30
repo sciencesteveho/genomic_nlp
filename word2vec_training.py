@@ -250,7 +250,8 @@ class Word2VecCorpus:
         according to parameters set during object instantiation.
         """
         # avg_len = averageLen(self.gram_corpus_gene_standardized)
-        corpus = LineSentence(f"{self.root_dir}/data/corpus_phrased.txt")
+        # corpus = IterableCorpus(f"{self.root_dir}/data/corpus_phrased.txt")
+        corpus = f"{self.root_dir}/data/corpus_phrased.txt"
 
         model = Word2Vec(
             **{
@@ -325,7 +326,7 @@ def main() -> None:
         min_alpha=0.0001,
         negative=15,
         sg=1,
-        hs=1,
+        hs=0,
         epochs=30,
     )
     print("Model initialized. Generating grams...")
