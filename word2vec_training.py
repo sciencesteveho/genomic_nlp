@@ -19,6 +19,7 @@ from gensim.models import Word2Vec  # type: ignore
 from gensim.models.callbacks import CallbackAny2Vec  # type: ignore
 from gensim.models.phrases import Phraser  # type: ignore
 from gensim.models.phrases import Phrases  # type: ignore
+from gensim.models.word2vec import LineSentence  # type: ignore
 import pandas as pd  # type: ignore
 from progressbar import ProgressBar  # type: ignore
 import smart_open
@@ -249,7 +250,7 @@ class Word2VecCorpus:
         according to parameters set during object instantiation.
         """
         # avg_len = averageLen(self.gram_corpus_gene_standardized)
-        corpus = IterableCorpus(f"{self.root_dir}/data/corpus_phrased.txt")
+        corpus = LineSentence(f"{self.root_dir}/data/corpus_phrased.txt")
 
         model = Word2Vec(
             **{
@@ -271,7 +272,7 @@ class Word2VecCorpus:
         model.build_vocab(corpus)  # build vocab
 
         model.train(
-            corpus,
+            corpus_file=corpus,
             total_examples=model.corpus_count,
             epochs=30,
             report_delay=15,
@@ -318,7 +319,7 @@ def main() -> None:
         min_count=5,
         dimensions=200,
         window=8,
-        workers=16,
+        workers=24,
         sample=0.0001,
         alpha=0.01,
         min_alpha=0.0001,
