@@ -33,7 +33,7 @@ def gene_symbol_from_gencode(gencode_ref: pybedtools.BedTool) -> Set[str]:
     }
 
 
-def normalization_list(entity_file: str, type: str = "gene") -> Set[str]:
+def list_of_human_genes(gtf: str) -> Set[str]:
     """_summary_
 
     Args:
@@ -45,32 +45,14 @@ def normalization_list(entity_file: str, type: str = "gene") -> Set[str]:
         Set[str]: _description_
     """
 
-    # def handle_ents(entity_file:) -> Set[str]:
-    #     """Remove gene tokens"""
-    #     ents = [entity[0].casefold() for entity in entity_file if entity not in genes]
-    #     return set(ents)
-
-    def handle_gene() -> Set[str]:
-        """Remove copy genes from gene list"""
-        for key in COPY_GENES:
-            genes.remove(key)
-            genes.append(COPY_GENES[key])
-        return set(genes)
-
-    type_handlers = {
-        # "ents": handle_ents,
-        "gene": handle_gene,
-    }
-
     print("Grabbing genes from GTF")
-    gtf = pybedtools.BedTool(entity_file)
+    gtf = pybedtools.BedTool(gtf)
     genes = list(gene_symbol_from_gencode(gtf))
 
-    if type not in type_handlers:
-        raise ValueError("type must be either 'gene' or 'ents'")
-
-    # return type_handlers[type](entity_file)
-    return type_handlers[type]()
+    for key in COPY_GENES:
+        genes.remove(key)
+        genes.append(COPY_GENES[key])
+    return set(genes)
 
 
 class ChunkedDocumentProcessor:
@@ -245,7 +227,7 @@ class ChunkedDocumentProcessor:
     def selective_casefold(self, abstracts: List[List[str]], genes: Set[str]) -> None:
         """Casefold the abstracts"""
         self.abstracts = [
-            [token.casefold() for token in sentence if token not in genes]
+            [token.casefold() if token not in genes else token for token in sentence]
             for sentence in abstracts
         ]
 
@@ -277,9 +259,8 @@ class ChunkedDocumentProcessor:
     def processing_pipeline(self) -> None:
         """Runs the initial cleaning pipeline."""
         # get gene list for casefolding
-        genes = normalization_list(
-            entity_file=self.gene_gtf,
-            type="gene",
+        genes = list_of_human_genes(
+            gtf=self.gene_gtf,
         )
 
         # tokenize abstracts
@@ -296,9 +277,7 @@ class ChunkedDocumentProcessor:
         )
 
         # selective casefolding
-        self.selective_casefold(
-            abstracts=self.abstracts, genes=normalization_list(self.gene_gtf)
-        )
+        self.selective_casefold(abstracts=self.abstracts, genes=genes)
 
         # save cleaned, casefolded abstracts
         self._save_processed_abstracts_checkpoint(
