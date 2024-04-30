@@ -257,7 +257,6 @@ class Word2VecCorpus:
                 for attr in [
                     "min_count",
                     "window",
-                    "size",
                     "workers",
                     "sample",
                     "alpha",
