@@ -157,20 +157,20 @@ class Word2VecCorpus:
 
     def __init__(
         self,
-        root_dir,
-        abstract_dir,
-        date,
-        min_count,
-        dimensions,
-        workers,
-        sample,
-        alpha,
-        min_alpha,
-        negative,
-        sg,
-        hs,
-        epochs,
-        sentence_model,
+        root_dir: str,
+        abstract_dir: str,
+        date: date,
+        min_count: int,
+        dimensions: int,
+        window: int,
+        workers: int,
+        sample: float,
+        alpha: float,
+        min_alpha: float,
+        negative: int,
+        sg: int,
+        hs: int,
+        epochs: int,
     ):
         """Initialize the class"""
         self.root_dir = root_dir
@@ -178,6 +178,7 @@ class Word2VecCorpus:
         self.date = date
         self.min_count = min_count
         self.dimensions = dimensions
+        self.window = window
         self.workers = workers
         self.sample = sample
         self.alpha = alpha
@@ -186,7 +187,6 @@ class Word2VecCorpus:
         self.sg = sg
         self.hs = hs
         self.epochs = epochs
-        self.sentence_model = sentence_model
 
         # make directories for saved models
         for dir in ["models", "w2v"]:
@@ -317,8 +317,9 @@ def main() -> None:
         abstract_dir=args.abstracts_dir,
         date=date.today(),
         min_count=5,
-        dimensions=250,
-        workers=8,
+        dimensions=200,
+        window=8,
+        workers=16,
         sample=0.0001,
         alpha=0.01,
         min_alpha=0.0001,
@@ -326,7 +327,6 @@ def main() -> None:
         sg=1,
         hs=1,
         epochs=30,
-        sentence_model=uSIF,
     )
     print("Model initialized. Generating grams...")
 
