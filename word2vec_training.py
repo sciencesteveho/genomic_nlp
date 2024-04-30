@@ -121,7 +121,7 @@ class Word2VecCorpus:
         date
         min_count
         workers
-        dimensions
+        size
         sample
         alpha
         min_alpha
@@ -162,7 +162,7 @@ class Word2VecCorpus:
         abstract_dir: str,
         date: date,
         min_count: int,
-        dimensions: int,
+        size: int,
         window: int,
         workers: int,
         sample: float,
@@ -178,7 +178,7 @@ class Word2VecCorpus:
         self.abstract_dir = abstract_dir
         self.date = date
         self.min_count = min_count
-        self.dimensions = dimensions
+        self.size = size
         self.window = window
         self.workers = workers
         self.sample = sample
@@ -261,6 +261,7 @@ class Word2VecCorpus:
                     "window",
                     "workers",
                     "sample",
+                    "size",
                     "alpha",
                     "min_alpha",
                     "negative",
@@ -283,7 +284,7 @@ class Word2VecCorpus:
         )
 
         model.save(
-            f"{self.root_dir}/models/w2v/word2vec_{self.dimensions}_dimensions_{self.date}.model"
+            f"{self.root_dir}/models/w2v/word2vec_{self.size}_dimensions_{self.date}.model"
         )
 
 
@@ -319,7 +320,7 @@ def main() -> None:
         abstract_dir=args.abstracts_dir,
         date=date.today(),
         min_count=5,
-        dimensions=200,
+        size=200,
         window=8,
         workers=24,
         sample=0.0001,
