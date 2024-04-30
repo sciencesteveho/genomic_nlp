@@ -275,6 +275,7 @@ class Word2VecCorpus:
         model.train(
             corpus_file=corpus,
             total_examples=model.corpus_count,
+            total_words=model.corpus_total_words,
             epochs=30,
             report_delay=15,
             compute_loss=True,
