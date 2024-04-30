@@ -64,7 +64,7 @@ def normalization_list(entity_file: str, type: str = "gene") -> Set[str]:
 
     print("Grabbing genes from GTF")
     gtf = pybedtools.BedTool(entity_file)
-    genes = [gene.lower() for gene in gene_symbol_from_gencode(gtf)]
+    genes = list(gene_symbol_from_gencode(gtf))
 
     if type not in type_handlers:
         raise ValueError("type must be either 'gene' or 'ents'")
@@ -242,6 +242,14 @@ class ChunkedDocumentProcessor:
         self.abstracts = new_corpus
 
     @time_decorator(print_args=False)
+    def selective_casefold(self, abstracts: List[List[str]], genes: Set[str]) -> None:
+        """Casefold the abstracts"""
+        self.abstracts = [
+            [token.casefold() for token in sentence if token not in genes]
+            for sentence in abstracts
+        ]
+
+    @time_decorator(print_args=False)
     def _remove_entities_in_tokenized_corpus(
         self, entity_list: Set[str], abstracts: List[List[str]]
     ) -> None:
@@ -268,6 +276,12 @@ class ChunkedDocumentProcessor:
 
     def processing_pipeline(self) -> None:
         """Runs the initial cleaning pipeline."""
+        # get gene list for casefolding
+        genes = normalization_list(
+            entity_file=self.gene_gtf,
+            type="gene",
+        )
+
         # tokenize abstracts
         self.tokenization(abstracts=self.abstracts, use_gpu=False)
 
@@ -281,14 +295,19 @@ class ChunkedDocumentProcessor:
             outname=f"{self.root_dir}/data/tokens_cleaned_abstracts_remove_punct_{self.chunk}"
         )
 
+        # selective casefolding
+        self.selective_casefold(
+            abstracts=self.abstracts, genes=normalization_list(self.gene_gtf)
+        )
+
+        # save cleaned, casefolded abstracts
+        self._save_processed_abstracts_checkpoint(
+            outname=f"{self.root_dir}/data/tokens_cleaned_abstracts_casefold_{self.chunk}"
+        )
+
         if not self.word2vec:
             return
 
-        # additional processing steps
-        genes = normalization_list(
-            entity_file=self.gene_gtf,
-            type="gene",
-        )
         self._remove_entities_in_tokenized_corpus(
             abstracts=self.abstracts, entity_list=genes
         )

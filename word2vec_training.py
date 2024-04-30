@@ -22,7 +22,7 @@ from gensim.models.phrases import Phrases  # type: ignore
 from gensim.models.word2vec import LineSentence  # type: ignore
 import pandas as pd  # type: ignore
 from progressbar import ProgressBar  # type: ignore
-import smart_open
+import smart_open  # type: ignore
 from tqdm import tqdm  # type: ignore
 
 from utils import time_decorator
@@ -82,7 +82,7 @@ def prepare_and_load_abstracts(args: argparse.Namespace) -> None:
                     protocol=pickle.HIGHEST_PROTOCOL,
                 )
 
-    file_suffixes = ["remove_punct", "remove_genes"]
+    file_suffixes = ["casefold", "remove_genes"]
     for suffix in file_suffixes:
         combine_chunks(suffix)
 
@@ -196,8 +196,6 @@ class Word2VecCorpus:
     @time_decorator(print_args=False)
     def _gram_generator(
         self,
-        # abstracts_without_entities: List[List[str]],
-        # abstracts: List[List[str]],
         minimum: int,
         score: int,
     ) -> None:
@@ -307,12 +305,11 @@ def main() -> None:
     print("Arguments parsed. Preparing abstracts...")
 
     # prepare abstracts by writing chunks out to text file
-    # _write_chunks_to_text(args, "tokens_cleaned_abstracts_remove_punct")
-    # print("Writing out cleaned_corpus...")
-    # _write_chunks_to_text(args, "tokens_cleaned_abstracts_remove_genes")
-    # print("Writing gene_remove corpus...")
-
-    # print("Abstracts chunked. Loading...")
+    _write_chunks_to_text(args, "tokens_cleaned_abstracts_casefold")
+    print("Writing out cleaned_corpus...")
+    _write_chunks_to_text(args, "tokens_cleaned_abstracts_remove_genes")
+    print("Writing gene_remove corpus...")
+    print("Abstracts written! Instantiating object...")
 
     # instantiate object
     modelprocessingObj = Word2VecCorpus(
@@ -334,13 +331,11 @@ def main() -> None:
     print("Model initialized. Generating grams...")
 
     # build gram models
-    # modelprocessingObj._gram_generator(
-    #     # abstracts_without_entities=abstracts_without_genes,
-    #     # abstracts=abstracts,
-    #     minimum=5,
-    #     score=50,
-    # )
-    # print("Grams generated. Training word2vec model...")
+    modelprocessingObj._gram_generator(
+        minimum=5,
+        score=50,
+    )
+    print("Grams generated. Training word2vec model...")
 
     # train word2vec
     modelprocessingObj._build_vocab_and_train()
