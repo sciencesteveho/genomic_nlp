@@ -8,9 +8,9 @@ cleanup"""
 
 
 import argparse
-import os
+import csv
 import pickle
-from typing import List, Optional, Set, Union
+from typing import List, Set, Union
 
 from progressbar import ProgressBar  # type: ignore
 import pybedtools  # type: ignore
@@ -23,17 +23,7 @@ from utils import is_number
 from utils import time_decorator
 
 
-def gene_symbol_from_gencode(gencode_ref: pybedtools.BedTool) -> Set[str]:
-    """Returns deduped set of genes from a gencode gtf. Written for the gencode
-    45 and avoids header"""
-    return {
-        line[8].split('gene_name "')[1].split('";')[0]
-        for line in gencode_ref
-        if not line[0].startswith("#") and "gene_name" in line[8]
-    }
-
-
-def list_of_human_genes(gtf: str) -> Set[str]:
+def gencode_genes(gtf: str) -> Set[str]:
     """_summary_
 
     Args:
@@ -45,6 +35,15 @@ def list_of_human_genes(gtf: str) -> Set[str]:
         Set[str]: _description_
     """
 
+    def gene_symbol_from_gencode(gencode_ref: pybedtools.BedTool) -> Set[str]:
+        """Returns deduped set of genes from a gencode gtf. Written for the gencode
+        45 and avoids header"""
+        return {
+            line[8].split('gene_name "')[1].split('";')[0]
+            for line in gencode_ref
+            if not line[0].startswith("#") and "gene_name" in line[8]
+        }
+
     print("Grabbing genes from GTF")
     gtf = pybedtools.BedTool(gtf)
     genes = list(gene_symbol_from_gencode(gtf))
@@ -53,6 +52,27 @@ def list_of_human_genes(gtf: str) -> Set[str]:
         genes.remove(key)
         genes.append(COPY_GENES[key])
     return set(genes)
+
+
+def hgnc_ncbi_genes(tsv: str, hgnc: bool = False) -> Set[str]:
+    """Get gene symbols and names from HGNC file"""
+    gene_symbols, gene_names = [], []
+    with open(tsv, newline="") as file:
+        reader = csv.reader(file, delimiter="\t")
+        next(reader)  # skip header
+        for row in reader:
+            if hgnc:
+                gene_symbols.append(row[1])
+                gene_names.append(row[2])
+            else:
+                gene_symbols.append(row[0])
+                gene_names.append(row[1])
+
+    gene_names = [
+        name.replace("(", "").replace(")", "").replace(" ", "_").replace(",", "")
+        for name in gene_names
+    ]
+    return set(gene_symbols + gene_names)
 
 
 class ChunkedDocumentProcessor:
@@ -141,7 +161,7 @@ class ChunkedDocumentProcessor:
         chunk: int,
         lemmatizer: bool,
         word2vec: bool,
-        gene_gtf: str,
+        genes: Set[str],
     ):
         """Initialize the class"""
         self.root_dir = root_dir
@@ -149,7 +169,7 @@ class ChunkedDocumentProcessor:
         self.chunk = chunk
         self.lemmatizer = lemmatizer
         self.word2vec = word2vec
-        self.gene_gtf = gene_gtf
+        self.genes = genes
 
     def _make_directories(self) -> None:
         """Make directories for processing"""
@@ -258,11 +278,6 @@ class ChunkedDocumentProcessor:
 
     def processing_pipeline(self) -> None:
         """Runs the initial cleaning pipeline."""
-        # get gene list for casefolding
-        genes = list_of_human_genes(
-            gtf=self.gene_gtf,
-        )
-
         # tokenize abstracts
         self.tokenization(abstracts=self.abstracts, use_gpu=False)
 
@@ -277,7 +292,7 @@ class ChunkedDocumentProcessor:
         )
 
         # selective casefolding
-        self.selective_casefold(abstracts=self.abstracts, genes=genes)
+        self.selective_casefold(abstracts=self.abstracts, genes=self.genes)
 
         # save cleaned, casefolded abstracts
         self._save_processed_abstracts_checkpoint(
@@ -288,7 +303,7 @@ class ChunkedDocumentProcessor:
             return
 
         self._remove_entities_in_tokenized_corpus(
-            abstracts=self.abstracts, entity_list=genes
+            abstracts=self.abstracts, entity_list=self.genes
         )
 
         self._save_processed_abstracts_checkpoint(
@@ -307,6 +322,10 @@ def main() -> None:
     parser.add_argument(
         "--gene_gtf", type=str, default="../data/gencode.v45.basic.annotation.gtf"
     )
+    parser.add_argument("--ncbi_genes", type=str, default="../data/ncbi_genes.tsv")
+    parser.add_argument(
+        "--hgnc_genes", type=str, default="../data/hgnc_complete_set.txt"
+    )
     parser.add_argument("--lemmatizer", action="store_true")
     parser.add_argument("--prep_word2vec", action="store_true")
     args = parser.parse_args()
@@ -318,6 +337,22 @@ def main() -> None:
     ) as f:
         abstracts = pickle.load(f)
 
+    # get genes
+    gencode = gencode_genes(
+        gtf=args.gene_gtf,
+    )
+
+    hgnc = hgnc_ncbi_genes(
+        tsv=args.hgnc_genes,
+        hgnc=True,
+    )
+
+    ncbi = hgnc_ncbi_genes(
+        tsv=args.ncbi_genes,
+    )
+
+    genes = gencode.union(hgnc).union(ncbi)
+
     # instantiate document processor
     documentProcessor = ChunkedDocumentProcessor(
         root_dir=args.root_dir,
@@ -325,7 +360,7 @@ def main() -> None:
         chunk=args.chunk,
         lemmatizer=args.lemmatizer,
         word2vec=args.prep_word2vec,
-        gene_gtf=args.gene_gtf,
+        genes=genes,
     )
 
     # run processing pipeline
