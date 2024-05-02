@@ -151,6 +151,32 @@ class Word2VecCorpus:
 
     Examples:
     ----------
+    # instantiate object
+    >>> modelprocessingObj = Word2VecCorpus(
+        root_dir=args.root_dir,
+        abstract_dir=args.abstracts_dir,
+        date=date.today(),
+        min_count=5,
+        vector_size=200,
+        window=8,
+        workers=24,
+        sample=0.0001,
+        alpha=0.01,
+        min_alpha=0.0001,
+        negative=15,
+        sg=1,
+        hs=0,
+        epochs=30,
+    )
+
+    # build gram models
+    >>> modelprocessingObj._gram_generator(
+        minimum=5,
+        score=50,
+    )
+
+    # train word2vec
+    >>> modelprocessingObj._build_vocab_and_train()
     """
 
     GRAMLIST = ["bigram", "trigram", "quadgram", "quintigram"]

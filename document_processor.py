@@ -157,10 +157,11 @@ class ChunkedDocumentProcessor:
     def __init__(
         self,
         root_dir: str,
-        abstracts: Union[List[str], List[List[str]]],
+        abstracts: Union[List[str], List[List[str]], List[List[List[str]]]],
         chunk: int,
         lemmatizer: bool,
         word2vec: bool,
+        finetune: bool,
         genes: Set[str],
     ):
         """Initialize the class"""
@@ -169,6 +170,7 @@ class ChunkedDocumentProcessor:
         self.chunk = chunk
         self.lemmatizer = lemmatizer
         self.word2vec = word2vec
+        self.finetune = finetune
         self.genes = genes
 
     def _make_directories(self) -> None:
@@ -215,41 +217,78 @@ class ChunkedDocumentProcessor:
             ),
             total=len(self.abstracts),
         ):
-            dataset_tokens.extend(
-                [
-                    [getattr(word, word_attr) for word in sentence]
-                    for sentence in doc.sents
-                ]
-            )
+            if self.finetune:
+                dataset_tokens.extend(
+                    [
+                        [
+                            [getattr(word, word_attr) for word in sentence]
+                            for sentence in doc.sents
+                        ]
+                    ]
+                )
+            else:
+                dataset_tokens.extend(
+                    [
+                        [getattr(word, word_attr) for word in sentence]
+                        for sentence in doc.sents
+                    ]
+                )
 
         self.abstracts = dataset_tokens
 
     @time_decorator(print_args=False)
     def exclude_punctuation_tokens_replace_standalone_numbers(
-        self, abstracts: List[List[str]]
+        self, abstracts: Union[List[List[str]], List[List[List[str]]]]
     ) -> None:
         """Removes standalone symbols if they exist as tokens. Replaces
         numbers with a number based symbol.
         """
         pbar = ProgressBar()
         new_corpus = []
-        for sentence in pbar(abstracts):
-            new_sentence = [
-                "<nUm>" if is_number(token) else token
-                for token in sentence
-                if token not in self.EXTRAS
-            ]
-            new_corpus.append(new_sentence)
+        if self.finetune:
+            for abstract in pbar(abstracts):
+                new_abstract = []
+                for sentence in abstract:
+                    new_sentence = [
+                        "<nUm>" if is_number(token) else token
+                        for token in sentence
+                        if token not in self.EXTRAS
+                    ]
+                    new_abstract.append(new_sentence)
+                new_corpus.append(new_abstract)
+        else:
+            for sentence in pbar(abstracts):
+                new_sentence = [
+                    "<nUm>" if is_number(token) else token
+                    for token in sentence
+                    if token not in self.EXTRAS
+                ]
+                new_corpus.append(new_sentence)
 
         self.abstracts = new_corpus
 
     @time_decorator(print_args=False)
     def selective_casefold(self, abstracts: List[List[str]], genes: Set[str]) -> None:
         """Casefold the abstracts"""
-        self.abstracts = [
-            [token.casefold() if token not in genes else token for token in sentence]
-            for sentence in abstracts
-        ]
+        if self.finetune:
+            self.abstracts = [
+                [
+                    [
+                        token.casefold() if token not in genes else token
+                        for token in sentence
+                    ]
+                    for sentence in abstract
+                ]
+                for abstract in abstracts
+            ]
+        else:
+            self.abstracts = [
+                [
+                    token.casefold() if token not in genes else token
+                    for token in sentence
+                ]
+                for sentence in abstracts
+            ]
 
     @time_decorator(print_args=False)
     def _remove_entities_in_tokenized_corpus(
@@ -260,10 +299,19 @@ class ChunkedDocumentProcessor:
         # Arguments
             entity_list: genes from GTF
         """
-        self.abstracts = [
-            [token for token in sentence if token not in entity_list]
-            for sentence in abstracts
-        ]
+        if self.finetune:
+            self.abstracts = [
+                [
+                    [token for token in sentence if token not in entity_list]
+                    for sentence in abstract
+                ]
+                for abstract in abstracts
+            ]
+        else:
+            self.abstracts = [
+                [token for token in sentence if token not in entity_list]
+                for sentence in abstracts
+            ]
 
     def _save_processed_abstracts_checkpoint(self, outname: str) -> None:
         """
@@ -273,6 +321,7 @@ class ChunkedDocumentProcessor:
             None
         """
         outname += "_lemmatized.pkl" if self.lemmatizer else ".pkl"
+        outname += "_finetune.pkl" if self.finetune else ".pkl"
         with open(outname, "wb") as output:
             pickle.dump(self.abstracts, output)
 
@@ -328,6 +377,7 @@ def main() -> None:
     )
     parser.add_argument("--lemmatizer", action="store_true")
     parser.add_argument("--prep_word2vec", action="store_true")
+    parser.add_argument("--prep_finetune", action="store_true")
     args = parser.parse_args()
 
     # get relevant abstracts
@@ -360,6 +410,7 @@ def main() -> None:
         chunk=args.chunk,
         lemmatizer=args.lemmatizer,
         word2vec=args.prep_word2vec,
+        finetune=args.prep_finetune,
         genes=genes,
     )
 
