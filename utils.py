@@ -11,6 +11,7 @@ import glob
 import inspect
 import os
 from pathlib import Path
+import pickle
 import random
 import time
 from typing import Any, Callable, List, Optional, Union
@@ -308,6 +309,26 @@ COPY_GENES = {
     "CAT": "catgene",
     "COIL": "coilgene",
 }
+
+
+def _concat_chunks(filenames: List[str]) -> List[List[str]]:
+    """Concatenates chunks of abstracts"""
+    combined = []
+    combined += [pickle.load(open(file, "rb")) for file in filenames]
+    return combined
+
+
+def _chunk_locator(path: str, prefix: str) -> List[str]:
+    """Returns abstract chunks matching a specific prefix"""
+    pattern = f"{path}/{prefix}_*.pkl"
+    return glob.glob(pattern)
+
+
+def _combine_chunks(path: str, prefix: str) -> List[List[str]]:
+    """Combines chunks of abstracts"""
+    filenames = _chunk_locator(path, prefix)
+    print(f"Combining chunks of abstracts: {filenames}")
+    return _concat_chunks(filenames)
 
 
 def dir_check_make(dir_path: Union[str, Path]) -> None:

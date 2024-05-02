@@ -5,6 +5,8 @@
 """Code to fine-tune a transformer model on scientific abstracts. We use a
 masked language modeling object as the fine-tuning task."""
 
+import argparse
+import pickle
 from typing import Generator
 
 import torch
@@ -13,6 +15,23 @@ from torch.utils.data import Dataset
 from tqdm import tqdm  # type: ignore
 from transformers import DebertaForMaskedLM  # type: ignore
 from transformers import DebertaTokenizer  # type: ignore
+
+from utils import _chunk_locator
+
+
+def _write_abstracts_to_text(args: argparse.Namespace, prefix: str) -> None:
+    """Write chunks of abstracts to text, where each newline delimits a full
+    abstract."""
+    filenames = _chunk_locator(args.abstracts_dir, prefix)
+    with open(f"{args.abstracts_dir}/combined/{prefix}_combined.txt", "w") as output:
+        for filename in filenames:
+            with open(filename, "rb") as file:
+                abstracts = pickle.load(file)
+                for abstract in abstracts:
+                    line = " ".join(
+                        [" ".join(sentence) for sentence in abstract]
+                    ).strip()
+                    output.write(f"{line}\n")
 
 
 class DatasetCorpus(Dataset):
@@ -48,6 +67,16 @@ def stream_abstracts(dataset_file: str) -> Generator[str, None, None]:
 
 def main() -> None:
     """Main function"""
+    # load classified abstracts
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--root_dir", type=str, default="/ocean/projects/bio210019p/stevesho/nlp"
+    )
+    args = parser.parse_args()
+
+    # write abstracts to text
+    _write_abstracts_to_text(args, "tokens_cleaned_abstracts_casefold")
+
     # load DeBERTa model and tokenizer
     model_name = "microsoft/deberta-base"
     model = DebertaForMaskedLM.from_pretrained(model_name)

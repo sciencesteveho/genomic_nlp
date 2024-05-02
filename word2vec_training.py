@@ -8,23 +8,19 @@
 
 import argparse
 from datetime import date
-import glob
 import logging
 import os
 import pickle
-from typing import cast, Dict, Generator, List, Tuple
 
-from fse.models import uSIF  # type: ignore
 from gensim.models import Word2Vec  # type: ignore
 from gensim.models.callbacks import CallbackAny2Vec  # type: ignore
 from gensim.models.phrases import Phraser  # type: ignore
 from gensim.models.phrases import Phrases  # type: ignore
 from gensim.models.word2vec import LineSentence  # type: ignore
-import pandas as pd  # type: ignore
-from progressbar import ProgressBar  # type: ignore
 import smart_open  # type: ignore
-from tqdm import tqdm  # type: ignore
 
+from utils import _chunk_locator
+from utils import _combine_chunks
 from utils import time_decorator
 
 logging.basicConfig(
@@ -42,26 +38,6 @@ def _write_chunks_to_text(args: argparse.Namespace, prefix: str) -> None:
                 for abstract in abstracts:
                     line = " ".join(abstract) + "\n"
                     output.write(line)
-
-
-def _concat_chunks(filenames: List[str]) -> List[List[str]]:
-    """Concatenates chunks of abstracts"""
-    combined = []
-    combined += [pickle.load(open(file, "rb")) for file in filenames]
-    return combined
-
-
-def _chunk_locator(path: str, prefix: str) -> List[str]:
-    """Returns abstract chunks matching a specific prefix"""
-    pattern = f"{path}/{prefix}_*.pkl"
-    return glob.glob(pattern)
-
-
-def _combine_chunks(path: str, prefix: str) -> List[List[str]]:
-    """Combines chunks of abstracts"""
-    filenames = _chunk_locator(path, prefix)
-    print(f"Combining chunks of abstracts: {filenames}")
-    return _concat_chunks(filenames)
 
 
 def prepare_and_load_abstracts(args: argparse.Namespace) -> None:

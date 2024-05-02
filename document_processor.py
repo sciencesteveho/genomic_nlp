@@ -10,7 +10,7 @@ cleanup"""
 import argparse
 import csv
 import pickle
-from typing import List, Set, Union
+from typing import Any, List, Set, Union
 
 from progressbar import ProgressBar  # type: ignore
 import pybedtools  # type: ignore
@@ -238,7 +238,7 @@ class ChunkedDocumentProcessor:
 
     @time_decorator(print_args=False)
     def exclude_punctuation_tokens_replace_standalone_numbers(
-        self, abstracts: Union[List[List[str]], List[List[List[str]]]]
+        self, abstracts: Union[List[str], List[List[str]], List[List[List[str]]]]
     ) -> None:
         """Removes standalone symbols if they exist as tokens. Replaces
         numbers with a number based symbol.
@@ -268,7 +268,11 @@ class ChunkedDocumentProcessor:
         self.abstracts = new_corpus
 
     @time_decorator(print_args=False)
-    def selective_casefold(self, abstracts: List[List[str]], genes: Set[str]) -> None:
+    def selective_casefold(
+        self,
+        abstracts: list[list[Any]],
+        genes: Set[str],
+    ) -> None:
         """Casefold the abstracts"""
         if self.finetune:
             self.abstracts = [
@@ -292,7 +296,9 @@ class ChunkedDocumentProcessor:
 
     @time_decorator(print_args=False)
     def _remove_entities_in_tokenized_corpus(
-        self, entity_list: Set[str], abstracts: List[List[str]]
+        self,
+        entity_list: Set[str],
+        abstracts: Union[list[list[Any]], list[list[list[Any]]]],
     ) -> None:
         """Remove genes in gene_list from tokenized corpus
 
@@ -313,15 +319,18 @@ class ChunkedDocumentProcessor:
                 for sentence in abstracts
             ]
 
-    def _save_processed_abstracts_checkpoint(self, outname: str) -> None:
+    def _save_processed_abstracts_checkpoint(self, outname: str, chunk: int) -> None:
         """
         Save processed abstracts to a pickle file after cleaning and lemmatization.
 
         Returns:
             None
         """
-        outname += "_lemmatized.pkl" if self.lemmatizer else ".pkl"
-        outname += "_finetune.pkl" if self.finetune else ".pkl"
+        if self.lemmatizer:
+            outname += "_lemmatized"
+        if self.finetune:
+            outname += "_finetune"
+        outname += f"_{chunk}.pkl"
         with open(outname, "wb") as output:
             pickle.dump(self.abstracts, output)
 
@@ -337,7 +346,8 @@ class ChunkedDocumentProcessor:
 
         # save the cleaned abstracts
         self._save_processed_abstracts_checkpoint(
-            outname=f"{self.root_dir}/data/tokens_cleaned_abstracts_remove_punct_{self.chunk}"
+            outname=f"{self.root_dir}/data/tokens_cleaned_abstracts_remove_punct",
+            chunk=self.chunk,
         )
 
         # selective casefolding
@@ -345,7 +355,8 @@ class ChunkedDocumentProcessor:
 
         # save cleaned, casefolded abstracts
         self._save_processed_abstracts_checkpoint(
-            outname=f"{self.root_dir}/data/tokens_cleaned_abstracts_casefold_{self.chunk}"
+            outname=f"{self.root_dir}/data/tokens_cleaned_abstracts_casefold",
+            chunk=self.chunk,
         )
 
         if not self.word2vec:
@@ -356,7 +367,8 @@ class ChunkedDocumentProcessor:
         )
 
         self._save_processed_abstracts_checkpoint(
-            outname=f"{self.root_dir}/data/tokens_cleaned_abstracts_remove_genes_{self.chunk}"
+            outname=f"{self.root_dir}/data/tokens_cleaned_abstracts_remove_genes",
+            chunk=self.chunk,
         )
 
 
