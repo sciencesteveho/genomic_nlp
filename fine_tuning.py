@@ -14,8 +14,8 @@ from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
 from tqdm import tqdm  # type: ignore
 from transformers import DataCollatorForLanguageModeling  # type: ignore
-from transformers import DebertaForMaskedLM  # type: ignore
-from transformers import DebertaV3Tokenizer  # type: ignore
+from transformers import DebertaV2ForMaskedLM  # type: ignore
+from transformers import DebertaV2Tokenizer  # type: ignore
 from transformers import Trainer  # type: ignore
 from transformers import TrainingArguments  # type: ignore
 
@@ -89,8 +89,8 @@ def main() -> None:
     model_name = "microsoft/deberta-v3-base"
 
     # model_name = "microsoft/deberta-base"
-    model = DebertaForMaskedLM.from_pretrained(model_name)
-    tokenizer = DebertaV3Tokenizer.from_pretrained(model_name)
+    model = DebertaV2ForMaskedLM.from_pretrained(model_name)
+    tokenizer = DebertaV2Tokenizer.from_pretrained(model_name)
     model.to(device)
 
     # load dataset generator
