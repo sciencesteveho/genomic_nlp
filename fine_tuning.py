@@ -13,8 +13,11 @@ import torch
 from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
 from tqdm import tqdm  # type: ignore
+from transformers import DataCollatorForLanguageModeling  # type: ignore
 from transformers import DebertaForMaskedLM  # type: ignore
-from transformers import DebertaTokenizer  # type: ignore
+from transformers import DebertaV3Tokenizer  # type: ignore
+from transformers import Trainer  # type: ignore
+from transformers import TrainingArguments  # type: ignore
 
 from utils import _chunk_locator
 
@@ -83,10 +86,11 @@ def main() -> None:
     # )
 
     # load DeBERTa model and tokenizer
-    # model_name = "microsoft/deberta-v3-base"
-    model_name = "microsoft/deberta-base"
+    model_name = "microsoft/deberta-v3-base"
+
+    # model_name = "microsoft/deberta-base"
     model = DebertaForMaskedLM.from_pretrained(model_name)
-    tokenizer = DebertaTokenizer.from_pretrained(model_name)
+    tokenizer = DebertaV3Tokenizer.from_pretrained(model_name)
     model.to(device)
 
     # load dataset generator
@@ -97,42 +101,73 @@ def main() -> None:
         tokenizer,
     )
 
-    # set up dataloader
-    data_loader = DataLoader(
-        dataset,
-        batch_size=64,
-        shuffle=True,
-        pin_memory=True,
-        prefetch_factor=2,
+    data_collator = DataCollatorForLanguageModeling(
+        tokenizer=tokenizer,
+        mlm=True,
+        mlm_probability=0.15,
     )
 
-    # Set up the optimizer and learning rate scheduler
-    optim = torch.optim.AdamW(model.parameters(), lr=2e-5)
+    # Define training arguments
+    training_args = TrainingArguments(
+        output_dir=f"{args.root_dir}/models/deberta",
+        overwrite_output_dir=True,
+        num_train_epochs=5,
+        per_device_train_batch_size=64,
+        save_steps=10_000,
+        save_total_limit=2,
+        prediction_loss_only=True,
+        logging_dir="/ocean/projects/bio210019p/stevesho/nlp/models/logs",
+        logging_steps=500,
+    )
 
-    epochs = 5
-    for epoch in range(epochs):
-        total_loss = 0.0
-        batch_count = 0
+    # Initialize Trainer
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        data_collator=data_collator,
+        train_dataset=dataset,
+        tokenizer=tokenizer,
+    )
 
-        for batch in tqdm(data_loader, desc=f"Epoch {epoch}"):
-            optim.zero_grad()
+    trainer.train()
 
-            batch = {k: v.to(device) for k, v in batch.items() if v is not None}
+    # # set up dataloader
+    # data_loader = DataLoader(
+    #     dataset,
+    #     batch_size=64,
+    #     shuffle=True,
+    #     pin_memory=True,
+    #     prefetch_factor=2,
+    #     num_workers=4,
+    # )
 
-            outputs = model(**batch)
-            loss = outputs.loss
-            loss.backward()
-            optim.step()
+    # # Set up the optimizer and learning rate scheduler
+    # optim = torch.optim.AdamW(model.parameters(), lr=2e-5)
 
-            total_loss += loss.item()
-            batch_count += 1
+    # epochs = 5
+    # for epoch in range(epochs):
+    #     total_loss = 0.0
+    #     batch_count = 0
 
-        avg_loss = total_loss / batch_count
-        print(f"Epoch {epoch} average loss: {avg_loss}")
+    #     for batch in tqdm(data_loader, desc=f"Epoch {epoch}"):
+    #         optim.zero_grad()
 
-    # save model
-    model_dir = f"{args.root_dir}/models/deberta"
-    model.save_pretrained(model_dir)
+    #         batch = {k: v.to(device) for k, v in batch.items() if v is not None}
+
+    #         outputs = model(**batch)
+    #         loss = outputs.loss
+    #         loss.backward()
+    #         optim.step()
+
+    #         total_loss += loss.item()
+    #         batch_count += 1
+
+    #     avg_loss = total_loss / batch_count
+    #     print(f"Epoch {epoch} average loss: {avg_loss}")
+
+    # # save model
+    # model_dir = f"{args.root_dir}/models/deberta"
+    # model.save_pretrained(model_dir)
 
 
 if __name__ == "__main__":
