@@ -83,7 +83,8 @@ def main() -> None:
     # )
 
     # load DeBERTa model and tokenizer
-    model_name = "microsoft/deberta-v3-base"
+    # model_name = "microsoft/deberta-v3-base"
+    model_name = "microsoft/deberta-base"
     model = DebertaForMaskedLM.from_pretrained(model_name)
     tokenizer = DebertaTokenizer.from_pretrained(model_name)
     model.to(device)
