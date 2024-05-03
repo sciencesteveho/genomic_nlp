@@ -73,58 +73,65 @@ def main() -> None:
         "--root_dir", type=str, default="/ocean/projects/bio210019p/stevesho/nlp"
     )
     args = parser.parse_args()
+
     abstracts_dir = f"{args.root_dir}/data"
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # write abstracts to text
-    _write_abstracts_to_text(
-        abstracts_dir=abstracts_dir, prefix="tokens_cleaned_abstracts_casefold_finetune"
+    # _write_abstracts_to_text(
+    #     abstracts_dir=abstracts_dir, prefix="tokens_cleaned_abstracts_casefold_finetune"
+    # )
+
+    # load DeBERTa model and tokenizer
+    model_name = "microsoft/deberta-v3-base"
+    model = DebertaForMaskedLM.from_pretrained(model_name)
+    tokenizer = DebertaTokenizer.from_pretrained(model_name)
+    model.to(device)
+
+    # load dataset generator
+    dataset = DatasetCorpus(
+        stream_abstracts(
+            f"{abstracts_dir}/combined/tokens_cleaned_abstracts_casefold_finetune_combined.txt"
+        ),
+        tokenizer,
     )
 
-    # # load DeBERTa model and tokenizer
-    # model_name = "microsoft/deberta-base"
-    # model = DebertaForMaskedLM.from_pretrained(model_name)
-    # tokenizer = DebertaTokenizer.from_pretrained(model_name)
+    # set up dataloader
+    data_loader = DataLoader(
+        dataset,
+        batch_size=64,
+        shuffle=True,
+        pin_memory=True,
+        prefetch_factor=2,
+    )
 
-    # # load dataset generator
-    # dataset = DatasetCorpus(
-    #     stream_abstracts(
-    #         f"{args.root_dir}/data/combined/tokens_cleaned_abstracts_casefold_finetune_combined.txt"
-    #     ),
-    #     tokenizer,
-    # )
+    # Set up the optimizer and learning rate scheduler
+    optim = torch.optim.AdamW(model.parameters(), lr=2e-5)
 
-    # # set up dataloader
-    # data_loader = DataLoader(
-    #     dataset,
-    #     batch_size=64,
-    #     shuffle=True,
-    #     pin_memory=True,
-    #     prefetch_factor=2,
-    #     num_workers=8,
-    # )
+    epochs = 5
+    for epoch in range(epochs):
+        total_loss = 0.0
+        batch_count = 0
 
-    # # Set up the optimizer and learning rate scheduler
-    # optimizer = torch.optim.AdamW(model.parameters(), lr=2e-5)
-    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-    #     optimizer, mode="max", factor=0.5, patience=3, verbose=True
-    # )
+        for batch in tqdm(data_loader, desc=f"Epoch {epoch}"):
+            optim.zero_grad()
 
-    # epochs = 5
-    # for epoch in range(epochs):
-    #     model.train()
-    #     train_loss = 0
-    #     for batch in tqdm(data_loader, desc=f"Epoch {epoch}"):
-    #         outputs = model(**batch, output_attentions=True)
-    #         loss = outputs.loss
-    #         loss.backward()
-    #         optimizer.step()
-    #         model.zero_grad()
-    #         train_loss += loss.item()
+            batch = {k: v.to(device) for k, v in batch.items() if v is not None}
 
-    #     print(f"Epoch {epoch} loss: {train_loss}")
+            outputs = model(**batch)
+            loss = outputs.loss
+            loss.backward()
+            optim.step()
 
-    # # save model
-    # model.save_pretrained("models/deberta_abstracts")
+            total_loss += loss.item()
+            batch_count += 1
+
+        avg_loss = total_loss / batch_count
+        print(f"Epoch {epoch} average loss: {avg_loss}")
+
+    # save model
+    model_dir = f"{args.root_dir}/models/deberta"
+    model.save_pretrained(model_dir)
 
 
 if __name__ == "__main__":
