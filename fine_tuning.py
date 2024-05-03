@@ -46,7 +46,7 @@ class DatasetCorpus(Dataset):
         self.max_length = max_length
 
     def __len__(self):
-        return len(self.abstracts)
+        return 3889578
 
     def __getitem__(self, idx):
         abstract = str(self.abstracts[idx])
