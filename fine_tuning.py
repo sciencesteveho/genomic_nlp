@@ -118,7 +118,7 @@ def main() -> None:
         prediction_loss_only=True,
         logging_dir="/ocean/projects/bio210019p/stevesho/nlp/models/logs",
         logging_steps=500,
-        max_steps=len(dataset) * 5 // 64,
+        max_steps=3889578 * 5 // 64,
     )
 
     # Initialize Trainer
