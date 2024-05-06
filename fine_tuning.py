@@ -110,7 +110,7 @@ def main() -> None:
     )
 
     data_loader = DataLoader(
-        streaming_dataset, batch_size=8, collate_fn=data_collator, shuffle=False
+        streaming_dataset, batch_size=16, collate_fn=data_collator, shuffle=False
     )
 
     class StreamingTrainer(Trainer):
@@ -123,7 +123,6 @@ def main() -> None:
         output_dir=f"{args.root_dir}/models/deberta",
         overwrite_output_dir=True,
         num_train_epochs=num_epochs,
-        per_device_train_batch_size=8,
         auto_find_batch_size=True,
         save_steps=10_000,
         save_total_limit=2,
