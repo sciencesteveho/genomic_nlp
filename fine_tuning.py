@@ -111,7 +111,7 @@ def main() -> None:
 
     # set up total steps
     num_epochs = 3
-    batch_size = 4
+    batch_size = 128
 
     data_loader = DataLoader(
         streaming_dataset, batch_size=4, collate_fn=data_collator, shuffle=False
@@ -134,6 +134,7 @@ def main() -> None:
         logging_dir="/ocean/projects/bio210019p/stevesho/nlp/models/logs",
         logging_steps=500,
         max_steps=3889578 * num_epochs // batch_size,
+        fp16=True,  # mixed precision training
     )
 
     # Initialize Trainer
