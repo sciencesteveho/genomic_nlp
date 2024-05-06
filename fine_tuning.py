@@ -109,15 +109,18 @@ def main() -> None:
         max_length=512,
     )
 
+    # set up total steps
+    num_epochs = 3
+    batch_size = 4
+
     data_loader = DataLoader(
-        streaming_dataset, batch_size=2, collate_fn=data_collator, shuffle=False
+        streaming_dataset, batch_size=4, collate_fn=data_collator, shuffle=False
     )
 
     class StreamingTrainer(Trainer):
         def get_train_dataloader(self):
             return data_loader
 
-    num_epochs = 3
     # Define training arguments
     training_args = TrainingArguments(
         output_dir=f"{args.root_dir}/models/deberta",
@@ -130,7 +133,7 @@ def main() -> None:
         prediction_loss_only=True,
         logging_dir="/ocean/projects/bio210019p/stevesho/nlp/models/logs",
         logging_steps=500,
-        max_steps=3889578 * num_epochs // 64,
+        max_steps=3889578 * num_epochs // batch_size,
     )
 
     # Initialize Trainer
