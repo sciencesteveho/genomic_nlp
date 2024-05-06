@@ -19,7 +19,8 @@ from transformers import DebertaV2Tokenizer  # type: ignore
 from transformers import Trainer  # type: ignore
 from transformers import TrainingArguments  # type: ignore
 
-# from utils import _chunk_locator
+from utils import _chunk_locator
+
 # from datasets import Dataset
 # from datasets import Features
 # from datasets import Value
@@ -111,7 +112,7 @@ def main() -> None:
 
     class StreamingTrainer(Trainer):
         def get_train_dataloader(self):
-            return self.data_loader
+            return data_loader
 
     # Define training arguments
     training_args = TrainingArguments(
