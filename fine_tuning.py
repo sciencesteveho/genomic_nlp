@@ -11,7 +11,7 @@ from typing import Generator
 
 import torch
 from torch.utils.data import DataLoader
-from torch.utils.data import Dataset
+from torch.utils.data import IterableDataset
 from tqdm import tqdm  # type: ignore
 from transformers import DataCollatorForLanguageModeling  # type: ignore
 from transformers import DebertaV2ForMaskedLM  # type: ignore
@@ -19,7 +19,10 @@ from transformers import DebertaV2Tokenizer  # type: ignore
 from transformers import Trainer  # type: ignore
 from transformers import TrainingArguments  # type: ignore
 
-from utils import _chunk_locator
+# from utils import _chunk_locator
+# from datasets import Dataset
+# from datasets import Features
+# from datasets import Value
 
 
 def _write_abstracts_to_text(abstracts_dir: str, prefix: str) -> None:
@@ -37,35 +40,31 @@ def _write_abstracts_to_text(abstracts_dir: str, prefix: str) -> None:
                     output.write(f"{line}\n")
 
 
-class DatasetCorpus(Dataset):
-    """Class to create a huggingface dataset object from text corpus"""
+class StreamingCorpus(IterableDataset):
+    """Class to create a Hugging Face dataset object from text corpus as an iterable"""
 
-    def __init__(self, abstracts, tokenizer, max_length=512):
-        self.abstracts = abstracts
+    def __init__(self, dataset_file, tokenizer, data_collator, max_length=512):
+        self.dataset_file = dataset_file
         self.tokenizer = tokenizer
+        self.data_collator = data_collator
         self.max_length = max_length
 
-    def __len__(self):
-        return 3889578
+    def __iter__(self):
+        """Iterate over the dataset file and yield tokenized examples"""
+        # Opens the file, ensuring it's closed after iteration
+        with open(self.dataset_file, "r", encoding="utf-8") as file_iterator:
+            for line in file_iterator:
+                abstract = line.strip()
+                tokenized = self.tokenizer(
+                    abstract,
+                    padding="max_length",
+                    truncation=True,
+                    max_length=self.max_length,
+                    return_tensors="pt",
+                )
 
-    def __getitem__(self, idx):
-        abstract = str(self.abstracts[idx])
-        inputs = self.tokenizer(
-            abstract,
-            padding="max_length",
-            truncation=True,
-            max_length=self.max_length,
-            return_tensors="pt",
-        )
-        inputs["labels"] = inputs.input_ids.clone()
-        return inputs
-
-
-def stream_abstracts(dataset_file: str) -> Generator[str, None, None]:
-    """Produces a generator that streams abstracts one by one"""
-    with open(dataset_file, "r") as f:
-        for line in f:
-            yield line.strip()
+                inputs = self.data_collator([tokenized])
+                yield {k: v.squeeze(0) for k, v in inputs.items()}
 
 
 def main() -> None:
@@ -86,20 +85,11 @@ def main() -> None:
     # )
 
     # load DeBERTa model and tokenizer
-    model_name = "microsoft/deberta-v3-base"
-
     # model_name = "microsoft/deberta-base"
+    model_name = "microsoft/deberta-v3-base"
     model = DebertaV2ForMaskedLM.from_pretrained(model_name)
     tokenizer = DebertaV2Tokenizer.from_pretrained(model_name)
     model.to(device)
-
-    # load dataset generator
-    dataset = DatasetCorpus(
-        stream_abstracts(
-            f"{abstracts_dir}/combined/tokens_cleaned_abstracts_casefold_finetune_combined.txt"
-        ),
-        tokenizer,
-    )
 
     data_collator = DataCollatorForLanguageModeling(
         tokenizer=tokenizer,
@@ -107,27 +97,41 @@ def main() -> None:
         mlm_probability=0.15,
     )
 
+    # load dataset generator
+    abstracts = f"{abstracts_dir}/combined/tokens_cleaned_abstracts_casefold_finetune_combined.txt"
+
+    streaming_dataset = StreamingCorpus(
+        dataset_file=abstracts,
+        tokenizer=tokenizer,
+        data_collator=data_collator,
+        max_length=512,
+    )
+
+    data_loader = DataLoader(streaming_dataset, batch_size=32, shuffle=False)
+
+    class StreamingTrainer(Trainer):
+        def get_train_dataloader(self):
+            return self.data_loader
+
     # Define training arguments
     training_args = TrainingArguments(
         output_dir=f"{args.root_dir}/models/deberta",
         overwrite_output_dir=True,
-        num_train_epochs=5,
+        num_train_epochs=3,
         per_device_train_batch_size=64,
         save_steps=10_000,
         save_total_limit=2,
         prediction_loss_only=True,
         logging_dir="/ocean/projects/bio210019p/stevesho/nlp/models/logs",
         logging_steps=500,
-        max_steps=3889578 * 5 // 64,
+        # max_steps=3889578 * 5 // 64,
     )
 
     # Initialize Trainer
-    trainer = Trainer(
+    trainer = StreamingTrainer(
         model=model,
         args=training_args,
         data_collator=data_collator,
-        train_dataset=dataset,
-        tokenizer=tokenizer,
     )
 
     trainer.train()
