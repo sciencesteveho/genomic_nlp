@@ -111,10 +111,17 @@ def main() -> None:
 
     # set up total steps
     num_epochs = 3
-    batch_size = 128
+    batch_size = 32
+    total_abstracts = 3889578
+
+    # manually calculate max steps
+    max_steps = (total_abstracts * num_epochs) // batch_size
 
     data_loader = DataLoader(
-        streaming_dataset, batch_size=4, collate_fn=data_collator, shuffle=False
+        streaming_dataset,
+        batch_size=batch_size,
+        collate_fn=data_collator,
+        shuffle=False,
     )
 
     class StreamingTrainer(Trainer):
@@ -126,14 +133,14 @@ def main() -> None:
         output_dir=f"{args.root_dir}/models/deberta",
         overwrite_output_dir=True,
         num_train_epochs=num_epochs,
-        per_device_train_batch_size=16,
-        auto_find_batch_size=True,
+        per_device_train_batch_size=batch_size,
+        # auto_find_batch_size=True,
         save_steps=10_000,
         save_total_limit=2,
         prediction_loss_only=True,
         logging_dir="/ocean/projects/bio210019p/stevesho/nlp/models/logs",
         logging_steps=500,
-        max_steps=3889578 * num_epochs // batch_size,
+        max_steps=max_steps,
         fp16=True,  # mixed precision training
     )
 
