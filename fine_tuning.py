@@ -124,6 +124,7 @@ def main() -> None:
         overwrite_output_dir=True,
         num_train_epochs=num_epochs,
         per_device_train_batch_size=8,
+        auto_find_batch_size=True,
         save_steps=10_000,
         save_total_limit=2,
         prediction_loss_only=True,
