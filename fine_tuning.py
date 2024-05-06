@@ -110,7 +110,7 @@ def main() -> None:
     )
 
     data_loader = DataLoader(
-        streaming_dataset, batch_size=4, collate_fn=data_collator, shuffle=False
+        streaming_dataset, batch_size=2, collate_fn=data_collator, shuffle=False
     )
 
     class StreamingTrainer(Trainer):
