@@ -114,18 +114,19 @@ def main() -> None:
         def get_train_dataloader(self):
             return data_loader
 
+    num_epochs = 3
     # Define training arguments
     training_args = TrainingArguments(
         output_dir=f"{args.root_dir}/models/deberta",
         overwrite_output_dir=True,
-        num_train_epochs=3,
+        num_train_epochs=num_epochs,
         per_device_train_batch_size=64,
         save_steps=10_000,
         save_total_limit=2,
         prediction_loss_only=True,
         logging_dir="/ocean/projects/bio210019p/stevesho/nlp/models/logs",
         logging_steps=500,
-        # max_steps=3889578 * 5 // 64,
+        max_steps=3889578 * num_epochs // 64,
     )
 
     # Initialize Trainer
