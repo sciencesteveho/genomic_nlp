@@ -64,8 +64,9 @@ class StreamingCorpus(IterableDataset):
                     return_tensors="pt",
                 )
 
-                inputs = self.data_collator([tokenized])
-                yield {k: v.squeeze(0) for k, v in inputs.items()}
+                # inputs = self.data_collator([tokenized])
+                yield {k: v.squeeze(0) for k, v in tokenized.items()}
+                # yield {k: v.squeeze(0) for k, v in inputs.items()}
 
 
 def main() -> None:
@@ -108,7 +109,9 @@ def main() -> None:
         max_length=512,
     )
 
-    data_loader = DataLoader(streaming_dataset, batch_size=32, shuffle=False)
+    data_loader = DataLoader(
+        streaming_dataset, batch_size=32, collate_fn=data_collator, shuffle=False
+    )
 
     class StreamingTrainer(Trainer):
         def get_train_dataloader(self):
