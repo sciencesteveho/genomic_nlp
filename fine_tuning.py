@@ -111,7 +111,7 @@ def main() -> None:
 
     # set up total steps
     num_epochs = 3
-    batch_size = 8
+    batch_size = 16
     total_abstracts = 3889578
 
     # manually calculate max steps
