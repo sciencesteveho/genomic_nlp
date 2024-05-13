@@ -6,12 +6,13 @@
 masked language modeling object as the fine-tuning task."""
 
 import argparse
+import os
 import pickle
-from typing import Generator
 
 import torch
 from torch.utils.data import DataLoader
 from torch.utils.data import IterableDataset
+from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm  # type: ignore
 from transformers import DataCollatorForLanguageModeling  # type: ignore
 from transformers import DebertaV2ForMaskedLM  # type: ignore
@@ -111,7 +112,7 @@ def main() -> None:
 
     # set up total steps
     num_epochs = 3
-    batch_size = 16
+    batch_size = 12
     total_abstracts = 3889578
 
     # manually calculate max steps
@@ -121,6 +122,9 @@ def main() -> None:
         streaming_dataset,
         batch_size=batch_size,
         collate_fn=data_collator,
+        sampler=(
+            DistributedSampler(streaming_dataset) if args.local_rank != -1 else None
+        ),
         shuffle=False,
     )
 
@@ -142,6 +146,9 @@ def main() -> None:
         logging_steps=500,
         max_steps=max_steps,
         fp16=True,  # mixed precision training
+        local_rank=int(
+            os.environ["LOCAL_RANK"]
+        ),  # This line is important for distributed training
     )
 
     # Initialize Trainer
