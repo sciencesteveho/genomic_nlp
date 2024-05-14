@@ -160,6 +160,11 @@ def main() -> None:
         )
     # model.to(device)
 
+    # check ddp
+    print(
+        f"Process {args.local_rank} is using {torch.cuda.get_device_name(args.local_rank)}"
+    )
+
     data_collator = DataCollatorForLanguageModeling(
         tokenizer=tokenizer,
         mlm=True,
