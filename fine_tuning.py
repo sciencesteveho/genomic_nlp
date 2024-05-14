@@ -102,6 +102,7 @@ def main() -> None:
 
     # wrap model in ddp
     if args.local_rank != -1:
+        model.to(torch.device(f"cuda:{args.local_rank}"))
         model = torch.nn.parallel.DistributedDataParallel(
             model, device_ids=[args.local_rank], output_device=args.local_rank
         )
