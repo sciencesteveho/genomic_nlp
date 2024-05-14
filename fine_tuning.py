@@ -182,10 +182,16 @@ def main() -> None:
     )
 
     # set up total steps
+    # num_gpus = torch.cuda.device_count()
+    num_gpus = 4
     num_epochs = 3
     batch_size = 8
     total_abstracts = 3889578
     max_steps = (total_abstracts * num_epochs) // batch_size
+    ddp_max_steps = ((total_abstracts * num_epochs) // batch_size) // num_gpus
+
+    # current num steps = total abstracts * num epochs / gpus
+    # new formula // max steps = num epochs (total_abstracts * num_epochs) // batch_size // gpus
 
     # set up dataloader
     data_loader = DataLoader(
@@ -211,7 +217,7 @@ def main() -> None:
         prediction_loss_only=True,
         logging_dir="/ocean/projects/bio210019p/stevesho/nlp/models/logs",
         logging_steps=500,
-        max_steps=max_steps,
+        max_steps=ddp_max_steps,
         fp16=True,  # mixed precision training
         local_rank=args.local_rank,
     )
