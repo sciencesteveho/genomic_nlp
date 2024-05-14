@@ -183,9 +183,9 @@ def main() -> None:
 
     # set up total steps
     # num_gpus = torch.cuda.device_count()
-    num_gpus = 4
+    num_gpus = 8
     num_epochs = 3
-    batch_size = 8
+    batch_size = 12
     total_abstracts = 3889578
     max_steps = (total_abstracts * num_epochs) // batch_size
     ddp_max_steps = ((total_abstracts * num_epochs) // batch_size) // num_gpus
@@ -198,7 +198,7 @@ def main() -> None:
         streaming_dataset,
         batch_size=batch_size,
         collate_fn=data_collator,
-        num_workers=2,
+        num_workers=4,
     )
 
     class StreamingTrainer(Trainer):
