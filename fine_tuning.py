@@ -81,6 +81,7 @@ def main() -> None:
 
     abstracts_dir = f"{args.root_dir}/data"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    args.local_rank = int(os.environ.get("LOCAL_RANK", -1))
 
     # write abstracts to text
     # _write_abstracts_to_text(
@@ -146,9 +147,7 @@ def main() -> None:
         logging_steps=500,
         max_steps=max_steps,
         fp16=True,  # mixed precision training
-        local_rank=int(
-            os.environ["LOCAL_RANK"]
-        ),  # This line is important for distributed training
+        local_rank=args.local_rank,
     )
 
     # Initialize Trainer
