@@ -10,6 +10,7 @@ import os
 import pickle
 
 import torch
+import torch.distributed as dist
 from torch.utils.data import DataLoader
 from torch.utils.data import IterableDataset
 from torch.utils.data.distributed import DistributedSampler
@@ -83,6 +84,11 @@ def main() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     args.local_rank = int(os.environ.get("LOCAL_RANK", -1))
 
+    # Set up distributed training environment
+    if args.local_rank != -1:
+        torch.cuda.set_device(args.local_rank)  # Set the device
+        dist.init_process_group(backend="nccl")  # Initialize process group
+
     # write abstracts to text
     # _write_abstracts_to_text(
     #     abstracts_dir=abstracts_dir, prefix="tokens_cleaned_abstracts_casefold_finetune"
@@ -93,7 +99,13 @@ def main() -> None:
     model_name = "microsoft/deberta-v3-base"
     model = DebertaV2ForMaskedLM.from_pretrained(model_name)
     tokenizer = DebertaV2Tokenizer.from_pretrained(model_name)
-    model.to(device)
+
+    # wrap model in ddp
+    if args.local_rank != -1:
+        model = torch.nn.parallel.DistributedDataParallel(
+            model, device_ids=[args.local_rank], output_device=args.local_rank
+        )
+    # model.to(device)
 
     data_collator = DataCollatorForLanguageModeling(
         tokenizer=tokenizer,
@@ -115,10 +127,9 @@ def main() -> None:
     num_epochs = 3
     batch_size = 12
     total_abstracts = 3889578
-
-    # manually calculate max steps
     max_steps = (total_abstracts * num_epochs) // batch_size
 
+    # set up dataloader
     data_loader = DataLoader(
         streaming_dataset,
         batch_size=batch_size,
@@ -126,7 +137,7 @@ def main() -> None:
         sampler=(
             DistributedSampler(streaming_dataset) if args.local_rank != -1 else None
         ),
-        shuffle=False,
+        # shuffle=False,
     )
 
     class StreamingTrainer(Trainer):
