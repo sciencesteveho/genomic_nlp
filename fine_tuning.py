@@ -183,7 +183,7 @@ def main() -> None:
 
     # set up total steps
     num_epochs = 3
-    batch_size = 12
+    batch_size = 8
     total_abstracts = 3889578
     max_steps = (total_abstracts * num_epochs) // batch_size
 
