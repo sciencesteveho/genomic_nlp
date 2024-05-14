@@ -192,7 +192,7 @@ def main() -> None:
         streaming_dataset,
         batch_size=batch_size,
         collate_fn=data_collator,
-        # num_workers=0,  # Set this to the number of workers you want to use (or omit for single-process)
+        num_workers=2,
     )
 
     class StreamingTrainer(Trainer):
