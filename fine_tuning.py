@@ -230,6 +230,7 @@ def main() -> None:
     )
 
     trainer.train()
+    trainer.save_model(f"{args.root_dir}/models/deberta")
 
     # # set up dataloader
     # data_loader = DataLoader(
