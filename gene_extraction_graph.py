@@ -1,9 +1,5 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
-#
-# // TO-DO //
-# - [ ] first TODO
-#   - [ ] nested TODO
 
 
 """Code to extract genes from scientific abstracts. Individual genes are nodes:

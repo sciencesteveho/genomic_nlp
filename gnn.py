@@ -24,7 +24,7 @@ from torch_geometric.data import Data  # type: ignore
 from torch_geometric.utils import negative_sampling  # type: ignore
 from torch_geometric.utils import train_test_split_edges  # type: ignore
 
-from models import LinkPredictionGNN
+from nn_models import LinkPredictionGNN
 
 
 def initialize_graph(node_features: torch.Tensor, edge_index: torch.Tensor) -> Data:
@@ -80,42 +80,33 @@ def test_model(model: nn.Module, data: Data) -> float:
     return auc
 
 
-def evaluate_and_rank_predictions(
-    model: nn.Module, data: Data, k: int = 100
+def evaluate_and_rank_validated_predictions(
+    model: nn.Module, data: Data, validated_edges: torch.Tensor
 ) -> Tuple[float, float, List[Tuple[int, int, float]]]:
-    """Evaluate the model on the test set and provide K top-ranked
-    predictions."""
+    """Evaluate the model on experimentally validated edges and rank them."""
     model.eval()
     with torch.no_grad():
         z = model(data.x, data.edge_index)
 
-        # Generate all possible edges
-        num_nodes = data.num_nodes
-        all_edges = torch.combinations(torch.arange(num_nodes), r=2).t()
-
-        # Predict scores for all possible edges
-        all_scores = model.decode(z, all_edges).sigmoid()
+        # Predict scores for validated edges
+        scores = model.decode(z, validated_edges).sigmoid()
 
         # Sort edges by predicted scores
-        sorted_indices = torch.argsort(all_scores, descending=True)
-        top_k_indices = sorted_indices[:k]
+        sorted_indices = torch.argsort(scores, descending=True)
 
-        # Get top k predicted edges and their scores
-        top_k_edges = all_edges[:, top_k_indices].t().tolist()
-        top_k_scores = all_scores[top_k_indices].tolist()
+        # Get ranked edges and their scores
+        ranked_edges = validated_edges[:, sorted_indices].t().tolist()
+        ranked_scores = scores[sorted_indices].tolist()
 
         # Combine edges and scores
         ranked_predictions = [
             (int(edge[0]), int(edge[1]), float(score))
-            for edge, score in zip(top_k_edges, top_k_scores)
+            for edge, score in zip(ranked_edges, ranked_scores)
         ]
 
         # Calculate metrics
-        true_edges = set(map(tuple, data.edge_index.t().tolist()))
-        pred_edges = set(map(tuple, all_edges.t().tolist()))
-
-        y_true = [1 if edge in true_edges else 0 for edge in pred_edges]
-        y_scores = all_scores.tolist()
+        y_true = np.ones(len(scores))  # All edges are true positives
+        y_scores = scores.cpu().numpy()
 
         auc = roc_auc_score(y_true, y_scores)
         ap = average_precision_score(y_true, y_scores)
@@ -173,22 +164,41 @@ def main():
 
     print(f"Best AUC: {best_auc:.4f}")
 
-    # load best model for evaluation on external graphs
+    # Load the trained model
     model.load_state_dict(torch.load("best_model.pth"))
+    model.eval()
 
-    # evaluate on external gene-gene graphs
-    # external_graphs = (
-    #     load_external_graphs()
-    # )  # This function should be implemented to load your external graphs
+    # Evaluate on external gene-gene graphs
+    external_graphs = load_external_graphs()
     for i, external_graph in enumerate(external_graphs):
-        external_data = initialize_graph(node_features, external_graph)
-        num_neg_samples = external_data.edge_index.size(1)
-        external_data.test_pos_edge_index = external_data.edge_index
-        external_data.test_neg_edge_index = generate_negative_edges(
-            external_data.edge_index, external_data.num_nodes, num_neg_samples
+        external_data = initialize_graph(node_features, external_graph["edge_index"])
+
+        auc, ap, ranked_predictions = evaluate_and_rank_validated_predictions(
+            model, external_data, external_graph["edge_index"]
         )
-        external_auc = test_model(model, external_data)
-        print(f"AUC on external graph {i}: {external_auc:.4f}")
+
+        print(f"Evaluation on external graph {i}:")
+        print(f"AUC: {auc:.4f}")
+        print(f"Average Precision: {ap:.4f}")
+        print("Top 10 ranked validated links:")
+        for rank, (node1, node2, score) in enumerate(ranked_predictions[:10], 1):
+            if "edge_names" in external_graph:
+                node1_name = external_graph["edge_names"][node1]
+                node2_name = external_graph["edge_names"][node2]
+                print(f"Rank {rank}: ({node1_name}, {node2_name}) - Score: {score:.4f}")
+            else:
+                print(f"Rank {rank}: ({node1}, {node2}) - Score: {score:.4f}")
+        print("\n")
+
+        # Save all ranked predictions to a file
+        with open(f"ranked_validated_predictions_graph_{i}.txt", "w") as f:
+            for node1, node2, score in ranked_predictions:
+                if "edge_names" in external_graph:
+                    node1_name = external_graph["edge_names"][node1]
+                    node2_name = external_graph["edge_names"][node2]
+                    f.write(f"{node1_name}\t{node2_name}\t{score:.4f}\n")
+                else:
+                    f.write(f"{node1}\t{node2}\t{score:.4f}\n")
 
 
 if __name__ == "__main__":

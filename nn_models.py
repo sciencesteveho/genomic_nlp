@@ -18,7 +18,7 @@ from torch_geometric.nn import GraphNorm
 
 
 class LinkPredictionGNN(nn.Module):
-    """Simple GNN for link prediction, trained on a base grapoh initialized with
+    """Simple GNN for link prediction, trained on a base graph initialized with
     trained embeddings and evaluated on a separate graph of experimentally
     derived gene-gene interactions.
 

@@ -6,6 +6,7 @@
 
 
 import argparse
+from math import ceil
 import pickle
 from typing import List
 
@@ -13,7 +14,6 @@ import more_itertools  # type: ignore
 import pandas as pd  # type: ignore
 import spacy  # type: ignore
 from tqdm import tqdm  # type: ignore
-from math import ceil
 
 
 def _get_relevant_abstracts(abstract_file: str) -> List[str]:
@@ -33,30 +33,34 @@ def chunk_corpus(corpus: List[str], parts: int, output_base_path: str) -> None:
     """
     # get size of each chunk
     chunk_size = ceil(len(corpus) / parts)
-    
+
     for idx, batch in enumerate(more_itertools.chunked(corpus, chunk_size)):
         output_path = f"{output_base_path}_part_{idx}.pkl"
-        with open(output_path, 'wb') as f:
+        with open(output_path, "wb") as f:
             pickle.dump(batch, f)
 
 
 def main() -> None:
     """Main function"""
     parser = argparse.ArgumentParser()
-    parser.add_argument("--relevant_abstracts", type=str, default='../data/relevant_abstracts.pkl')
+    parser.add_argument(
+        "--relevant_abstracts", type=str, default="../data/relevant_abstracts.pkl"
+    )
     parser.add_argument("--num_parts", type=int, default=10)
-    parser.add_argument("--output_base_path", type=str, default="../data/abstracts_classified_tfidf_20000_chunk")
+    parser.add_argument(
+        "--output_base_path",
+        type=str,
+        default="../data/abstracts_classified_tfidf_20000_chunk",
+    )
     args = parser.parse_args()
-    
+
     # load abstracts
-    with open(args.relevant_abstracts, 'rb') as f:
+    with open(args.relevant_abstracts, "rb") as f:
         corpus = pickle.load(f)
-    
+
     # chunk the corpus
     chunk_corpus(
-        corpus=corpus,
-        parts=args.num_parts,
-        output_base_path=args.output_base_path
+        corpus=corpus, parts=args.num_parts, output_base_path=args.output_base_path
     )
 
 
