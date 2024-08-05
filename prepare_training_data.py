@@ -281,12 +281,12 @@ class PrepareTrainingData:
             if gene in mapper:
                 go_to_gene[go_term].append(mapper[gene])
 
-        def process_go_term(linked_genes) -> Set[Tuple[str, ...]]:
+        def process_go_term(linked_genes: List[str]) -> Set[Tuple[str, ...]]:
             """Process individual terms"""
             return set(itertools.combinations(linked_genes, 2))
 
         # parallelized edge generation
-        with multiprocessing.Pool() as pool:
+        with multiprocessing.Pool(processes=self.CORES) as pool:
             all_edges = pool.map(process_go_term, go_to_gene.values())
 
         # flatten the list of sets and convert to a single set
@@ -378,7 +378,9 @@ class PrepareTrainingData:
 
     @staticmethod
     def remove_duplicate_edges(
-        edges: Union[Set[Tuple[str, str]], Set[Tuple[str, str, str]]]
+        edges: Union[
+            Set[Tuple[str, str]], Set[Tuple[str, str, str]], Set[Tuple[str, ...]]
+        ]
     ) -> Set[Union[Tuple[str, str], Tuple[str, str, str], Tuple[str, ...]]]:
         """Remove duplicates from a set of tuples.
         For Tuple[str, str]: Deduplicates based on both elements.
