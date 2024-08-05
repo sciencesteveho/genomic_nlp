@@ -159,9 +159,12 @@ class PrepareTrainingData:
         )
 
         # get negative samples from the experimentally derived negative samples
-        negative_samples: Set[Tuple[str, ...]] = set(
-            self.gene_only_edges(exp_negative_edges)
-        )
+        # and filter out any negative samples that might be in the positive set
+        negative_samples: Set[Tuple[str, ...]] = {
+            edge
+            for edge in self.gene_only_edges(exp_negative_edges)
+            if edge not in all_positive_edges
+        }
 
         # randomly sample negative edges until len matched
         while len(negative_samples) < n_random_edges + len(exp_negative_edges):
@@ -430,6 +433,9 @@ def main() -> None:
         "wb",
     ) as f:
         pickle.dump(negative_samples, f)
+
+    # matching = next((tuple(set(e1) & set(e2)) for e1 in edges for e2 in neg if set(e1) & set(e2)), None)
+    # print(f"Match found: {matching}" if matching else "No match")
 
 
 if __name__ == "__main__":
