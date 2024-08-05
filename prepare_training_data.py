@@ -274,25 +274,17 @@ class PrepareTrainingData:
         )
         annotations = self._get_go_annotations(self.output_dir / self.FILENAMES["goa"])
 
+        all_edges = set()
         go_to_gene: Dict[str, List[str]] = {}
         for gene, go_term in annotations:
             if go_term not in go_to_gene:
                 go_to_gene[go_term] = []
             if gene in mapper:
                 go_to_gene[go_term].append(mapper[gene])
-
-        def process_go_term(linked_genes: List[str]) -> Set[Tuple[str, ...]]:
-            """Process individual terms"""
-            return set(itertools.combinations(linked_genes, 2))
-
-        # parallelized edge generation
-        with multiprocessing.Pool(processes=self.CORES) as pool:
-            all_edges = pool.map(process_go_term, go_to_gene.values())
-
-        # flatten the list of sets and convert to a single set
-        all_edges_flat = set().union(*all_edges)
-
-        return self.remove_duplicate_edges(all_edges_flat)
+        for linked_genes in go_to_gene.values():
+            for gene_pair in itertools.combinations(linked_genes, 2):
+                all_edges.add(gene_pair)
+        return self.remove_duplicate_edges(all_edges)
 
     def _get_go_annotations(self, go_gaf: Path) -> List[Tuple[str, str]]:
         """Create GO ontology graph"""
