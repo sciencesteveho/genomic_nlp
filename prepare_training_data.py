@@ -422,3 +422,14 @@ class PrepareTrainingData:
     def gene_only_edges(edges: Set[Tuple[str, ...]]) -> Set[Tuple[str, ...]]:
         """Return a tuple with only the gene symbols, not the third element."""
         return {tuple(sorted(edge[:2])) for edge in edges}
+
+
+def main() -> None:
+    """Main function"""
+    data_prep_obect = PrepareTrainingData("/ocean/projects/bio210019p/stevesho/nlp")
+    data_prep_obect.create_graphs()
+    # negative_samples = data_prep_obect.negative_sampler(100000)
+
+
+if __name__ == "__main__":
+    main()
