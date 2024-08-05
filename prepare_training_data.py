@@ -425,6 +425,11 @@ def main() -> None:
     negative_samples = data_prep_obect.negative_sampler(
         148042
     )  # we use the same amount as experimentally derived edges
+    with open(
+        "/ocean/projects/bio210019p/stevesho/nlp/training_data/negative_samples.pkl",
+        "wb",
+    ) as f:
+        pickle.dump(negative_samples, f)
 
 
 if __name__ == "__main__":
