@@ -426,7 +426,9 @@ class PrepareTrainingData:
 
 def main() -> None:
     """Main function"""
-    data_prep_obect = PrepareTrainingData("/ocean/projects/bio210019p/stevesho/nlp")
+    data_prep_obect = PrepareTrainingData(
+        "/ocean/projects/bio210019p/stevesho/nlp/training_data"
+    )
     data_prep_obect.create_graphs()
     # negative_samples = data_prep_obect.negative_sampler(100000)
 
