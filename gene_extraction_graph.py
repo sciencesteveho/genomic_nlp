@@ -14,54 +14,8 @@ from typing import Any, Dict, List, Set, Tuple, Union
 import pybedtools  # type: ignore
 from tqdm import tqdm  # type: ignore
 
-# from utils import COPY_GENES
-
-COPY_GENES = {
-    "WAS": "wasgene",
-    "SHE": "shegene",
-    "IMPACT": "impactgene",
-    "MICE": "micegene",
-    "REST": "restgene",
-    "SET": "setgene",
-    "MET": "metgene",
-    "GC": "gcgene",
-    "ATM": "atmgene",
-    "MB": "mbgene",
-    "PIGS": "pigsgene",
-    "CAT": "catgene",
-    "COIL": "coilgene",
-}
-
-
-def gencode_genes(gtf: str) -> Set[str]:
-    """_summary_
-
-    Args:
-        entity_file (str): _description_
-        genes (Set[str]): _description_
-        type (str, optional): _description_. Defaults to "gene".
-
-    Returns:
-        Set[str]: _description_
-    """
-
-    def gene_symbol_from_gencode(gencode_ref: pybedtools.BedTool) -> Set[str]:
-        """Returns deduped set of genes from a gencode gtf. Written for the gencode
-        45 and avoids header"""
-        return {
-            line[8].split('gene_name "')[1].split('";')[0]
-            for line in gencode_ref
-            if not line[0].startswith("#") and "gene_name" in line[8]
-        }
-
-    print("Grabbing genes from GTF")
-    gtf = pybedtools.BedTool(gtf)
-    genes = list(gene_symbol_from_gencode(gtf))
-
-    for key in COPY_GENES:
-        genes.remove(key)
-        genes.append(COPY_GENES[key])
-    return set(genes)
+from constants import COPY_GENES
+from utils import gencode_genes
 
 
 def gene_mentions_per_abstract(
@@ -182,7 +136,6 @@ def main() -> None:
     mapped_ppi = _map_proteins_to_gene_symbols(ppi, reference)
 
     unique_mapped_proteins = {gene for edge in mapped_ppi for gene in edge}
-
     huri_only = mapped_ppi - gene_edges
 
 

@@ -28,7 +28,6 @@ from collections import defaultdict
 import csv
 import gzip
 import itertools
-import multiprocessing
 import os
 from pathlib import Path
 import pickle
@@ -40,12 +39,26 @@ import zipfile
 
 import mygene  # type: ignore
 import pandas as pd
-import psutil  # type: ignore
 
 
 class PrepareTrainingData:
     """Class to handle downloading then processing gene relationship
     datasets.
+
+    Attributes:
+        Output_dir (str): Directory to save downloaded files.
+
+    Methods
+    -------
+    create_graphs()
+        Make all graphs and save them to the output directory.
+    negative_sampler(n_random_edges: int)
+        Generate random negative samples.
+
+    Helpers:
+        FILES_TO_DOWNLOAD - list of files to download and their names
+        post-download
+        FILENAMES - dictionary of file names for each dataset
     """
 
     FILES_TO_DOWNLOAD = [
@@ -81,8 +94,6 @@ class PrepareTrainingData:
         "goa": "goa_human.gaf",
         "go_mapper": "go_ids_to_gene_symbol.txt",
     }
-
-    CORES = psutil.cpu_count(logical=False) - 1
 
     def __init__(self, output_dir: str = "./reference_files"):
         """Instantiate the class."""
@@ -421,20 +432,24 @@ class PrepareTrainingData:
 
 def main() -> None:
     """Main function"""
+
+    # make graphs!
     data_prep_obect = PrepareTrainingData(
         "/ocean/projects/bio210019p/stevesho/nlp/training_data"
     )
-    # data_prep_obect.create_graphs()
-    negative_samples = data_prep_obect.negative_sampler(
-        148042
-    )  # we use the same amount as experimentally derived edges
+    data_prep_obect.create_graphs()
+
+    # make negative samples, with n = positive samples
+    negative_samples = data_prep_obect.negative_sampler(n_random_edges=148042)
+
     with open(
-        "/ocean/projects/bio210019p/stevesho/nlp/training_data/negative_samples.pkl",
+        "/ocean/projects/bio210019p/stevesho/nlp/training_data/negative_edges.pkl",
         "wb",
     ) as f:
         pickle.dump(negative_samples, f)
 
-    # matching = next((tuple(set(e1) & set(e2)) for e1 in edges for e2 in neg if set(e1) & set(e2)), None)
+    # # check if a negative sample is in the positive set
+    # matching = next((e1 for e1 in edges for e2 in neg if e1 == e2), None)
     # print(f"Match found: {matching}" if matching else "No match")
 
 
