@@ -82,7 +82,7 @@ def main() -> None:
     )
 
     # make gene catalogue and save
-    gene_catalogue = experimental_edges | {filtered_text_extracted_graph.nodes()}
+    gene_catalogue = experimental_edges | set(filtered_text_extracted_graph.nodes())
     with open(data_path / "gene_catalogue.pkl", "wb") as file:
         pickle.dump(gene_catalogue, file)
 
