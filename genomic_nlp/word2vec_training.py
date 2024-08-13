@@ -31,7 +31,6 @@ logging.basicConfig(
 def flatten_abstract(abstract: List[str]) -> List[str]:
     """Flatten a potentially nested abstract."""
     if isinstance(abstract, list) and (abstract and isinstance(abstract[0], list)):
-        print(f"Flattening abstract: {abstract}")
         return [word for sentence in abstract for word in sentence]
     return abstract
 
@@ -318,7 +317,7 @@ def main() -> None:
     # prepare abstracts by writing chunks out to text file
     write_chunks_to_text(args, "tokens_cleaned_abstracts_casefold")
     print("Writing out cleaned_corpus...")
-    write_chunks_to_text(args, "tokens_cleaned_abstracts_remove_genes")
+    # write_chunks_to_text(args, "tokens_cleaned_abstracts_remove_genes")
     print("Writing gene_remove corpus...")
     print("Abstracts written! Instantiating object...")
 
