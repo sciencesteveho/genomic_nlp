@@ -3,3 +3,4 @@ data/
 debug/
 development/
 __pycache__
+genomic_nlp/__pycache__
