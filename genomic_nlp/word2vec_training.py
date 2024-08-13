@@ -10,6 +10,7 @@ from datetime import date
 import logging
 import os
 import pickle
+from typing import List
 
 from gensim.models import Word2Vec  # type: ignore
 from gensim.models.callbacks import CallbackAny2Vec  # type: ignore
@@ -27,7 +28,15 @@ logging.basicConfig(
 )
 
 
-def _write_chunks_to_text(args: argparse.Namespace, prefix: str) -> None:
+def flatten_abstract(abstract: List[str]) -> List[str]:
+    """Flatten a potentially nested abstract."""
+    if isinstance(abstract, list) and (abstract and isinstance(abstract[0], list)):
+        print(f"Flattening abstract: {abstract}")
+        return [word for sentence in abstract for word in sentence]
+    return abstract
+
+
+def write_chunks_to_text(args: argparse.Namespace, prefix: str) -> None:
     """Write chunks of abstracts to text files"""
     filenames = _chunk_locator(args.abstracts_dir, prefix)
     with open(f"{args.abstracts_dir}/combined/{prefix}_combined.txt", "w") as output:
@@ -35,7 +44,8 @@ def _write_chunks_to_text(args: argparse.Namespace, prefix: str) -> None:
             with open(filename, "rb") as file:
                 abstracts = pickle.load(file)
                 for abstract in abstracts:
-                    line = " ".join(abstract) + "\n"
+                    flattened_abstract = flatten_abstract(abstract)
+                    line = " ".join(flattened_abstract) + "\n"
                     output.write(line)
 
 
@@ -306,9 +316,9 @@ def main() -> None:
     print("Arguments parsed. Preparing abstracts...")
 
     # prepare abstracts by writing chunks out to text file
-    _write_chunks_to_text(args, "tokens_cleaned_abstracts_casefold")
+    write_chunks_to_text(args, "tokens_cleaned_abstracts_casefold")
     print("Writing out cleaned_corpus...")
-    _write_chunks_to_text(args, "tokens_cleaned_abstracts_remove_genes")
+    write_chunks_to_text(args, "tokens_cleaned_abstracts_remove_genes")
     print("Writing gene_remove corpus...")
     print("Abstracts written! Instantiating object...")
 
