@@ -38,7 +38,7 @@ def flatten_abstract(abstract: List[str]) -> List[str]:
 def write_chunks_to_text(args: argparse.Namespace, prefix: str) -> None:
     """Write chunks of abstracts to text files"""
     filenames = _chunk_locator(args.abstracts_dir, prefix)
-    with open(f"{args.abstracts_dir}/combined/{prefix}_combined.txt", "w") as output:
+    with open(f"{args.abstracts_dir}/combined/{prefix}_combined_2.txt", "w") as output:
         for filename in filenames:
             with open(filename, "rb") as file:
                 abstracts = pickle.load(file)
@@ -315,9 +315,9 @@ def main() -> None:
     print("Arguments parsed. Preparing abstracts...")
 
     # prepare abstracts by writing chunks out to text file
-    write_chunks_to_text(args, "tokens_cleaned_abstracts_casefold")
+    # write_chunks_to_text(args, "tokens_cleaned_abstracts_casefold")
     print("Writing out cleaned_corpus...")
-    # write_chunks_to_text(args, "tokens_cleaned_abstracts_remove_genes")
+    write_chunks_to_text(args, "tokens_cleaned_abstracts_remove_genes")
     print("Writing gene_remove corpus...")
     print("Abstracts written! Instantiating object...")
 
@@ -341,11 +341,11 @@ def main() -> None:
     print("Model initialized. Generating grams...")
 
     # build gram models
-    modelprocessingObj._gram_generator(
-        minimum=5,
-        score=50,
-    )
-    print("Grams generated. Training word2vec model...")
+    # modelprocessingObj._gram_generator(
+    #     minimum=5,
+    #     score=50,
+    # )
+    # print("Grams generated. Training word2vec model...")
 
     # train word2vec
     modelprocessingObj._build_vocab_and_train()
