@@ -1,7 +1,6 @@
 #! /usr/bin/env python -*- coding: utf-8 -*-
 #
-# // TO-DO //
-# - [ ] to-do
+
 
 """Mine abstracts from scopus API"""
 
@@ -13,140 +12,9 @@ from typing import List, Tuple, Union
 import pandas as pd
 from pybliometrics.scopus import ScopusSearch  # type: ignore
 
+from constants import GENERAL_SEARCH_TERMS
+from constants import TEST_SET_JOURNALS
 from utils import dir_check_make
-
-GENERAL_SEARCH_TERMS = [
-    "ATAC-seq",
-    "ChIA-PET",
-    "DNA",
-    "DNase",
-    "GWAS",
-    "Hi-C",
-    "Pseudogene",
-    "QTL",
-    "RNA",
-    "RNAi",
-    "Repli-seq",
-    "SNPs",
-    "WGBS",
-    "ChIP-seq",
-    "chromatid",
-    "chromatin",
-    "eCLIP",
-    "eQTL",
-    "epigenetics",
-    "epigenome",
-    "epigenomic",
-    "epigenomics",
-    "gene",
-    "genes",
-    "genetic",
-    "genetics",
-    "genome",
-    "genomic",
-    "genomics",
-    "genotype",
-    "haplotype",
-    "lncRNA",
-    "lncRNAs",
-    "mRNA",
-    "methylation",
-    "noncoding",
-    "phenotype",
-    "polymerase",
-    "proteome",
-    "retrotransposon",
-    "sRNAs",
-    "telomerase",
-    "transcription",
-    "transcriptional",
-    "transcriptome",
-    "transcriptomic",
-    "transcriptomics",
-    "transposon",
-    "tRNA",
-    "{allele}",
-    "{chromatin modification}",
-    "{3D chromatin interactions}",
-    "{DNA accessibility}",
-    "{DNA condensation}",
-    "{DNA damage}",
-    "{DNA elements}",
-    "{DNA polymerase}",
-    "{DNA repair}",
-    "{DNA replication}",
-    "{DNA sequencing}",
-    "{DNA supercoiling}",
-    "{RNA decay}",
-    "{RNA interference}",
-    "{RNA modification}",
-    "{RNA polymerase}",
-    "{RNA processing}",
-    "{RNA replication}",
-    "{chromatin remodeling}",
-    "{chromatin states}",
-    "{chromosome condensation}",
-    "{chromosome segregation}",
-    "{cis-regulatory}",
-    "{copy number variation}",
-    "{distal enhancers}",
-    "{dna damage}",
-    "{dna recombination}",
-    "{functional genomics}",
-    "{gene expression}",
-    "{gene function}",
-    "{genetic mutation}",
-    "{gene regulation}",
-    "{gene regulatory network}",
-    "{genetic mechanism}",
-    "{genome sequencing}",
-    "{histone}",
-    "{long non-coding RNA}",
-    "{massively parallel reporter assays}",
-    "{massively parallel sequencing}",
-    "{messenger RNA}",
-    "{microRNA}",
-    "{noncoding elements}",
-    "{next generation sequencing}",
-    "{open chromatin}",
-    "{origin of replication}",
-    "{polyA RNA}",
-    "{post-transcriptional modification}",
-    "{post-translational modification}",
-    "{protein activation}",
-    "{protein coding}",
-    "{protein decay}",
-    "{protein modification}",
-    "{protein translation}",
-    "{protein-coding}",
-    "{regulatory element}",
-    "{regulatory elements}",
-    "{repeat DNA}",
-    "{repetitive DNA}",
-    "{RNA binding}",
-    "{segmental duplication}",
-    "{short hairpin RNA}",
-    "{single nucleotide polymorphism}",
-    "{small RNA}",
-    "{small inhibitory RNA}",
-    "{tandem repeat}",
-    "{topologically associating domains}",
-    "{trans-regulatory}",
-    "{transcription factors}",
-    "{transcription factor}",
-    "{transcriptional modification}",
-    "{transcriptional regulation}",
-    "{transcriptional regulation}",
-    "{translational modification}",
-    "{translational regulation}",
-]
-
-TEST_SET_JOURNALS = [
-    "American Journal of Human Genetics",
-    "Human Genetics",
-    "Human Molecular Genetics",
-    "European Journal of Human Genetics",
-]
 
 
 def create_scopus_search(
@@ -155,13 +23,15 @@ def create_scopus_search(
     end_year: Union[int, None] = None,
     interval: bool = False,
 ) -> ScopusSearch:
-    """Creates a ScopusSearch object with the specified query, start year, end year, and interval.
+    """Creates a ScopusSearch object with the specified query, start year, end
+    year, and interval.
 
     Args:
         query (str): The search query.
         start_year (int): The start year for filtering the search results.
         end_year (int): The end year for filtering the search results.
-        interval (bool): Flag indicating whether to include a range of years or a single year.
+        interval (bool): Flag indicating whether to include a range of years or
+        a single year.
 
     Returns:
         ScopusSearch: The created ScopusSearch object.

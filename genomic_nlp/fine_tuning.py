@@ -5,6 +5,7 @@
 """Code to fine-tune a transformer model on scientific abstracts. We use a
 masked language modeling object as the fine-tuning task."""
 
+
 import argparse
 import math
 import os
@@ -24,10 +25,6 @@ from transformers import TrainingArguments  # type: ignore
 
 from utils import _chunk_locator
 
-# from datasets import Dataset
-# from datasets import Features
-# from datasets import Value
-
 
 def _write_abstracts_to_text(abstracts_dir: str, prefix: str) -> None:
     """Write chunks of abstracts to text, where each newline delimits a full
@@ -42,34 +39,6 @@ def _write_abstracts_to_text(abstracts_dir: str, prefix: str) -> None:
                         [" ".join(sentence) for sentence in abstract]
                     ).strip()
                     output.write(f"{line}\n")
-
-
-# class StreamingCorpus(IterableDataset):
-#     """Class to create a Hugging Face dataset object from text corpus as an iterable"""
-
-#     def __init__(self, dataset_file, tokenizer, data_collator, max_length=512):
-#         self.dataset_file = dataset_file
-#         self.tokenizer = tokenizer
-#         self.data_collator = data_collator
-#         self.max_length = max_length
-
-#     def __iter__(self):
-#         """Iterate over the dataset file and yield tokenized examples"""
-#         # Opens the file, ensuring it's closed after iteration
-#         with open(self.dataset_file, "r", encoding="utf-8") as file_iterator:
-#             for line in file_iterator:
-#                 abstract = line.strip()
-#                 tokenized = self.tokenizer(
-#                     abstract,
-#                     padding="max_length",
-#                     truncation=True,
-#                     max_length=self.max_length,
-#                     return_tensors="pt",
-#                 )
-
-#                 # inputs = self.data_collator([tokenized])
-#                 yield {k: v.squeeze(0) for k, v in tokenized.items()}
-#                 # yield {k: v.squeeze(0) for k, v in inputs.items()}
 
 
 class StreamingCorpus(IterableDataset):
@@ -158,7 +127,6 @@ def main() -> None:
         model = torch.nn.parallel.DistributedDataParallel(
             model, device_ids=[args.local_rank], output_device=args.local_rank
         )
-    # model.to(device)
 
     # check ddp
     print(
@@ -182,16 +150,14 @@ def main() -> None:
     )
 
     # set up total steps
-    # num_gpus = torch.cuda.device_count()
-    num_gpus = 8
+    num_gpus = 8  # num_gpus = torch.cuda.device_count()
     num_epochs = 3
     batch_size = 12
     total_abstracts = 3889578
-    max_steps = (total_abstracts * num_epochs) // batch_size
-    ddp_max_steps = ((total_abstracts * num_epochs) // batch_size) // num_gpus
-
-    # current num steps = total abstracts * num epochs / gpus
-    # new formula // max steps = num epochs (total_abstracts * num_epochs) // batch_size // gpus
+    if num_gpus > 1:
+        max_steps = ((total_abstracts * num_epochs) // batch_size) // num_gpus
+    else:
+        max_steps = (total_abstracts * num_epochs) // batch_size
 
     # set up dataloader
     data_loader = DataLoader(
@@ -202,7 +168,10 @@ def main() -> None:
     )
 
     class StreamingTrainer(Trainer):
-        def get_train_dataloader(self):
+        """Helper class to override get_train_dataloader method"""
+
+        def get_train_dataloader(self) -> DataLoader:
+            """Return the training dataloader"""
             return data_loader
 
     # Define training arguments
@@ -211,13 +180,12 @@ def main() -> None:
         overwrite_output_dir=True,
         num_train_epochs=num_epochs,
         per_device_train_batch_size=batch_size,
-        # auto_find_batch_size=True,
         save_steps=10_000,
         save_total_limit=2,
         prediction_loss_only=True,
         logging_dir="/ocean/projects/bio210019p/stevesho/nlp/models/logs",
         logging_steps=500,
-        max_steps=ddp_max_steps,
+        max_steps=max_steps,
         fp16=True,  # mixed precision training
         local_rank=args.local_rank,
     )
@@ -231,44 +199,6 @@ def main() -> None:
 
     trainer.train()
     trainer.save_model(f"{args.root_dir}/models/deberta")
-
-    # # set up dataloader
-    # data_loader = DataLoader(
-    #     dataset,
-    #     batch_size=64,
-    #     shuffle=True,
-    #     pin_memory=True,
-    #     prefetch_factor=2,
-    #     num_workers=4,
-    # )
-
-    # # Set up the optimizer and learning rate scheduler
-    # optim = torch.optim.AdamW(model.parameters(), lr=2e-5)
-
-    # epochs = 5
-    # for epoch in range(epochs):
-    #     total_loss = 0.0
-    #     batch_count = 0
-
-    #     for batch in tqdm(data_loader, desc=f"Epoch {epoch}"):
-    #         optim.zero_grad()
-
-    #         batch = {k: v.to(device) for k, v in batch.items() if v is not None}
-
-    #         outputs = model(**batch)
-    #         loss = outputs.loss
-    #         loss.backward()
-    #         optim.step()
-
-    #         total_loss += loss.item()
-    #         batch_count += 1
-
-    #     avg_loss = total_loss / batch_count
-    #     print(f"Epoch {epoch} average loss: {avg_loss}")
-
-    # # save model
-    # model_dir = f"{args.root_dir}/models/deberta"
-    # model.save_pretrained(model_dir)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,3 @@
-# sourcery skip: do-not-use-staticmethod
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
@@ -208,10 +207,10 @@ class Word2VecCorpus:
             score:
         """
         source_stream = IterableCorpus(
-            "/ocean/projects/bio210019p/stevesho/nlp/data/combined/tokens_cleaned_abstracts_remove_genes_combined.txt"
+            "/ocean/projects/bio210019p/stevesho/genomic_nlp/data/combined/tokens_cleaned_abstracts_remove_genes_combined.txt"
         )
         source_main = IterableCorpus(
-            "/ocean/projects/bio210019p/stevesho/nlp/data/combined/tokens_cleaned_abstracts_remove_genes_combined.txt"
+            "/ocean/projects/bio210019p/stevesho/genomic_nlp/data/combined/tokens_cleaned_abstracts_remove_genes_combined.txt"
         )
 
         # generate and train n-gram models
@@ -295,13 +294,13 @@ def main() -> None:
         "--root_dir",
         type=str,
         help="Root directory for data",
-        default="/ocean/projects/bio210019p/stevesho/nlp",
+        default="/ocean/projects/bio210019p/stevesho/genomic_nlp",
     )
     parser.add_argument(
         "--abstracts_dir",
         type=str,
         help="Path to abstracts",
-        default="/ocean/projects/bio210019p/stevesho/nlp/data",
+        default="/ocean/projects/bio210019p/stevesho/genomic_nlp/data",
     )
     args = parser.parse_args()
     print("Arguments parsed. Preparing abstracts...")
@@ -319,13 +318,13 @@ def main() -> None:
         abstract_dir=args.abstracts_dir,
         date=date.today(),
         min_count=5,
-        vector_size=200,
+        vector_size=300,
         window=8,
         workers=24,
-        sample=0.0001,
+        sample=0.001,
         alpha=0.01,
         min_alpha=0.0001,
-        negative=15,
+        negative=10,
         sg=1,
         hs=0,
         epochs=30,
