@@ -1,6 +1,6 @@
 .DS_Store
-data/
 debug/
 development/
 __pycache__
 genomic_nlp/__pycache__
+data/abstracts

@@ -315,10 +315,10 @@ def main() -> None:
     print("Arguments parsed. Preparing abstracts...")
 
     # prepare abstracts by writing chunks out to text file
-    # write_chunks_to_text(args, "tokens_cleaned_abstracts_casefold")
     print("Writing out cleaned_corpus...")
-    write_chunks_to_text(args, "tokens_cleaned_abstracts_remove_genes")
+    # write_chunks_to_text(args, "tokens_cleaned_abstracts_casefold")
     print("Writing gene_remove corpus...")
+    write_chunks_to_text(args, "tokens_cleaned_abstracts_remove_genes")
     print("Abstracts written! Instantiating object...")
 
     # instantiate object

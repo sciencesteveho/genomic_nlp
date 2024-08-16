@@ -8,7 +8,9 @@ make probability based predictions or binary predictions based on a probability
 threshold."""
 
 
-from typing import Any, Callable, Dict, List, Tuple
+import pickle
+import random
+from typing import Any, Callable, Dict, List, Tuple, Union
 
 import numpy as np
 from scipy import stats  # type: ignore
@@ -19,7 +21,7 @@ from sklearn.metrics import roc_auc_score  # type: ignore
 from sklearn.model_selection import StratifiedKFold  # type: ignore
 from sklearn.model_selection import train_test_split  # type: ignore
 
-from baseline_models import BaselineInteractionPredictor
+from baseline_models import BaselineModel
 from baseline_models import CosineSimilarity
 from baseline_models import LogisticRegressionModel
 from baseline_models import MLP
@@ -29,12 +31,53 @@ from baseline_models import XGBoost
 RANDOM_SEED = 42
 
 
-def format_training_data(
+def _unpickle_dict(
+    pickle_file: str,
+) -> Union[Dict[str, np.ndarray], List[Tuple[str, str]]]:
+    """Simple wrapper to unpickle embedding or pair pkls."""
+    with open(pickle_file, "rb") as file:
+        return pickle.load(file)
+
+
+def balance_filtered_pairs(
+    filtered_positive_pairs: List[Tuple[str, str]],
+    filtered_negative_pairs: List[Tuple[str, str]],
+) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
+    """Adjust pairs to have the same size."""
+    if len(filtered_positive_pairs) > len(filtered_negative_pairs):
+        filtered_positive_pairs = random.sample(
+            filtered_positive_pairs, len(filtered_negative_pairs)
+        )
+    elif len(filtered_negative_pairs) > len(filtered_positive_pairs):
+        filtered_negative_pairs = random.sample(
+            filtered_negative_pairs, len(filtered_positive_pairs)
+        )
+    return filtered_positive_pairs, filtered_negative_pairs
+
+
+def filter_pairs_for_embeddings(
+    gene_embeddings: Dict[str, np.ndarray],
+    positive_pairs: List[Tuple[str, str]],
+    negative_pairs: List[Tuple[str, str]],
+) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
+    """Filter pairs to only include those with embeddings."""
+    filtered_positive_pairs = [
+        pair for pair in positive_pairs if all(gene in gene_embeddings for gene in pair)
+    ]
+    filtered_negative_pairs = [
+        pair for pair in negative_pairs if all(gene in gene_embeddings for gene in pair)
+    ]
+
+    # adjust pairs to have same size
+    return balance_filtered_pairs(filtered_positive_pairs, filtered_negative_pairs)
+
+
+def prepare_data_and_targets(
     gene_embeddings: Dict[str, np.ndarray],
     positive_pairs: List[Tuple[str, str]],
     negative_pairs: List[Tuple[str, str]],
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Prepare input data for model training."""
+    """Create feature data and target labels from gene pairs."""
     data = []
     targets = []
     for pair in positive_pairs + negative_pairs:
@@ -46,128 +89,87 @@ def format_training_data(
     return np.array(data), np.array(targets)
 
 
-def train_and_evaluate_baseline_models(
-    model_class: Callable[[], BaselineInteractionPredictor],
+def format_training_data(
+    gene_embeddings: Dict[str, np.ndarray],
+    positive_pairs: List[Tuple[str, str]],
+    negative_pairs: List[Tuple[str, str]],
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Prepare input data for model training."""
+    # filter pairs to only include those with embeddings
+    positive_pairs, negative_pairs = filter_pairs_for_embeddings(
+        gene_embeddings, positive_pairs, negative_pairs
+    )
+
+    # create feature data and target labels
+    return prepare_data_and_targets(gene_embeddings, positive_pairs, negative_pairs)
+
+
+def train_model(
+    model_class: Callable[[], BaselineModel],
+    features: np.ndarray,
+    labels: np.ndarray,
+) -> BaselineModel:
+    """Train a model on given features and labels."""
+    model = model_class()
+    model.train(feature_data=features, target_labels=labels)
+    return model
+
+
+def evaluate_model(
+    model: BaselineModel, features: np.ndarray, labels: np.ndarray
+) -> float:
+    """Evaluate a model and return its AUC score."""
+    predicted_probabilities = model.predict_probability(features)
+    return roc_auc_score(labels, predicted_probabilities)
+
+
+def perform_cross_validation(
+    model_class: Callable[[], BaselineModel],
     gene_pairs: np.ndarray,
     targets: np.ndarray,
-    n_splits: int = 5,
-) -> Tuple[BaselineInteractionPredictor, float, float]:
-    """Train a model and evaluate its performance using stratified k-fold
-    cross-validation.
-    """
+    n_splits: int,
+) -> List[float]:
+    """Perform stratified k-fold cross-validation and return AUC scores."""
     folds = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_SEED)
     auc_scores = []
 
     for k_fold, (train_index, test_index) in enumerate(
         folds.split(gene_pairs, targets), 1
     ):
-        train_features, test_features = (
-            gene_pairs[train_index],
-            gene_pairs[test_index],
-        )
-        train_labels, test_labels = (
-            targets[train_index],
-            targets[test_index],
-        )
+        train_features, test_features = gene_pairs[train_index], gene_pairs[test_index]
+        train_labels, test_labels = targets[train_index], targets[test_index]
 
-        model = model_class()
-        model.train(feature_data=train_features, target_labels=train_labels)
-        predicted_probabilities = model.predict_probability(test_features)
-        auc_score = roc_auc_score(test_labels, predicted_probabilities)
+        model = train_model(model_class, train_features, train_labels)
+        auc_score = evaluate_model(model, test_features, test_labels)
         auc_scores.append(auc_score)
+
         print(f"Fold {k_fold} AUC: {auc_score:.4f}")
 
-    mean_auc = np.mean(auc_scores)
-    std_auc = np.std(auc_scores)
-    print(f"Mean AUC: {mean_auc:.4f} (+/- {std_auc:.4f})")
-
-    # Train a final model on all data
-    final_model = model_class()
-    final_model.train(feature_data=gene_pairs, target_labels=targets)
-
-    return final_model, mean_auc, std_auc
+    return auc_scores
 
 
-def evaluate_cosine_similarity(
-    cosine_model: CosineSimilarity,
+def train_and_evaluate_baseline_models(
+    model_class: Callable[[], BaselineModel],
     gene_pairs: np.ndarray,
     targets: np.ndarray,
     n_splits: int = 5,
-) -> Dict[str, float]:
-    """Evaluate CosineSimilarity model using stratified k-fold
-    cross-validation.
-    """
-    folds = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_SEED)
-    metrics: Dict[str, List[Any]] = {
-        "relative_performance": [],
-        "correlation": [],
-        "effect_size": [],
-    }
+) -> Tuple[BaselineModel, float, float, float]:
+    """Train a model and evaluate its performance using stratified k-fold cross-validation."""
+    auc_scores = perform_cross_validation(model_class, gene_pairs, targets, n_splits)
 
-    for k_fold, (_, test_index) in enumerate(folds.split(gene_pairs, targets), 1):
-        test_pairs = gene_pairs[test_index]
-        test_targets = targets[test_index]
-        predicted_similarities = cosine_model.predict_probability(test_pairs)
+    mean_auc = float(np.mean(auc_scores))
+    std_auc = float(np.std(auc_scores))
+    print(f"Mean AUC: {mean_auc:.4f} (+/- {std_auc:.4f})")
 
-        positive_similarities = predicted_similarities[test_targets == 1]
-        negative_similarities = predicted_similarities[test_targets == 0]
+    # train a final model on all data
+    final_model = train_model(model_class, gene_pairs, targets)
 
-        # relative performance metric
-        relative_performance = np.mean(positive_similarities) / np.mean(
-            negative_similarities
-        )
+    # get final model metrics
+    final_predictions = final_model.predict_probability(gene_pairs)
+    final_auc = roc_auc_score(targets, final_predictions)
+    print(f"Final AUC: {final_auc:.4f}")
 
-        # spearman correlation
-        correlation, _ = spearmanr(test_targets, predicted_similarities)
-
-        # effect size (Cohen's d)
-        effect_size = (
-            np.mean(positive_similarities) - np.mean(negative_similarities)
-        ) / np.sqrt(
-            (
-                np.std(positive_similarities, ddof=1) ** 2
-                + np.std(negative_similarities, ddof=1) ** 2
-            )
-            / 2
-        )
-
-        # Mann-Whitney U test
-        _, p_value = mannwhitneyu(
-            positive_similarities, negative_similarities, alternative="two-sided"
-        )
-
-        metrics["relative_performance"].append(relative_performance)
-        metrics["correlation"].append(correlation)
-        metrics["effect_size"].append(effect_size)
-
-        print(
-            f"Fold {k_fold} - "
-            f"Relative Performance: {relative_performance:.4f}, "
-            f"Correlation: {correlation:.4f}, "
-            f"Effect Size: {effect_size:.4f}, "
-            f"p-value: {p_value:.4f}"
-        )
-
-    # calculate means and standard deviations
-    results = {}
-    for key in metrics:
-        results[f"mean_{key}"] = np.mean(metrics[key])
-        results[f"std_{key}"] = np.std(metrics[key])
-
-    print(
-        f"Mean Relative Performance: {results['mean_relative_performance']:.4f} "
-        f"(+/- {results['std_relative_performance']:.4f})"
-    )
-    print(
-        f"Mean Correlation: {results['mean_correlation']:.4f} "
-        f"(+/- {results['std_correlation']:.4f})"
-    )
-    print(
-        f"Mean Effect Size: {results['mean_effect_size']:.4f} "
-        f"(+/- {results['std_effect_size']:.4f})"
-    )
-
-    return results
+    return final_model, mean_auc, std_auc, final_auc
 
 
 def bootstrap_evaluation(
@@ -237,17 +239,26 @@ def bootstrap_evaluation(
 #     return {"relative_performance": relative_performance, "correlation": correlation}
 
 
-def main():
+def main() -> None:
     """Main function to run baseline models for gene interaction prediction."""
+    # temporary filenames
+    # change to argparse
+    w2v_embeddings = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/w2v_filtered_embeddings.pkl"
+    positive_pairs_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/experimentally_derived_edges.pkl"
+    negative_pairs_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/negative_samples.pkl"
 
     ### load data and embeddings
-    gene_embeddings: Dict[str, np.ndarray] = {}  # gene_id -> embedding vector
-    positive_pairs: List[Tuple[str, str]] = (
-        []
-    )  # list of (gene1_id, gene2_id) for known interactions
-    negative_pairs: List[Tuple[str, str]] = (
-        []
-    )  # list of (gene1_id, gene2_id) for known non-interactions
+    gene_embeddings = _unpickle_dict(w2v_embeddings)
+    positive_pairs = _unpickle_dict(positive_pairs_file)
+    negative_pairs = _unpickle_dict(negative_pairs_file)
+
+    # type checking to mypy doesn't complain
+    if not isinstance(gene_embeddings, dict):
+        raise ValueError("Gene embeddings must be a dictionary.")
+    if not isinstance(positive_pairs, list):
+        raise ValueError("Positive pairs must be a list.")
+    if not isinstance(negative_pairs, list):
+        raise ValueError("Negative pairs must be a list.")
 
     # format data and embeddings for model training
     gene_pairs, targets = format_training_data(
@@ -256,6 +267,7 @@ def main():
         negative_pairs=negative_pairs,
     )
 
+    # define models
     models = {
         "Logistic Regression": LogisticRegressionModel,
         "Random Forest": RandomForest,
@@ -267,13 +279,15 @@ def main():
     results = {}
     for name, model_initializer in models.items():
         print(f"\nTraining and evaluating {name}:")
-        final_model, mean_auc, std_auc = train_and_evaluate_baseline_models(
+        final_model, mean_auc, std_auc, final_auc = train_and_evaluate_baseline_models(
             model_class=model_initializer, gene_pairs=gene_pairs, targets=targets
         )
         results[name] = (final_model, mean_auc, std_auc)
         print(f"{name} - Mean AUC: {mean_auc:.4f} (+/- {std_auc:.4f})")
+        print(f"{name} - Final AUC: {final_auc:.4f}")
 
     example_pair_features = np.random.rand(1, gene_pairs.shape[1])
+
     lr_model, _, _ = results["Logistic Regression"]
     lr_prediction = lr_model.predict_probability(example_pair_features)
     print(

@@ -25,7 +25,7 @@ from sklearn.neural_network import MLPClassifier  # type: ignore
 from xgboost import XGBClassifier
 
 
-class BaselineInteractionPredictor(BaseEstimator, ClassifierMixin):
+class BaselineModel(BaseEstimator, ClassifierMixin):
     """Base class for gene interaction prediction models. Defines input
     processing, model training, and prediction methods.
     """
@@ -37,7 +37,7 @@ class BaselineInteractionPredictor(BaseEstimator, ClassifierMixin):
 
     def train(
         self, feature_data: np.ndarray, target_labels: np.ndarray
-    ) -> "BaselineInteractionPredictor":
+    ) -> "BaselineModel":
         """Call model.fit() to train the model."""
         if feature_data.shape[1] % 2 != 0:
             raise ValueError("Input dimension must be even for paired vectors")
@@ -78,7 +78,7 @@ class BaselineInteractionPredictor(BaseEstimator, ClassifierMixin):
             raise ValueError("Input dimension mismatch")
 
 
-class LogisticRegressionModel(BaselineInteractionPredictor):
+class LogisticRegressionModel(BaselineModel):
     """Logistic regression - linear classification model."""
 
     def __init__(self):
@@ -86,7 +86,7 @@ class LogisticRegressionModel(BaselineInteractionPredictor):
         self.model = LogisticRegression()
 
 
-class RandomForest(BaselineInteractionPredictor):
+class RandomForest(BaselineModel):
     """Random forest - ensemble decision tree model."""
 
     def __init__(self):
@@ -94,7 +94,7 @@ class RandomForest(BaselineInteractionPredictor):
         self.model = RandomForestClassifier(n_estimators=100, random_state=42)
 
 
-class XGBoost(BaselineInteractionPredictor):
+class XGBoost(BaselineModel):
     """XGBoost - gradient boosting decision tree model."""
 
     def __init__(self):
@@ -102,7 +102,7 @@ class XGBoost(BaselineInteractionPredictor):
         self.model = XGBClassifier(use_label_encoder=False, eval_metric="logloss")
 
 
-class MLP(BaselineInteractionPredictor):
+class MLP(BaselineModel):
     """Multi-layer perceptron - feedforward neural network model."""
 
     def __init__(self):

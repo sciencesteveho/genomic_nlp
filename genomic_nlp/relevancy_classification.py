@@ -25,7 +25,7 @@ from sklearn.metrics import accuracy_score  # type: ignore
 from sklearn.model_selection import cross_val_score  # type: ignore
 from sklearn.neural_network import MLPClassifier  # type: ignore
 
-from abstractcollection import AbstractCollection
+from abstract_cleaner import AbstractCleaner
 from utils import _abstract_retrieval_concat
 
 RANDOM_SEED = 42
@@ -40,7 +40,7 @@ def get_training_data(corpus_path: str) -> pd.DataFrame:
     # if corpus file does not exist, create, clean, and save
     with contextlib.suppress(FileExistsError):
         _abstract_retrieval_concat(data_path=corpus_path, save=True)
-    abstractcollectionObj = AbstractCollection(pd.read_pickle(corpus_path))
+    abstractcollectionObj = AbstractCleaner(pd.read_pickle(corpus_path))
     abstractcollectionObj.clean_abstracts()
     with open(corpus_path, "wb") as f:
         pickle.dump(abstractcollectionObj.cleaned_abstracts, f)
@@ -207,7 +207,7 @@ def _get_testset(
     else:
         df = pd.read_csv(data_path)
 
-    testCorpus = AbstractCollection(
+    testCorpus = AbstractCleaner(
         df[df.columns[0]].astype(str) + ". " + df[df.columns[1]].astype(str)
     )
     testCorpus.clean_abstracts()

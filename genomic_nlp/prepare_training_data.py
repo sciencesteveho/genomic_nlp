@@ -11,18 +11,20 @@ extract relationships from three different sources:
     1. Co-essential genes from Wainberg et al., Nature Genetics, 2021.
     2. `HI-union` protein-protein interactions from Luck et al., Nature, 2020.
     3. `OpenCell` protein-protein interactions from Cho et al., Science, 2022.
+    4. `sc_cop` single-cell gene co-expression pairs from Ribeiro, Zinyani, &
+       Delaneau, Communications Biology, 2022
     
 For negative sampling, we generate random negative pairs from the set of all
 genes. However, because there's the chance that a negatively paired gene pair is
-actually a true positive, we ensure that negatives pairs do not exist across all 3 of
-the aformentioned sources as well as the STRING database and Gene Ontology (GO) 
-annotation database.
+actually a true positive, we ensure that negatives pairs do not exist across all
+3 of the aformentioned sources as well as the STRING database and Gene Ontology
+(GO) annotation database.
 
-*NOTE - while we tried to opt for a completely programmatic data
-download, we found it difficult. The OpenCell file was no longer properly
-linked at the time we tried to download it, and the coessential file at 10%
-fdr was availabel only as an xlsx. Thus, users will have to manually
-download those files."""
+*NOTE - while we tried to opt for a completely programmatic data download, we
+found it difficult. The OpenCell file was no longer properly linked at the time
+we tried to download it, and the coessential file at 10% fdr was available only
+as an xlsx. Thus, users will have to manually download those files."""
+
 
 from collections import defaultdict
 import csv
@@ -83,6 +85,10 @@ class PrepareTrainingData:
             "https://current.geneontology.org/annotations/goa_human.gaf.gz",
             "goa_human.gaf.gz",
         ),
+        # (
+        #     "https://static-content.springer.com/esm/art%3A10.1038%2Fs42003-022-03831-w/MediaObjects/42003_2022_3831_MOESM4_ESM.xlsx",
+        #     "sc_cop.xlsx",
+        # ),
     ]
 
     FILENAMES = {
@@ -93,6 +99,7 @@ class PrepareTrainingData:
         "string_mapper": "string_protein_aliases.txt",
         "goa": "goa_human.gaf",
         "go_mapper": "go_ids_to_gene_symbol.txt",
+        "sc_cop": "sc_cops.txt",
     }
 
     def __init__(self, output_dir: str = "./reference_files"):
@@ -115,6 +122,7 @@ class PrepareTrainingData:
             "coessential_pos": self.coessential_graph()[0],
             "coessential_neg": self.coessential_graph()[1],
             "opencell": self.opencell_graph(),
+            "sc_cop": self.sc_cop_graph(),
             "hi_union": self.hi_union_graph(),
             "string": self.physical_string_graph(),
             "go": self.go_graph(),
@@ -129,6 +137,7 @@ class PrepareTrainingData:
             self.gene_only_edges(graphs["coessential_pos"])
             | graphs["opencell"]
             | graphs["hi_union"]
+            | graphs["sc_cop"]
         )
         self.save_graph(
             experimentally_derived_edges, "experimentally_derived_edges.pkl"
@@ -262,6 +271,20 @@ class PrepareTrainingData:
             tuple(row) for row in df.iloc[:, :2].itertuples(index=False, name=None)
         }
         return self.remove_duplicate_edges(split_semicolon_edges(edges))
+
+    def sc_cop_graph(self) -> Set[Tuple[str, ...]]:
+        """Get edges from the sc_cop dataset. Because the sc_cop file is an
+        xlsx, we manually removed the interaction columns and saved as a
+        tab-delimited file.
+        """
+        edges = set()
+        file_path = self.output_dir / self.FILENAMES["sc_cop"]
+        with open(file_path, "r") as file:
+            reader = csv.reader(file, delimiter="\t")
+            for row in reader:
+                edges.add((row[0], row[1]))
+                edges.add((row[2], row[3]))
+        return self.remove_duplicate_edges(edges)
 
     def coessential_graph(
         self,
