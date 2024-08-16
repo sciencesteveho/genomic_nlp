@@ -458,7 +458,7 @@ def main() -> None:
 
     # make graphs!
     data_prep_obect = PrepareTrainingData(
-        "/ocean/projects/bio210019p/stevesho/nlp/training_data"
+        "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data"
     )
     data_prep_obect.create_graphs()
 
@@ -466,7 +466,7 @@ def main() -> None:
     negative_samples = data_prep_obect.negative_sampler(n_random_edges=148042)
 
     with open(
-        "/ocean/projects/bio210019p/stevesho/nlp/training_data/negative_edges.pkl",
+        "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/negative_edges.pkl",
         "wb",
     ) as f:
         pickle.dump(negative_samples, f)
