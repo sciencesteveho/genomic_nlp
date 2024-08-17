@@ -265,6 +265,9 @@ def main() -> None:
     positive_pairs = _unpickle_dict(args.positive_pairs_file)
     negative_pairs = _unpickle_dict(args.negative_pairs_file)
 
+    print(f"No. of positive pairs: {len(positive_pairs)}")
+    print(f"No. of negative pairs: {len(negative_pairs)}")
+
     # type checking to mypy doesn't complain
     if not isinstance(gene_embeddings, dict):
         raise ValueError("Gene embeddings must be a dictionary.")
