@@ -262,8 +262,8 @@ def main() -> None:
 
     # load data and embeddings
     gene_embeddings = _unpickle_dict(args.embeddings)
-    positive_pairs = _unpickle_dict(args.positive_pairs_file)
-    negative_pairs = _unpickle_dict(args.negative_pairs_file)
+    positive_pairs = list(_unpickle_dict(args.positive_pairs_file))
+    negative_pairs = list(_unpickle_dict(args.negative_pairs_file))
 
     print(f"No. of positive pairs: {len(positive_pairs)}")
     print(f"No. of negative pairs: {len(negative_pairs)}")
