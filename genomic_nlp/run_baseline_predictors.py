@@ -7,7 +7,8 @@ embeddings as input and predict whether the pair of genes interacts. Models can
 make probability based predictions or binary predictions based on a probability
 threshold."""
 
-
+import argparse
+import os
 import pickle
 import random
 from typing import Any, Callable, Dict, List, Tuple, Union
@@ -241,16 +242,28 @@ def bootstrap_evaluation(
 
 def main() -> None:
     """Main function to run baseline models for gene interaction prediction."""
-    # temporary filenames
-    # change to argparse
-    w2v_embeddings = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/w2v_filtered_embeddings.pkl"
-    positive_pairs_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/experimentally_derived_edges.pkl"
-    negative_pairs_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/negative_samples.pkl"
+    parser = argparse.ArgumentParser(
+        description="Run baseline models for gene interaction prediction."
+    )
+    parser.add_argument(
+        "--embeddings", type=str, help="Path to gene embeddings pickle file."
+    )
+    parser.add_argument(
+        "--positive_pairs",
+        type=str,
+        help="Path to positive gene interaction pairs pickle file.",
+    )
+    parser.add_argument(
+        "--negative_pairs",
+        type=str,
+        help="Path to negative gene interaction pairs pickle file.",
+    )
+    args = parser.parse_args()
 
-    ### load data and embeddings
-    gene_embeddings = _unpickle_dict(w2v_embeddings)
-    positive_pairs = _unpickle_dict(positive_pairs_file)
-    negative_pairs = _unpickle_dict(negative_pairs_file)
+    # load data and embeddings
+    gene_embeddings = _unpickle_dict(args.embeddings)
+    positive_pairs = _unpickle_dict(args.positive_pairs_file)
+    negative_pairs = _unpickle_dict(args.negative_pairs_file)
 
     # type checking to mypy doesn't complain
     if not isinstance(gene_embeddings, dict):
@@ -259,6 +272,14 @@ def main() -> None:
         raise ValueError("Positive pairs must be a list.")
     if not isinstance(negative_pairs, list):
         raise ValueError("Negative pairs must be a list.")
+
+    # get names for saving
+    embeddings_name = (
+        args.embeddings.split("/")[-1].split(".")[0].replace("_embeddings", "")
+    )
+    model_base = "/ocean/projects/bio210019p/stevesho/genomic_nlp/models/baseline"
+    model_dir = f"{model_base}/{embeddings_name}"
+    os.makedirs(model_dir, exist_ok=True)
 
     # format data and embeddings for model training
     gene_pairs, targets = format_training_data(
@@ -269,10 +290,10 @@ def main() -> None:
 
     # define models
     models = {
-        "Logistic Regression": LogisticRegressionModel,
-        "Random Forest": RandomForest,
-        "XGBoost": XGBoost,
-        "MLP": MLP,
+        "logistic_regression": LogisticRegressionModel,
+        "random_forest": RandomForest,
+        "xgboost": XGBoost,
+        "mlp": MLP,
     }
 
     # train and evaluate models
@@ -288,23 +309,20 @@ def main() -> None:
 
     example_pair_features = np.random.rand(1, gene_pairs.shape[1])
 
-    lr_model, _, _ = results["Logistic Regression"]
-    lr_prediction = lr_model.predict_probability(example_pair_features)
-    print(
-        "Logistic Regression prediction for example gene pair: "
-        f"{lr_prediction[0]:.4f}"
-    )
+    # save models
+    for name, (model, _, _) in results.items():
+        model.save_model(f"{model_dir}/{name}_model.pkl")
 
     # train and evaluate cosine similarity model
-    print("\nEvaluating Cosine Similarity model:")
-    cosine_model = CosineSimilarity()
-    cosine_results = evaluate_cosine_similarity(
-        cosine_model=cosine_model, gene_pairs=gene_pairs, targets=targets
-    )
-    print(
-        "Mean Relative Performance: "
-        f"{cosine_results['mean_relative_performance']:.4f}"
-    )
+    # print("\nEvaluating Cosine Similarity model:")
+    # cosine_model = CosineSimilarity()
+    # cosine_results = evaluate_cosine_similarity(
+    #     cosine_model=cosine_model, gene_pairs=gene_pairs, targets=targets
+    # )
+    # print(
+    #     "Mean Relative Performance: "
+    #     f"{cosine_results['mean_relative_performance']:.4f}"
+    # )
 
     # bootstrap_results = bootstrap_multi_model_evaluation(
     #     models, gene_pairs, targets, single_evaluation
