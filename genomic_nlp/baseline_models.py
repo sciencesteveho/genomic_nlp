@@ -82,34 +82,45 @@ class LogisticRegressionModel(BaselineModel):
     """Logistic regression - linear classification model."""
 
     def __init__(self):
-        super().__init__()
-        self.model = LogisticRegression()
+        model = LogisticRegression(**kwargs)
+        super().__init__(model)
 
 
 class RandomForest(BaselineModel):
     """Random forest - ensemble decision tree model."""
 
     def __init__(self):
-        super().__init__()
-        self.model = RandomForestClassifier(n_estimators=100, random_state=42)
+        model = RandomForestClassifier(
+            n_estimators=n_estimators, random_state=random_state, **kwargs
+        )
+        super().__init__(model)
 
 
 class XGBoost(BaselineModel):
     """XGBoost - gradient boosting decision tree model."""
 
     def __init__(self):
-        super().__init__()
-        self.model = XGBClassifier(use_label_encoder=False, eval_metric="logloss")
+        model = XGBClassifier(use_label_encoder=False, eval_metric="logloss", **kwargs)
+        super().__init__(model)
 
 
 class MLP(BaselineModel):
     """Multi-layer perceptron - feedforward neural network model."""
 
-    def __init__(self):
-        super().__init__()
-        self.model = MLPClassifier(
-            hidden_layer_sizes=(256, 256), max_iter=1000, random_state=42
+    def __init__(
+        self,
+        hidden_layer_sizes=(256, 256),
+        max_iter=1000,
+        random_state=42,
+        **kwargs,
+    ):
+        model = MLPClassifier(
+            hidden_layer_sizes=hidden_layer_sizes,
+            max_iter=max_iter,
+            random_state=random_state,
+            **kwargs,
         )
+        super().__init__(model)
 
 
 class CosineSimilarity:

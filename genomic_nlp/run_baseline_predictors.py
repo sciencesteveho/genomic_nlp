@@ -162,6 +162,14 @@ def train_and_evaluate_baseline_models(
     n_splits: int = 5,
 ) -> Tuple[BaselineModel, float, float, float]:
     """Train a model and evaluate its performance using stratified k-fold cross-validation."""
+    if gene_pairs.shape[0] != targets.shape[0]:
+        raise ValueError(
+            f"Mismatch in number of samples: {gene_pairs.shape[0]} vs {targets.shape[0]}"
+        )
+
+    print(f"Gene pairs shape: {gene_pairs.shape}")
+    print(f"Targets shape: {targets.shape}")
+    print(f"Unique target values: {np.unique(targets, return_counts=True)}")
     auc_scores = perform_cross_validation(model_class, gene_pairs, targets, n_splits)
 
     mean_auc = float(np.mean(auc_scores))
