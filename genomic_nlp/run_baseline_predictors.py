@@ -96,10 +96,16 @@ def format_training_data(
     negative_pairs: List[Tuple[str, str]],
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Prepare input data for model training."""
+    print(f"Initial positive pairs: {len(positive_pairs)}")
+    print(f"Initial negative pairs: {len(negative_pairs)}")
+
     # filter pairs to only include those with embeddings
     positive_pairs, negative_pairs = filter_pairs_for_embeddings(
         gene_embeddings, positive_pairs, negative_pairs
     )
+
+    print(f"Filtered positive pairs: {len(positive_pairs)}")
+    print(f"Filtered negative pairs: {len(negative_pairs)}")
 
     # create feature data and target labels
     return prepare_data_and_targets(gene_embeddings, positive_pairs, negative_pairs)
@@ -290,6 +296,10 @@ def main() -> None:
         positive_pairs=positive_pairs,
         negative_pairs=negative_pairs,
     )
+
+    print(f"Shape of gene_pairs: {gene_pairs.shape}")
+    print(f"Shape of targets: {targets.shape}")
+    print(f"Unique values in targets: {np.unique(targets)}")
 
     # define models
     models = {
