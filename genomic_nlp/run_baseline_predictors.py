@@ -249,12 +249,12 @@ def main() -> None:
         "--embeddings", type=str, help="Path to gene embeddings pickle file."
     )
     parser.add_argument(
-        "--positive_pairs",
+        "--positive_pairs_file",
         type=str,
         help="Path to positive gene interaction pairs pickle file.",
     )
     parser.add_argument(
-        "--negative_pairs",
+        "--negative_pairs_file",
         type=str,
         help="Path to negative gene interaction pairs pickle file.",
     )
