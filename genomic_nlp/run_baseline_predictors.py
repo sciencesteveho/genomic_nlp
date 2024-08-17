@@ -235,6 +235,11 @@ def bootstrap_evaluation(
     return bootstrap_stats
 
 
+def casefold_pairs(pairs: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
+    """Casefold gene pairs."""
+    return [(pair[0].casefold(), pair[1].casefold()) for pair in pairs]
+
+
 # def single_evaluation(model, pairs, targets):
 #     # This function should contain your evaluation logic
 #     # and return a dictionary of metrics
@@ -268,8 +273,11 @@ def main() -> None:
 
     # load data and embeddings
     gene_embeddings = _unpickle_dict(args.embeddings)
-    positive_pairs = list(_unpickle_dict(args.positive_pairs_file))
-    negative_pairs = list(_unpickle_dict(args.negative_pairs_file))
+    positive_pairs = _unpickle_dict(args.positive_pairs_file)
+    negative_pairs = _unpickle_dict(args.negative_pairs_file)
+
+    positive_pairs = casefold_pairs(positive_pairs)
+    negative_pairs = casefold_pairs(negative_pairs)
 
     print(f"No. of positive pairs: {len(positive_pairs)}")
     print(f"No. of negative pairs: {len(negative_pairs)}")
