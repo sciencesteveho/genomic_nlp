@@ -112,12 +112,13 @@ def format_training_data(
 
 
 def train_model(
-    model_class: Callable[[], BaselineModel],
+    model_class: Callable[..., BaselineModel],
     features: np.ndarray,
     labels: np.ndarray,
+    **kwargs,
 ) -> BaselineModel:
     """Train a model on given features and labels."""
-    model = model_class()
+    model = model_class(**kwargs)
     model.train(feature_data=features, target_labels=labels)
     return model
 
@@ -131,10 +132,11 @@ def evaluate_model(
 
 
 def perform_cross_validation(
-    model_class: Callable[[], BaselineModel],
+    model_class: Callable[..., BaselineModel],
     gene_pairs: np.ndarray,
     targets: np.ndarray,
     n_splits: int,
+    **kwargs,
 ) -> List[float]:
     """Perform stratified k-fold cross-validation and return AUC scores."""
     folds = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_SEED)
@@ -146,7 +148,7 @@ def perform_cross_validation(
         train_features, test_features = gene_pairs[train_index], gene_pairs[test_index]
         train_labels, test_labels = targets[train_index], targets[test_index]
 
-        model = train_model(model_class, train_features, train_labels)
+        model = train_model(model_class, train_features, train_labels, **kwargs)
         auc_score = evaluate_model(model, test_features, test_labels)
         auc_scores.append(auc_score)
 
@@ -160,6 +162,7 @@ def train_and_evaluate_baseline_models(
     gene_pairs: np.ndarray,
     targets: np.ndarray,
     n_splits: int = 5,
+    **kwargs,
 ) -> Tuple[BaselineModel, float, float, float]:
     """Train a model and evaluate its performance using stratified k-fold cross-validation."""
     if gene_pairs.shape[0] != targets.shape[0]:
@@ -170,14 +173,16 @@ def train_and_evaluate_baseline_models(
     print(f"Gene pairs shape: {gene_pairs.shape}")
     print(f"Targets shape: {targets.shape}")
     print(f"Unique target values: {np.unique(targets, return_counts=True)}")
-    auc_scores = perform_cross_validation(model_class, gene_pairs, targets, n_splits)
+    auc_scores = perform_cross_validation(
+        model_class, gene_pairs, targets, n_splits, **kwargs
+    )
 
     mean_auc = float(np.mean(auc_scores))
     std_auc = float(np.std(auc_scores))
     print(f"Mean AUC: {mean_auc:.4f} (+/- {std_auc:.4f})")
 
     # train a final model on all data
-    final_model = train_model(model_class, gene_pairs, targets)
+    final_model = train_model(model_class, gene_pairs, targets, **kwargs)
 
     # get final model metrics
     final_predictions = final_model.predict_probability(gene_pairs)

@@ -81,7 +81,7 @@ class BaselineModel(BaseEstimator, ClassifierMixin):
 class LogisticRegressionModel(BaselineModel):
     """Logistic regression - linear classification model."""
 
-    def __init__(self):
+    def __init__(self, **kwargs):
         model = LogisticRegression(**kwargs)
         super().__init__(model)
 
@@ -89,7 +89,7 @@ class LogisticRegressionModel(BaselineModel):
 class RandomForest(BaselineModel):
     """Random forest - ensemble decision tree model."""
 
-    def __init__(self):
+    def __init__(self, n_estimators: int = 100, random_state: int = 42, **kwargs):
         model = RandomForestClassifier(
             n_estimators=n_estimators, random_state=random_state, **kwargs
         )
@@ -99,7 +99,7 @@ class RandomForest(BaselineModel):
 class XGBoost(BaselineModel):
     """XGBoost - gradient boosting decision tree model."""
 
-    def __init__(self):
+    def __init__(self, **kwargs):
         model = XGBClassifier(use_label_encoder=False, eval_metric="logloss", **kwargs)
         super().__init__(model)
 
@@ -108,17 +108,13 @@ class MLP(BaselineModel):
     """Multi-layer perceptron - feedforward neural network model."""
 
     def __init__(
-        self,
-        hidden_layer_sizes=(256, 256),
-        max_iter=1000,
-        random_state=42,
-        **kwargs,
+        self, hidden_layer_sizes=(256, 256), max_iter=1000, random_state=42, **kwargs
     ):
         model = MLPClassifier(
             hidden_layer_sizes=hidden_layer_sizes,
             max_iter=max_iter,
             random_state=random_state,
-            **kwargs,
+            **kwargs
         )
         super().__init__(model)
 
