@@ -545,13 +545,13 @@ def main() -> None:
             )
 
     # bootstrap evaluation
-    print("\nBootstrapping evaluation:")
-    bootstrap_evaluator = BootstrapEvaluator(
-        models=trained_models,
-        test_features=test_features,
-        test_targets=test_targets,
-    )
-    bootstrap_results = bootstrap_evaluator.bootstrap_test_evaluation()
+    # print("\nBootstrapping evaluation:")
+    # bootstrap_evaluator = BootstrapEvaluator(
+    #     models=trained_models,
+    #     test_features=test_features,
+    #     test_targets=test_targets,
+    # )
+    # bootstrap_results = bootstrap_evaluator.bootstrap_test_evaluation()
 
     # plot results
     visualizer = BaselineModelVisualizer(output_path=model_dir)
@@ -559,7 +559,7 @@ def main() -> None:
         train_results=train_results, test_results=test_results
     )
     visualizer.plot_stratified_performance(stratified_results=stratified_results)
-    visualizer.plot_bootstrap_results(bootstrap_stats=bootstrap_results)
+    # visualizer.plot_bootstrap_results(bootstrap_stats=bootstrap_results)
 
 
 if __name__ == "__main__":
