@@ -7,8 +7,10 @@
 
 from typing import Dict, List, Optional, Tuple
 
+import matplotlib.colors as mcolors  # type: ignore
 from matplotlib.figure import Figure  # type: ignore
 import matplotlib.pyplot as plt  # type: ignore
+import numpy as np
 
 
 class BaselineModelVisualizer:
@@ -34,25 +36,29 @@ class BaselineModelVisualizer:
         )
 
         bar_width = 0.35
-        x_positions = range(len(model_names))
+        group_spacing = 0.8
+        x_positions = np.arange(len(model_names)) * (2 * bar_width + group_spacing)
         train_bar_positions = [x - bar_width / 2 for x in x_positions]
         test_bar_positions = [x + bar_width / 2 for x in x_positions]
+
+        muted_colors = self._get_muted_colors(2)
 
         axis.bar(
             train_bar_positions,
             [train_results[model] for model in model_names],
             bar_width,
             label="Train",
-            color="skyblue",
+            color=muted_colors[0],
         )
         axis.bar(
             test_bar_positions,
             [test_results[model] for model in model_names],
             bar_width,
             label="Test",
-            color="lightcoral",
+            color=muted_colors[1],
         )
 
+        axis.set_xticks(x_positions)
         self._finalize_plot(axis=axis, model_names=model_names, savename="train_test")
 
     def plot_stratified_performance(
@@ -72,18 +78,28 @@ class BaselineModelVisualizer:
             model_names, "Model Performance on Test Set by Source", figsize=(12, 6)
         )
 
-        bar_width = 0.8 / len(sources)
-        x_positions = range(len(model_names))
+        bar_width = 0.15
+        group_spacing = 0.8
+        x_positions = np.arange(len(model_names)) * (
+            len(sources) * bar_width + group_spacing
+        )
+
+        muted_colors = self._get_muted_colors(len(sources))
 
         for i, source in enumerate(sources):
             source_scores = [
                 stratified_results[model].get(source, 0) for model in model_names
             ]
-            source_bar_positions = [
-                x + i * bar_width - 0.4 + bar_width / 2 for x in x_positions
-            ]
-            axis.bar(source_bar_positions, source_scores, bar_width, label=source)
+            source_bar_positions = x_positions + i * bar_width
+            axis.bar(
+                source_bar_positions,
+                source_scores,
+                bar_width,
+                label=source,
+                color=muted_colors[i],
+            )
 
+        axis.set_xticks(x_positions + (len(sources) - 1) * bar_width / 2)
         self._finalize_plot(
             axis,
             model_names,
@@ -91,33 +107,6 @@ class BaselineModelVisualizer:
             legend_title="Source",
             legend_loc="upper left",
         )
-
-    def _setup_plot(
-        self, model_names: List[str], title: str, figsize: Tuple[int, int] = (8, 6)
-    ) -> Tuple[plt.Figure, plt.Axes]:
-        """Set up the plot with common parameters."""
-        self._set_matplotlib_publication_parameters()
-        fig, axis = plt.subplots(figsize=figsize)
-        axis.set_ylabel("AUC Score")
-        axis.set_title(title)
-        axis.set_xticks(range(len(model_names)))
-        return fig, axis
-
-    def _finalize_plot(
-        self,
-        axis: plt.Axes,
-        model_names: List[str],
-        savename: str,
-        legend_loc: str = "best",
-        legend_title: Optional[str] = None,
-    ) -> None:
-        """Finalize the plot with common parameters and save it."""
-        axis.set_xticklabels(model_names, rotation=45, ha="right")
-        if legend_title:
-            axis.legend(title=legend_title, bbox_to_anchor=(1.05, 1), loc=legend_loc)
-        else:
-            axis.legend()
-        self.plot_layout_and_save(plt=plt, savename=savename)
 
     def plot_bootstrap_results(
         self,
@@ -164,6 +153,33 @@ class BaselineModelVisualizer:
 
         self.plot_layout_and_save(plt=plt, savename="bootstrap_results")
 
+    def _setup_plot(
+        self, model_names: List[str], title: str, figsize: Tuple[int, int] = (8, 6)
+    ) -> Tuple[plt.Figure, plt.Axes]:
+        """Set up the plot with common parameters."""
+        self._set_matplotlib_publication_parameters()
+        fig, axis = plt.subplots(figsize=figsize)
+        axis.set_ylabel("AUC Score")
+        axis.set_title(title)
+        axis.set_xticks(range(len(model_names)))
+        return fig, axis
+
+    def _finalize_plot(
+        self,
+        axis: plt.Axes,
+        model_names: List[str],
+        savename: str,
+        legend_loc: str = "best",
+        legend_title: Optional[str] = None,
+    ) -> None:
+        """Finalize the plot with common parameters and save it."""
+        axis.set_xticklabels(model_names, rotation=45, ha="right")
+        if legend_title:
+            axis.legend(title=legend_title, bbox_to_anchor=(1.05, 1), loc=legend_loc)
+        else:
+            axis.legend()
+        self.plot_layout_and_save(plt=plt, savename=savename)
+
     def plot_layout_and_save(
         self,
         plt: plt.Figure,
@@ -185,7 +201,15 @@ class BaselineModelVisualizer:
                 "ytick.labelsize": 7,
                 "legend.fontsize": 7,
                 "figure.dpi": 300,
-                "figure.figsize": (8, 6),
+                "figure.figsize": (3, 3),
                 "font.sans-serif": "Nimbus Sans",
             }
+        )
+
+    @staticmethod
+    def _get_muted_colors(num_colors) -> List:
+        """Generate a list of muted colors."""
+        base_colors = plt.cm.Set2(np.linspace(0, 1, num_colors))
+        return mcolors.LinearSegmentedColormap.from_list("muted", base_colors)(
+            np.linspace(0, 1, num_colors)
         )

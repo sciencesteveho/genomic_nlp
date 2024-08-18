@@ -292,25 +292,6 @@ class BaselineDataPreprocessor:
             else:
                 pos_test.append(pair)
 
-        # if not os.path.exists(f"{self.data_dir}/pos_test.pkl") and not os.path.exists(
-        #     f"{self.data_dir}/pos_train.pkl"
-        # ):
-        #     for pair in self.positive_pairs:
-        #         if pair in self.text_edges or (pair[1], pair[0]) in self.text_edges:
-        #             pos_train.append(pair)
-        #         else:
-        #             pos_test.append(pair)
-        #     # save
-        #     with open(f"{self.data_dir}/pos_test.pkl", "wb") as f:
-        #         pickle.dump(pos_test, f)
-        #     with open(f"{self.data_dir}/pos_train.pkl", "wb") as f:
-        #         pickle.dump(pos_train, f)
-        # else:
-        #     with open(f"{self.data_dir}/pos_test.pkl", "rb") as f:
-        #         pos_test = pickle.load(f)
-        #     with open(f"{self.data_dir}/pos_train.pkl", "rb") as f:
-        #         pos_train = pickle.load(f)
-
         print(f"Positive pairs with prior knowledge: {len(pos_train)}")
         print(f"Positive pairs without prior knowledge: {len(pos_test)}")
         return pos_train, pos_test
@@ -531,10 +512,10 @@ def main() -> None:
 
     # define models
     models = {
-        # "logistic_regression": LogisticRegressionModel,
+        "logistic_regression": LogisticRegressionModel,
         "random_forest": RandomForest,
-        # "xgboost": XGBoost,
-        # "mlp": MLP,
+        "xgboost": XGBoost,
+        "mlp": MLP,
     }
 
     # train and evaluate models
@@ -574,23 +555,23 @@ def main() -> None:
                 )
             )
 
-    # bootstrap evaluation
-    # print("\nBootstrapping evaluation:")
-    # bootstrap_evaluator = BootstrapEvaluator(
-    #     models=trained_models,
-    #     test_features=test_features,
-    #     test_targets=test_targets,
-    # )
-    # bootstrap_results = bootstrap_evaluator.bootstrap_test_evaluation()
-
-    # plot results
-    print("\nPlotting results:")
     visualizer = BaselineModelVisualizer(output_path=model_dir)
     visualizer.plot_model_performances(
         train_results=train_results, test_results=test_results
     )
     visualizer.plot_stratified_performance(stratified_results=stratified_results)
-    # visualizer.plot_bootstrap_results(bootstrap_stats=bootstrap_results)
+
+    # bootstrap evaluation
+    print("\nBootstrapping evaluation:")
+    bootstrap_evaluator = BootstrapEvaluator(
+        models=trained_models,
+        test_features=test_features,
+        test_targets=test_targets,
+    )
+    bootstrap_results = bootstrap_evaluator.bootstrap_test_evaluation()
+
+    # plot results
+    visualizer.plot_bootstrap_results(bootstrap_stats=bootstrap_results)
 
 
 if __name__ == "__main__":
