@@ -13,7 +13,7 @@ import csv
 import os
 import pickle
 import random
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 import numpy as np
 from scipy import stats  # type: ignore
@@ -148,10 +148,16 @@ class BaselineDataPreprocessor:
     and statify the train and test sets by source.
     """
 
-    def __init__(self, args):
+    def __init__(
+        self,
+        args,
+        data_dir: str = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings",
+    ) -> None:
         """Instantiate a BaselineDataPreprocessor object. Load data and
         embeddings.
         """
+        self.data_dir = data_dir
+
         self.gene_embeddings = self._unpickle_dict(args.embeddings)
         self.pos_pairs_with_source = self._unpickle_dict(args.positive_pairs_file)
         self.pair_to_source = {
@@ -162,12 +168,14 @@ class BaselineDataPreprocessor:
         self.negative_pairs = self.casefold_pairs(
             self._unpickle_dict(args.negative_pairs_file)
         )
-        self.text_edges = self.casefold_pairs(
+        text_edges = self.casefold_pairs(
             [
                 tuple(row)
                 for row in csv.reader(open(args.text_edges_file), delimiter="\t")
             ]
         )
+        self.text_edges = set(text_edges)
+        print("Data and embeddings loaded!")
 
     def load_and_preprocess_data(self) -> Tuple[
         List[Tuple[str, str]],
@@ -180,9 +188,16 @@ class BaselineDataPreprocessor:
         List[Tuple[str, str]],
     ]:
         """Load all data for training!"""
+        print("Filtering pairs for those with embeddings")
         self.positive_pairs, self.negative_pairs = self.filter_pairs_for_embeddings()
+
+        print("Splitting pairs into train and test sets")
         pos_train, pos_test = self.filter_pairs_for_prior_knowledge()
+
+        print("Getting negative samples.")
         neg_train, neg_test = self.split_negative_pairs(len(pos_train), len(pos_test))
+
+        print("Preparing training data and targets.")
         train_features, train_targets = self.prepare_data_and_targets(
             pos_train, neg_train
         )
@@ -260,11 +275,24 @@ class BaselineDataPreprocessor:
         pos_train = []
         pos_test = []
 
-        for pair in self.positive_pairs:
-            if pair in self.text_edges or (pair[1], pair[0]) in self.text_edges:
-                pos_train.append(pair)
-            else:
-                pos_test.append(pair)
+        if not os.path.exists(f"{self.data_dir}/pos_test.pkl") and not os.path.exists(
+            f"{self.data_dir}/pos_train.pkl"
+        ):
+            for pair in self.positive_pairs:
+                if pair in self.text_edges or (pair[1], pair[0]) in self.text_edges:
+                    pos_train.append(pair)
+                else:
+                    pos_test.append(pair)
+            # save
+            with open(f"{self.data_dir}/pos_test.pkl", "wb") as f:
+                pickle.dump(pos_test, f)
+            with open(f"{self.data_dir}/pos_train.pkl", "wb") as f:
+                pickle.dump(pos_train, f)
+        else:
+            with open(f"{self.data_dir}/pos_test.pkl", "rb") as f:
+                pos_test = pickle.load(f)
+            with open(f"{self.data_dir}/pos_train.pkl", "rb") as f:
+                pos_train = pickle.load(f)
 
         return pos_train, pos_test
 
