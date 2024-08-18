@@ -15,7 +15,6 @@ import pickle
 import random
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
-from matplotlib.backends.backend_pdf import PdfPages  # type: ignore
 import matplotlib.pyplot as plt  # type: ignore
 import numpy as np
 from scipy import stats  # type: ignore
