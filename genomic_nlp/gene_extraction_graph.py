@@ -136,7 +136,10 @@ def main() -> None:
     """Main function"""
     # genes = gencode_genes("gencode.v45.basic.annotation.gtf")
 
-    with open("hgnc_complete_set.pkl", "rb") as file:
+    with open(
+        "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_synonyms.pkl",
+        "rb",
+    ) as file:
         hgnc_synonyms = pickle.load(file)
 
     synonym_to_gene = build_synonym_to_gene_map(hgnc_synonyms)
