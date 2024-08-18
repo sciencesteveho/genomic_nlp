@@ -157,7 +157,9 @@ class PrepareTrainingData:
             experimentally_derived_edges, "experimentally_derived_edges.pkl"
         )
 
-        graph_for_filtering = graphs["string"] | graphs["go"]
+        graph_for_filtering = self.combine_exp_derived_edges(
+            (graphs["string"], "string"), (graphs["go"], "go")
+        )
         self.save_graph(graph_for_filtering, "graph_for_filtering.pkl")
 
         all_positive_edges = experimentally_derived_edges | graph_for_filtering
