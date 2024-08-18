@@ -275,6 +275,8 @@ class BaselineDataPreprocessor:
         pos_train = []
         pos_test = []
 
+        print(f"Total positive pairs: {len(self.positive_pairs)}")
+
         if not os.path.exists(f"{self.data_dir}/pos_test.pkl") and not os.path.exists(
             f"{self.data_dir}/pos_train.pkl"
         ):
@@ -294,6 +296,8 @@ class BaselineDataPreprocessor:
             with open(f"{self.data_dir}/pos_train.pkl", "rb") as f:
                 pos_train = pickle.load(f)
 
+        print(f"Positive pairs with prior knowledge: {len(pos_train)}")
+        print(f"Positive pairs without prior knowledge: {len(pos_test)}")
         return pos_train, pos_test
 
     def split_negative_pairs(
@@ -482,8 +486,6 @@ def main() -> None:
 
     print(f"No. of positive pairs: {len(positive_pairs)}")
     print(f"No. of negative pairs: {len(negative_pairs)}")
-    print(f"No. of positive pairs with prior knowledge: {len(pos_test)}")
-    print(f"No. of positive pairs without prior knowledge: {len(neg_test)}")
     print(f"Train features shape: {train_features.shape}")
     print(f"Train targets shape: {train_targets.shape}")
     print(f"Test features shape: {test_features.shape}")
