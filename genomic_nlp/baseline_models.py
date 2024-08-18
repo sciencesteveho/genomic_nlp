@@ -1,3 +1,4 @@
+# sourcery skip: upper-camel-case-classes
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
@@ -100,7 +101,7 @@ class XGBoost(BaselineModel):
     """XGBoost - gradient boosting decision tree model."""
 
     def __init__(self, **kwargs):
-        model = XGBClassifier(use_label_encoder=False, eval_metric="logloss", **kwargs)
+        model = XGBClassifier(eval_metric="logloss", **kwargs)
         super().__init__(model)
 
 

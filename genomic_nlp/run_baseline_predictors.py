@@ -8,19 +8,21 @@ make probability based predictions or binary predictions based on a probability
 threshold."""
 
 import argparse
+from collections import defaultdict
+import csv
 import os
 import pickle
 import random
-from typing import Any, Callable, Dict, List, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
+from matplotlib.backends.backend_pdf import PdfPages  # type: ignore
+import matplotlib.pyplot as plt  # type: ignore
 import numpy as np
 from scipy import stats  # type: ignore
-from scipy.stats import mannwhitneyu  # type: ignore
-from scipy.stats import spearmanr  # type: ignore
+import seaborn as sns  # type: ignore
 from sklearn.metrics import average_precision_score  # type: ignore
 from sklearn.metrics import roc_auc_score  # type: ignore
 from sklearn.model_selection import StratifiedKFold  # type: ignore
-from sklearn.model_selection import train_test_split  # type: ignore
 
 from baseline_models import BaselineModel
 from baseline_models import CosineSimilarity
@@ -28,244 +30,390 @@ from baseline_models import LogisticRegressionModel
 from baseline_models import MLP
 from baseline_models import RandomForest
 from baseline_models import XGBoost
+from visualizers import BaselineModelVisualizer
 
 RANDOM_SEED = 42
 
 
-def _unpickle_dict(
-    pickle_file: str,
-) -> Union[Dict[str, np.ndarray], List[Tuple[str, str]]]:
-    """Simple wrapper to unpickle embedding or pair pkls."""
-    with open(pickle_file, "rb") as file:
-        return pickle.load(file)
-
-
-def balance_filtered_pairs(
-    filtered_positive_pairs: List[Tuple[str, str]],
-    filtered_negative_pairs: List[Tuple[str, str]],
-) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
-    """Adjust pairs to have the same size."""
-    if len(filtered_positive_pairs) > len(filtered_negative_pairs):
-        filtered_positive_pairs = random.sample(
-            filtered_positive_pairs, len(filtered_negative_pairs)
-        )
-    elif len(filtered_negative_pairs) > len(filtered_positive_pairs):
-        filtered_negative_pairs = random.sample(
-            filtered_negative_pairs, len(filtered_positive_pairs)
-        )
-    return filtered_positive_pairs, filtered_negative_pairs
-
-
-def filter_pairs_for_embeddings(
-    gene_embeddings: Dict[str, np.ndarray],
-    positive_pairs: List[Tuple[str, str]],
-    negative_pairs: List[Tuple[str, str]],
-) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
-    """Filter pairs to only include those with embeddings."""
-    filtered_positive_pairs = [
-        pair for pair in positive_pairs if all(gene in gene_embeddings for gene in pair)
-    ]
-    filtered_negative_pairs = [
-        pair for pair in negative_pairs if all(gene in gene_embeddings for gene in pair)
-    ]
-
-    # adjust pairs to have same size
-    return balance_filtered_pairs(filtered_positive_pairs, filtered_negative_pairs)
-
-
-def prepare_data_and_targets(
-    gene_embeddings: Dict[str, np.ndarray],
-    positive_pairs: List[Tuple[str, str]],
-    negative_pairs: List[Tuple[str, str]],
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Create feature data and target labels from gene pairs."""
-    data = []
-    targets = []
-    for pair in positive_pairs + negative_pairs:
-        gene1, gene2 = pair
-        vec1 = gene_embeddings[gene1]
-        vec2 = gene_embeddings[gene2]
-        data.append(np.concatenate([vec1, vec2]))
-        targets.append(1 if pair in positive_pairs else 0)
-    return np.array(data), np.array(targets)
-
-
-def format_training_data(
-    gene_embeddings: Dict[str, np.ndarray],
-    positive_pairs: List[Tuple[str, str]],
-    negative_pairs: List[Tuple[str, str]],
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Prepare input data for model training."""
-    print(f"Initial positive pairs: {len(positive_pairs)}")
-    print(f"Initial negative pairs: {len(negative_pairs)}")
-
-    # filter pairs to only include those with embeddings
-    positive_pairs, negative_pairs = filter_pairs_for_embeddings(
-        gene_embeddings, positive_pairs, negative_pairs
-    )
-
-    print(f"Filtered positive pairs: {len(positive_pairs)}")
-    print(f"Filtered negative pairs: {len(negative_pairs)}")
-
-    # create feature data and target labels
-    return prepare_data_and_targets(gene_embeddings, positive_pairs, negative_pairs)
-
-
-def train_model(
-    model_class: Callable[..., BaselineModel],
-    features: np.ndarray,
-    labels: np.ndarray,
-    **kwargs,
-) -> BaselineModel:
-    """Train a model on given features and labels."""
-    model = model_class(**kwargs)
-    model.train(feature_data=features, target_labels=labels)
-    return model
-
-
-def evaluate_model(
-    model: BaselineModel, features: np.ndarray, labels: np.ndarray
-) -> float:
-    """Evaluate a model and return its AUC score."""
-    predicted_probabilities = model.predict_probability(features)
-    return roc_auc_score(labels, predicted_probabilities)
-
-
-def perform_cross_validation(
-    model_class: Callable[..., BaselineModel],
-    gene_pairs: np.ndarray,
-    targets: np.ndarray,
-    n_splits: int,
-    **kwargs,
-) -> List[float]:
-    """Perform stratified k-fold cross-validation and return AUC scores."""
-    folds = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_SEED)
-    auc_scores = []
-
-    for k_fold, (train_index, test_index) in enumerate(
-        folds.split(gene_pairs, targets), 1
-    ):
-        train_features, test_features = gene_pairs[train_index], gene_pairs[test_index]
-        train_labels, test_labels = targets[train_index], targets[test_index]
-
-        model = train_model(model_class, train_features, train_labels, **kwargs)
-        auc_score = evaluate_model(model, test_features, test_labels)
-        auc_scores.append(auc_score)
-
-        print(f"Fold {k_fold} AUC: {auc_score:.4f}")
-
-    return auc_scores
-
-
-def train_and_evaluate_baseline_models(
-    model_class: Callable[[], BaselineModel],
-    gene_pairs: np.ndarray,
-    targets: np.ndarray,
-    n_splits: int = 5,
-    **kwargs,
-) -> Tuple[BaselineModel, float, float, float]:
-    """Train a model and evaluate its performance using stratified k-fold cross-validation."""
-    if gene_pairs.shape[0] != targets.shape[0]:
-        raise ValueError(
-            f"Mismatch in number of samples: {gene_pairs.shape[0]} vs {targets.shape[0]}"
-        )
-
-    print(f"Gene pairs shape: {gene_pairs.shape}")
-    print(f"Targets shape: {targets.shape}")
-    print(f"Unique target values: {np.unique(targets, return_counts=True)}")
-    auc_scores = perform_cross_validation(
-        model_class, gene_pairs, targets, n_splits, **kwargs
-    )
-
-    mean_auc = float(np.mean(auc_scores))
-    std_auc = float(np.std(auc_scores))
-    print(f"Mean AUC: {mean_auc:.4f} (+/- {std_auc:.4f})")
-
-    # train a final model on all data
-    final_model = train_model(model_class, gene_pairs, targets, **kwargs)
-
-    # get final model metrics
-    final_predictions = final_model.predict_probability(gene_pairs)
-    final_auc = roc_auc_score(targets, final_predictions)
-    print(f"Final AUC: {final_auc:.4f}")
-
-    return final_model, mean_auc, std_auc, final_auc
-
-
-def bootstrap_evaluation(
-    models: Dict[str, Any],
-    gene_pairs: np.ndarray,
-    targets: np.ndarray,
-    eval_func: Callable,
-    n_iterations: int = 1000,
-    sample_size: float = 0.8,
-    confidence_level: float = 0.95,
-) -> Dict[str, Dict[str, float]]:
-    """Perform bootstrapped evaluation of the cosine similarity model.
-
-    Args:
-        models: Dictionary of models to evaluate (key: model name, value: model
-        object)
+class GeneInterationPredictions:
+    """Class used to train an individual gene interaction prediction model.
+    Evaluates via 5-fold cross validation, then trains a final model on the
+    entire training set and evaluates on the hold-out test set.
     """
-    n_samples = int(len(gene_pairs) * sample_size)
-    bootstrap_results: Dict[str, Dict[Any, Any]] = {
-        model_name: {} for model_name in models
-    }
 
-    for _ in range(n_iterations):
-        # generate bootstrap sample
-        indices = np.random.choice(len(gene_pairs), size=n_samples, replace=True)
-        boot_gene_pairs = gene_pairs[indices]
-        boot_targets = targets[indices]
+    def __init__(
+        self,
+        model_class: Callable[..., BaselineModel],
+        train_features: np.ndarray,
+        train_targets: np.ndarray,
+        test_features: np.ndarray,
+        test_targets: np.ndarray,
+        model_name: str,
+        model_dir: str,
+    ) -> None:
+        """Instantiate a GeneInteractionPredictions object."""
+        self.model_class = model_class
+        self.train_features = train_features
+        self.train_targets = train_targets
+        self.test_features = test_features
+        self.test_targets = test_targets
+        self.model_name = model_name
+        self.model_dir = model_dir
 
-        # evaluate each model on bootstrap sample
-        for model_name, model in models.items():
-            results = eval_func(model, boot_gene_pairs, boot_targets)
-
-            for metric, value in results.items():
-                if metric not in bootstrap_results[model_name]:
-                    bootstrap_results[model_name][metric] = []
-                bootstrap_results[model_name][metric].append(value)
-
-    # compute statistics
-    bootstrap_stats: Dict[str, Dict[str, Any]] = {}
-    for model_name in models:
-        bootstrap_stats[model_name] = {}
-        for metric, values in bootstrap_results[model_name].items():
-            mean = np.mean(values)
-            std_err = np.std(values, ddof=1)
-            ci_lower, ci_upper = stats.t.interval(
-                confidence_level, len(values) - 1, loc=mean, scale=std_err
+    def perform_cross_validation(
+        self,
+        n_splits: int,
+        **kwargs,
+    ) -> List[float]:
+        """Perform stratified k-fold cross-validation and return AUC scores."""
+        folds = StratifiedKFold(
+            n_splits=n_splits, shuffle=True, random_state=RANDOM_SEED
+        )
+        return [
+            self.evaluate_model(
+                model=self.train_model(
+                    model_class=self.model_class,
+                    features=self.train_features[train_index],
+                    labels=self.train_targets[train_index],
+                    **kwargs,
+                ),
+                features=self.train_features[test_index],
+                labels=self.train_targets[test_index],
             )
+            for train_index, test_index in folds.split(
+                X=self.train_features, y=self.train_targets
+            )
+        ]
 
-            bootstrap_stats[model_name][metric] = {
-                "mean": mean,
-                "std_error": std_err,
-                "ci_lower": ci_lower,
-                "ci_upper": ci_upper,
-            }
+    def train_and_evaluate_model(
+        self,
+    ) -> BaselineModel:
+        """Train a model, evaluate, and save results."""
+        print(f"\nTraining and evaluating {self.model_name}:")
 
-    return bootstrap_stats
+        # perform 5-fold CV
+        cv_scores = self.perform_cross_validation(n_splits=5)
+        mean_cv_auc = np.mean(cv_scores)
+        std_cv_auc = np.std(cv_scores)
+        print(f"Cross-validation Mean AUC: {mean_cv_auc:.4f} (+/- {std_cv_auc:.4f})")
+
+        # train final model on entire training set
+        final_model = self.train_model(
+            self.model_class, self.train_features, self.train_targets
+        )
+
+        # evaluate on training set
+        train_auc = self.evaluate_model(
+            final_model, self.train_features, self.train_targets
+        )
+        print(f"Training set AUC: {train_auc:.4f}")
+
+        # evaluate on hold-out test set
+        test_auc = self.evaluate_model(
+            final_model, self.test_features, self.test_targets
+        )
+        print(f"Hold-out test set AUC: {test_auc:.4f}")
+
+        # save model
+        model_path = f"{self.model_dir}/{self.model_name}_model.pkl"
+        try:
+            with open(model_path, "wb") as f:
+                pickle.dump(final_model, f)
+            print(f"Model saved to {model_path}")
+        except Exception as e:
+            print(f"Error saving model {self.model_name}: {str(e)}")
+
+        return final_model
+
+    @staticmethod
+    def train_model(
+        model_class: Callable[..., BaselineModel],
+        features: np.ndarray,
+        labels: np.ndarray,
+        **kwargs,
+    ) -> BaselineModel:
+        """Train a model on given features and labels."""
+        model = model_class(**kwargs)
+        model.train(feature_data=features, target_labels=labels)
+        return model
+
+    @staticmethod
+    def evaluate_model(
+        model: BaselineModel, features: np.ndarray, labels: np.ndarray
+    ) -> float:
+        """Evaluate a model and return its AUC score."""
+        predicted_probabilities = model.predict_probability(features)
+        return roc_auc_score(labels, predicted_probabilities)
 
 
-def casefold_pairs(pairs: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
-    """Casefold gene pairs."""
-    return [(pair[0].casefold(), pair[1].casefold()) for pair in pairs]
+class BaselineDataPreprocessor:
+    """Preprocess data for baseline models. Load gene pairs, embeddings, filter,
+    and statify the train and test sets by source.
+    """
+
+    def __init__(self, args):
+        """Instantiate a BaselineDataPreprocessor object. Load data and
+        embeddings.
+        """
+        self.gene_embeddings = self._unpickle_dict(args.embeddings)
+        self.pos_pairs_with_source = self._unpickle_dict(args.positive_pairs_file)
+        self.pair_to_source = {
+            (pair[0].lower(), pair[1].lower()): pair[2]
+            for pair in self.pos_pairs_with_source
+        }
+        self.positive_pairs = self.casefold_pairs(self.pos_pairs_with_source)
+        self.negative_pairs = self.casefold_pairs(
+            self._unpickle_dict(args.negative_pairs_file)
+        )
+        self.text_edges = self.casefold_pairs(
+            [
+                tuple(row)
+                for row in csv.reader(open(args.text_edges_file), delimiter="\t")
+            ]
+        )
+
+    def load_and_preprocess_data(self) -> Tuple[
+        List[Tuple[str, str]],
+        List[Tuple[str, str]],
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        List[Tuple[str, str]],
+        List[Tuple[str, str]],
+    ]:
+        """Load all data for training!"""
+        self.positive_pairs, self.negative_pairs = self.filter_pairs_for_embeddings()
+        pos_train, pos_test = self.filter_pairs_for_prior_knowledge()
+        neg_train, neg_test = self.split_negative_pairs(len(pos_train), len(pos_test))
+        train_features, train_targets = self.prepare_data_and_targets(
+            pos_train, neg_train
+        )
+        test_features, test_targets = self.prepare_data_and_targets(pos_test, neg_test)
+
+        return (
+            self.positive_pairs,
+            self.negative_pairs,
+            train_features,
+            train_targets,
+            test_features,
+            test_targets,
+            pos_test,
+            neg_test,
+        )
+
+    def prepare_stratified_test_data(
+        self,
+        pos_test: List[Tuple[str, str]],
+        test_features: np.ndarray,
+        neg_test: List[Tuple[str, str]],
+    ) -> Dict[str, Dict[str, Any]]:
+        """Strafity the test data by source."""
+        stratified_test_data: Dict[str, Any] = defaultdict(
+            lambda: {"features": [], "targets": []}
+        )
+        for i, pair in enumerate(pos_test):
+            sources = self.pair_to_source.get(pair, ("unknown",))
+            for source in sources:
+                stratified_test_data[source]["features"].append(test_features[i])
+                stratified_test_data[source]["targets"].append(1)
+
+        for source in stratified_test_data:
+            n_pos = len(stratified_test_data[source]["features"])
+            neg_indices = np.random.choice(len(neg_test), n_pos, replace=False)
+            stratified_test_data[source]["features"].extend(
+                test_features[len(pos_test) + i] for i in neg_indices
+            )
+            stratified_test_data[source]["targets"].extend([0] * n_pos)
+
+        for source in stratified_test_data:
+            stratified_test_data[source]["features"] = np.array(
+                stratified_test_data[source]["features"]
+            )
+            stratified_test_data[source]["targets"] = np.array(
+                stratified_test_data[source]["targets"]
+            )
+        return dict(stratified_test_data)
+
+    def filter_pairs_for_embeddings(
+        self,
+    ) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
+        """Filter pairs to only include those with embeddings."""
+        filtered_positive_pairs = [
+            pair
+            for pair in self.positive_pairs
+            if all(gene in self.gene_embeddings for gene in pair)
+        ]
+        filtered_negative_pairs = [
+            pair
+            for pair in self.negative_pairs
+            if all(gene in self.gene_embeddings for gene in pair)
+        ]
+        return self.balance_filtered_pairs(
+            filtered_positive_pairs, filtered_negative_pairs
+        )
+
+    def filter_pairs_for_prior_knowledge(
+        self,
+    ) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
+        """Filter the gene pairs into two sets: those with prior knowledge, and
+        those without. Gene pairs with prior knowledge are those that exist in the
+        text_edges set, which contains edges extracted from the literature.
+        """
+        pos_train = []
+        pos_test = []
+
+        for pair in self.positive_pairs:
+            if pair in self.text_edges or (pair[1], pair[0]) in self.text_edges:
+                pos_train.append(pair)
+            else:
+                pos_test.append(pair)
+
+        return pos_train, pos_test
+
+    def split_negative_pairs(
+        self, n_train: int, n_test: int
+    ) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
+        """Split negative pairs into train and test sets without overlap."""
+        if len(self.negative_pairs) < n_train + n_test:
+            raise ValueError(
+                "Not enough negative pairs to split into train and test sets"
+            )
+        shuffled_pairs = random.sample(self.negative_pairs, len(self.negative_pairs))
+        return shuffled_pairs[:n_train], shuffled_pairs[n_train : n_train + n_test]
+
+    def prepare_data_and_targets(
+        self,
+        positive_pairs: List[Tuple[str, str]],
+        negative_pairs: List[Tuple[str, str]],
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Create feature data and target labels from gene pairs."""
+        data = []
+        targets = []
+        for pair in positive_pairs + negative_pairs:
+            gene1, gene2 = pair
+            vec1 = self.gene_embeddings[gene1]
+            vec2 = self.gene_embeddings[gene2]
+            data.append(np.concatenate([vec1, vec2]))
+            targets.append(1 if pair in positive_pairs else 0)
+        return np.array(data), np.array(targets)
+
+    @staticmethod
+    def balance_filtered_pairs(
+        filtered_positive_pairs: List[Tuple[str, str]],
+        filtered_negative_pairs: List[Tuple[str, str]],
+    ) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
+        """Adjust pairs to have the same size."""
+        if len(filtered_positive_pairs) > len(filtered_negative_pairs):
+            filtered_positive_pairs = random.sample(
+                filtered_positive_pairs, len(filtered_negative_pairs)
+            )
+        elif len(filtered_negative_pairs) > len(filtered_positive_pairs):
+            filtered_negative_pairs = random.sample(
+                filtered_negative_pairs, len(filtered_positive_pairs)
+            )
+        return filtered_positive_pairs, filtered_negative_pairs
+
+    @staticmethod
+    def _unpickle_dict(pickle_file: str) -> Any:
+        """Simple wrapper to unpickle embedding or pair pkls."""
+        with open(pickle_file, "rb") as file:
+            return pickle.load(file)
+
+    @staticmethod
+    def casefold_pairs(pairs: Any) -> List[Tuple[str, str]]:
+        """Casefold gene pairs."""
+        return [(pair[0].casefold(), pair[1].casefold()) for pair in pairs]
 
 
-# def single_evaluation(model, pairs, targets):
-#     # This function should contain your evaluation logic
-#     # and return a dictionary of metrics
-#     similarities = model.predict_probability(pairs)
-#     relative_performance = np.mean(similarities[targets == 1]) / np.mean(
-#         similarities[targets == 0]
-#     )
-#     correlation, _ = stats.spearmanr(targets, similarities)
-#     return {"relative_performance": relative_performance, "correlation": correlation}
+class BootstrapEvaluator:
+    """Class used to evaluate models using n out of n bootstrapping."""
+
+    def __init__(
+        self,
+        models: Dict[str, BaselineModel],
+        test_features: np.ndarray,
+        test_targets: np.ndarray,
+        n_iterations: int = 1000,
+        confidence_level: float = 0.95,
+    ) -> None:
+        """Instantiate a BootstrapEvaluator object."""
+        self.models = models
+        self.test_features = test_features
+        self.test_targets = test_targets
+        self.n_iterations = n_iterations
+        self.confidence_level = confidence_level
+
+    def bootstrap_test_evaluation(
+        self,
+    ) -> Dict[str, Dict[str, Dict[str, float]]]:
+        """Perform bootstrapped evaluation of multiple models on the test set."""
+        bootstrap_results: Dict[str, Dict[str, List[float]]] = {
+            model_name: {"auc": [], "auprc": []} for model_name in self.models
+        }
+
+        # n out of n bootstrapping
+        n_samples = len(self.test_features)
+
+        # bootstrap resampling with replacement
+        for _ in range(self.n_iterations):
+            indices = np.random.choice(n_samples, size=n_samples, replace=True)
+            boot_features = self.test_features[indices]
+            boot_targets = self.test_targets[indices]
+            for model_name, model in self.models.items():
+                predictions = model.predict_probability(boot_features)
+                bootstrap_results[model_name]["auc"].append(
+                    roc_auc_score(boot_targets, predictions)
+                )
+                bootstrap_results[model_name]["auprc"].append(
+                    average_precision_score(boot_targets, predictions)
+                )
+
+        return self.compute_bootstrap_statistics(
+            bootstrap_results=bootstrap_results, confidence_level=self.confidence_level
+        )
+
+    @staticmethod
+    def compute_bootstrap_statistics(
+        bootstrap_results: Dict[str, Dict[str, List[float]]], confidence_level: float
+    ) -> Dict[str, Any]:
+        """Compute statistics from bootstrap results."""
+        bootstrap_stats: Dict[str, Any] = {}
+
+        for model_name, metrics in bootstrap_results.items():
+            bootstrap_stats[model_name] = {}
+            for metric, values in metrics.items():
+                mean = np.mean(values)
+                std_err = np.std(values, ddof=1)
+                ci_lower, ci_upper = stats.t.interval(
+                    confidence_level, len(values) - 1, loc=mean, scale=std_err
+                )
+
+                bootstrap_stats[model_name][metric] = {
+                    "mean": mean,
+                    "std_error": std_err,
+                    "ci_lower": ci_lower,
+                    "ci_upper": ci_upper,
+                }
+
+        return bootstrap_stats
 
 
-def main() -> None:
-    """Main function to run baseline models for gene interaction prediction."""
+def _setup_model_dir(args: argparse.Namespace) -> str:
+    """Setup model directory."""
+    embeddings_name = (
+        args.embeddings.split("/")[-1].split(".")[0].replace("_embeddings", "")
+    )
+    model_dir = os.path.join(
+        "/ocean/projects/bio210019p/stevesho/genomic_nlp/models/baseline",
+        embeddings_name,
+    )
+    os.makedirs(model_dir, exist_ok=True)
+    return model_dir
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse command line arguments."""
     parser = argparse.ArgumentParser(
         description="Run baseline models for gene interaction prediction."
     )
@@ -282,45 +430,47 @@ def main() -> None:
         type=str,
         help="Path to negative gene interaction pairs pickle file.",
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--text_edges_file",
+        type=str,
+        help="Path to text edges pickle file.",
+    )
+    return parser.parse_args()
 
-    # load data and embeddings
-    gene_embeddings = _unpickle_dict(args.embeddings)
-    positive_pairs = _unpickle_dict(args.positive_pairs_file)
-    negative_pairs = _unpickle_dict(args.negative_pairs_file)
 
-    positive_pairs = casefold_pairs(positive_pairs)
-    negative_pairs = casefold_pairs(negative_pairs)
+def main() -> None:
+    """Run baseline models for gene interaction prediction."""
+    args = parse_args()
+
+    # process training data
+    data_preprocessor = BaselineDataPreprocessor(args=args)
+    (
+        positive_pairs,
+        negative_pairs,
+        train_features,
+        train_targets,
+        test_features,
+        test_targets,
+        pos_test,
+        neg_test,
+    ) = data_preprocessor.load_and_preprocess_data()
 
     print(f"No. of positive pairs: {len(positive_pairs)}")
     print(f"No. of negative pairs: {len(negative_pairs)}")
+    print(f"No. of positive pairs with prior knowledge: {len(pos_test)}")
+    print(f"No. of positive pairs without prior knowledge: {len(neg_test)}")
+    print(f"Train features shape: {train_features.shape}")
+    print(f"Train targets shape: {train_targets.shape}")
+    print(f"Test features shape: {test_features.shape}")
+    print(f"Test targets shape: {test_targets.shape}")
 
-    # type checking to mypy doesn't complain
-    if not isinstance(gene_embeddings, dict):
-        raise ValueError("Gene embeddings must be a dictionary.")
-    if not isinstance(positive_pairs, list):
-        raise ValueError("Positive pairs must be a list.")
-    if not isinstance(negative_pairs, list):
-        raise ValueError("Negative pairs must be a list.")
-
-    # get names for saving
-    embeddings_name = (
-        args.embeddings.split("/")[-1].split(".")[0].replace("_embeddings", "")
-    )
-    model_base = "/ocean/projects/bio210019p/stevesho/genomic_nlp/models/baseline"
-    model_dir = f"{model_base}/{embeddings_name}"
-    os.makedirs(model_dir, exist_ok=True)
-
-    # format data and embeddings for model training
-    gene_pairs, targets = format_training_data(
-        gene_embeddings=gene_embeddings,
-        positive_pairs=positive_pairs,
-        negative_pairs=negative_pairs,
+    # prepare stratified test data
+    stratified_test_data = data_preprocessor.prepare_stratified_test_data(
+        pos_test=pos_test, test_features=test_features, neg_test=neg_test
     )
 
-    print(f"Shape of gene_pairs: {gene_pairs.shape}")
-    print(f"Shape of targets: {targets.shape}")
-    print(f"Unique values in targets: {np.unique(targets)}")
+    # setup model directory
+    model_dir = _setup_model_dir(args=args)
 
     # define models
     models = {
@@ -331,60 +481,58 @@ def main() -> None:
     }
 
     # train and evaluate models
-    results = {}
-    for name, model_initializer in models.items():
-        print(f"\nTraining and evaluating {name}:")
-        final_model, mean_auc, std_auc, final_auc = train_and_evaluate_baseline_models(
-            model_class=model_initializer, gene_pairs=gene_pairs, targets=targets
+    trained_models = {}
+    train_results = {}
+    test_results = {}
+    stratified_results: Dict[str, Dict[Any, Any]] = {model: {} for model in models}
+
+    for name, model_class in models.items():
+        gene_interaction_predictor = GeneInterationPredictions(
+            model_class=model_class,
+            train_features=train_features,
+            train_targets=train_targets,
+            test_features=test_features,
+            test_targets=test_targets,
+            model_name=name,
+            model_dir=model_dir,
         )
-        results[name] = (final_model, mean_auc, std_auc)
-        print(f"{name} - Mean AUC: {mean_auc:.4f} (+/- {std_auc:.4f})")
-        print(f"{name} - Final AUC: {final_auc:.4f}")
+        trained_model = gene_interaction_predictor.train_and_evaluate_model()
+        trained_models[name] = trained_model
 
-    example_pair_features = np.random.rand(1, gene_pairs.shape[1])
+        # collect results
+        train_results[name] = gene_interaction_predictor.evaluate_model(
+            trained_model, train_features, train_targets
+        )
+        test_results[name] = gene_interaction_predictor.evaluate_model(
+            trained_model, test_features, test_targets
+        )
 
-    # save models
-    for name, (model, _, _) in results.items():
-        model.save_model(f"{model_dir}/{name}_model.pkl")
+        # evaluate on stratified test sets
+        for source, data in stratified_test_data.items():
+            stratified_results[name][source] = (
+                gene_interaction_predictor.evaluate_model(
+                    model=trained_model,
+                    features=data["features"],
+                    labels=data["targets"],
+                )
+            )
 
-    # train and evaluate cosine similarity model
-    # print("\nEvaluating Cosine Similarity model:")
-    # cosine_model = CosineSimilarity()
-    # cosine_results = evaluate_cosine_similarity(
-    #     cosine_model=cosine_model, gene_pairs=gene_pairs, targets=targets
-    # )
-    # print(
-    #     "Mean Relative Performance: "
-    #     f"{cosine_results['mean_relative_performance']:.4f}"
-    # )
+    # bootstrap evaluation
+    print("\nBootstrapping evaluation:")
+    bootstrap_evaluator = BootstrapEvaluator(
+        models=trained_models,
+        test_features=test_features,
+        test_targets=test_targets,
+    )
+    bootstrap_results = bootstrap_evaluator.bootstrap_test_evaluation()
 
-    # bootstrap_results = bootstrap_multi_model_evaluation(
-    #     models, gene_pairs, targets, single_evaluation
-    # )
-
-    # # Print results
-    # for model_name, model_stats in bootstrap_results.items():
-    #     print(f"\nResults for {model_name}:")
-    #     for metric, stats in model_stats.items():
-    #         print(f"  {metric}:")
-    #         print(f"    Mean: {stats['mean']:.4f}")
-    #         print(f"    Std Error: {stats['std_error']:.4f}")
-    #         print(f"    95% CI: ({stats['ci_lower']:.4f}, {stats['ci_upper']:.4f})")
-
-    # # Perform statistical tests between models
-    # for metric in bootstrap_results[list(models.keys())[0]]:
-    #     print(f"\nStatistical tests for {metric}:")
-    #     model_names = list(models.keys())
-    #     for i in range(len(model_names)):
-    #         for j in range(i + 1, len(model_names)):
-    #             model1 = model_names[i]
-    #             model2 = model_names[j]
-    #             t_stat, p_value = stats.ttest_ind(
-    #                 bootstrap_results[model1][metric], bootstrap_results[model2][metric]
-    #             )
-    #             print(
-    #                 f"  {model1} vs {model2}: t-statistic = {t_stat:.4f}, p-value = {p_value:.4f}"
-    #             )
+    # plot results
+    visualizer = BaselineModelVisualizer(output_path=model_dir)
+    visualizer.plot_model_performances(
+        train_results=train_results, test_results=test_results
+    )
+    visualizer.plot_stratified_performance(stratified_results=stratified_results)
+    visualizer.plot_bootstrap_results(bootstrap_stats=bootstrap_results)
 
 
 if __name__ == "__main__":
