@@ -207,6 +207,7 @@ class PrepareTrainingData:
 
         # make a list of all genes, used in experimentally derived edges to pull
         # from
+        exp_derived_edges = {(edge[0], edge[1]) for edge in exp_derived_edges}
         all_genes: List[str] = list(
             {gene for edge in exp_derived_edges for gene in edge}
         )
