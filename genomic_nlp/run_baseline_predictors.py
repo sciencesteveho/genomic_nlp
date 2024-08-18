@@ -10,12 +10,14 @@ threshold."""
 import argparse
 from collections import defaultdict
 import csv
+import multiprocessing as mp
 import os
 import pickle
 import random
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 import numpy as np
+import psutil  # type: ignore
 from scipy import stats  # type: ignore
 from sklearn.metrics import average_precision_score  # type: ignore
 from sklearn.metrics import roc_auc_score  # type: ignore
@@ -30,6 +32,13 @@ from baseline_models import XGBoost
 from visualizers import BaselineModelVisualizer
 
 RANDOM_SEED = 42
+
+
+def get_physical_cores() -> int:
+    """Return physical core count, subtracted by one to account for the main
+    process / overhead.
+    """
+    return psutil.cpu_count(logical=False) - 1
 
 
 class GeneInterationPredictions:
@@ -277,24 +286,30 @@ class BaselineDataPreprocessor:
 
         print(f"Total positive pairs: {len(self.positive_pairs)}")
 
-        if not os.path.exists(f"{self.data_dir}/pos_test.pkl") and not os.path.exists(
-            f"{self.data_dir}/pos_train.pkl"
-        ):
-            for pair in self.positive_pairs:
-                if pair in self.text_edges or (pair[1], pair[0]) in self.text_edges:
-                    pos_train.append(pair)
-                else:
-                    pos_test.append(pair)
-            # save
-            with open(f"{self.data_dir}/pos_test.pkl", "wb") as f:
-                pickle.dump(pos_test, f)
-            with open(f"{self.data_dir}/pos_train.pkl", "wb") as f:
-                pickle.dump(pos_train, f)
-        else:
-            with open(f"{self.data_dir}/pos_test.pkl", "rb") as f:
-                pos_test = pickle.load(f)
-            with open(f"{self.data_dir}/pos_train.pkl", "rb") as f:
-                pos_train = pickle.load(f)
+        for pair in self.positive_pairs:
+            if pair in self.text_edges or (pair[1], pair[0]) in self.text_edges:
+                pos_train.append(pair)
+            else:
+                pos_test.append(pair)
+
+        # if not os.path.exists(f"{self.data_dir}/pos_test.pkl") and not os.path.exists(
+        #     f"{self.data_dir}/pos_train.pkl"
+        # ):
+        #     for pair in self.positive_pairs:
+        #         if pair in self.text_edges or (pair[1], pair[0]) in self.text_edges:
+        #             pos_train.append(pair)
+        #         else:
+        #             pos_test.append(pair)
+        #     # save
+        #     with open(f"{self.data_dir}/pos_test.pkl", "wb") as f:
+        #         pickle.dump(pos_test, f)
+        #     with open(f"{self.data_dir}/pos_train.pkl", "wb") as f:
+        #         pickle.dump(pos_train, f)
+        # else:
+        #     with open(f"{self.data_dir}/pos_test.pkl", "rb") as f:
+        #         pos_test = pickle.load(f)
+        #     with open(f"{self.data_dir}/pos_train.pkl", "rb") as f:
+        #         pos_train = pickle.load(f)
 
         print(f"Positive pairs with prior knowledge: {len(pos_train)}")
         print(f"Positive pairs without prior knowledge: {len(pos_test)}")
@@ -377,30 +392,45 @@ class BootstrapEvaluator:
         self,
     ) -> Dict[str, Dict[str, Dict[str, float]]]:
         """Perform bootstrapped evaluation of multiple models on the test set."""
+        n_samples = len(self.test_features)
+
+        # Prepare arguments for multiprocessing
+        mp_args = [
+            (n_samples, self.test_features, self.test_targets, self.models)
+            for _ in range(self.n_iterations)
+        ]
+
+        # Use multiprocessing to run iterations in parallel
+        with mp.Pool(processes=get_physical_cores()) as pool:
+            results = pool.starmap(self._bootstrap_iteration, mp_args)
+
+        # Aggregate results
         bootstrap_results: Dict[str, Dict[str, List[float]]] = {
             model_name: {"auc": [], "auprc": []} for model_name in self.models
         }
-
-        # n out of n bootstrapping
-        n_samples = len(self.test_features)
-
-        # bootstrap resampling with replacement
-        for _ in range(self.n_iterations):
-            indices = np.random.choice(n_samples, size=n_samples, replace=True)
-            boot_features = self.test_features[indices]
-            boot_targets = self.test_targets[indices]
-            for model_name, model in self.models.items():
-                predictions = model.predict_probability(boot_features)
-                bootstrap_results[model_name]["auc"].append(
-                    roc_auc_score(boot_targets, predictions)
-                )
-                bootstrap_results[model_name]["auprc"].append(
-                    average_precision_score(boot_targets, predictions)
-                )
+        for result in results:
+            for model_name, metrics in result.items():
+                bootstrap_results[model_name]["auc"].append(metrics["auc"])
+                bootstrap_results[model_name]["auprc"].append(metrics["auprc"])
 
         return self.compute_bootstrap_statistics(
             bootstrap_results=bootstrap_results, confidence_level=self.confidence_level
         )
+
+    @staticmethod
+    def _bootstrap_iteration(n_samples, test_features, test_targets, models):
+        """Perform a single bootstrap iteration."""
+        indices = np.random.choice(n_samples, size=n_samples, replace=True)
+        boot_features = test_features[indices]
+        boot_targets = test_targets[indices]
+        iteration_results = {}
+        for model_name, model in models.items():
+            predictions = model.predict_probability(boot_features)
+            iteration_results[model_name] = {
+                "auc": roc_auc_score(boot_targets, predictions),
+                "auprc": average_precision_score(boot_targets, predictions),
+            }
+        return iteration_results
 
     @staticmethod
     def compute_bootstrap_statistics(
@@ -501,10 +531,10 @@ def main() -> None:
 
     # define models
     models = {
-        "logistic_regression": LogisticRegressionModel,
+        # "logistic_regression": LogisticRegressionModel,
         "random_forest": RandomForest,
-        "xgboost": XGBoost,
-        "mlp": MLP,
+        # "xgboost": XGBoost,
+        # "mlp": MLP,
     }
 
     # train and evaluate models
@@ -554,6 +584,7 @@ def main() -> None:
     # bootstrap_results = bootstrap_evaluator.bootstrap_test_evaluation()
 
     # plot results
+    print("\nPlotting results:")
     visualizer = BaselineModelVisualizer(output_path=model_dir)
     visualizer.plot_model_performances(
         train_results=train_results, test_results=test_results
