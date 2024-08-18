@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Dict, List, Set, Union
 
 
-def create_synonym_dictionary(hgnc: Path) -> Dict[str, Set[str]]:
+def create_synonym_dictionary(hgnc: Path, casefold: bool = True) -> Dict[str, Set[str]]:
     """Map gene symbols to potential synonyms from the hgnc complete set. We add
     the gene name, alias, and previous symbols as synonyms.
     """
@@ -28,19 +28,19 @@ def create_synonym_dictionary(hgnc: Path) -> Dict[str, Set[str]]:
         for line in reader:
 
             # set gene symbol as key
-            key = line[1].casefold()
+            key = line[1].casefold() if casefold else line[1]
             synonyms[key] = set()
 
             # add name alias symbol, previous symbol
             for idx in [2, 8, 10]:
                 if line[idx]:
-                    synonym = formatter(line[idx])
+                    synonym = formatter(name=line[idx], casefold=casefold)
                     _add_values(synonyms, key, synonym)
 
     return synonyms
 
 
-def formatter(name: str) -> Union[str, List[str]]:
+def formatter(name: str, casefold: bool = True) -> Union[str, List[str]]:
     """Format a string to be used as a key in a dictionary."""
     REPLACE_SYMBOLS = {
         "(": "",
@@ -51,7 +51,7 @@ def formatter(name: str) -> Union[str, List[str]]:
         " ": "_",
     }
 
-    name = name.casefold()
+    name = name.casefold() if casefold else name
     for symbol, replacement in REPLACE_SYMBOLS.items():
         name = name.replace(symbol, replacement)
     return name.split("|") if "|" in name else name

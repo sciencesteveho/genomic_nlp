@@ -152,7 +152,7 @@ def main() -> None:
     )
 
     with open(
-        "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_synonyms.pkl",
+        "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_synonyms_nocasefold.pkl",
         "rb",
     ) as file:
         hgnc_synonyms = pickle.load(file)
