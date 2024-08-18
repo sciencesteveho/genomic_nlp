@@ -375,17 +375,17 @@ class BootstrapEvaluator:
         """Perform bootstrapped evaluation of multiple models on the test set."""
         n_samples = len(self.test_features)
 
-        # Prepare arguments for multiprocessing
+        # prepare arguments for multiprocessing
         mp_args = [
             (n_samples, self.test_features, self.test_targets, self.models)
             for _ in range(self.n_iterations)
         ]
 
-        # Use multiprocessing to run iterations in parallel
+        # use multiprocessing to run iterations in parallel
         with mp.Pool(processes=get_physical_cores()) as pool:
             results = pool.starmap(self._bootstrap_iteration, mp_args)
 
-        # Aggregate results
+        # aggregate results
         bootstrap_results: Dict[str, Dict[str, List[float]]] = {
             model_name: {"auc": [], "auprc": []} for model_name in self.models
         }
