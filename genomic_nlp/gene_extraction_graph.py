@@ -19,13 +19,23 @@ from constants import COPY_GENES
 from utils import gencode_genes
 
 
-def build_synonym_to_gene_map(synonyms: Dict[str, Set[str]]) -> Dict[str, str]:
-    """Reverse map the synonyms to the gene symbol."""
+def build_synonym_to_gene_map(
+    synonyms: Dict[str, Set[str]], genes: Set[str]
+) -> Dict[str, str]:
+    """Reverse map the synonyms to the gene symbol and add genes even if they
+    have no synonyms.
+    """
     synonym_to_gene = {}
     for gene, syn_set in synonyms.items():
         for synonym in syn_set:
             synonym_to_gene[synonym] = gene
         synonym_to_gene[gene] = gene  # include the gene symbol
+
+    # add genes not in the synonym set
+    for gene in genes:
+        if gene not in synonym_to_gene:
+            synonym_to_gene[gene] = gene
+
     return synonym_to_gene
 
 
@@ -137,7 +147,7 @@ def _map_proteins_to_gene_symbols(
 
 def main() -> None:
     """Main function"""
-    # genes = gencode_genes("gencode.v45.basic.annotation.gtf")
+    genes = gencode_genes("gencode.v45.basic.annotation.gtf")
 
     with open(
         "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_synonyms.pkl",
@@ -145,7 +155,7 @@ def main() -> None:
     ) as file:
         hgnc_synonyms = pickle.load(file)
 
-    synonym_to_gene = build_synonym_to_gene_map(hgnc_synonyms)
+    synonym_to_gene = build_synonym_to_gene_map(hgnc_synonyms, genes)
 
     gene_edges = extract_gene_edges_from_abstracts(10, genes=synonym_to_gene)
 
