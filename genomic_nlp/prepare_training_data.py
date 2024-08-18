@@ -36,7 +36,7 @@ import pickle
 import random
 import shutil
 import subprocess
-from typing import Dict, List, Set, Tuple, Union
+from typing import Any, Dict, List, Set, Tuple, Union
 import zipfile
 
 import mygene  # type: ignore
@@ -107,7 +107,7 @@ class PrepareTrainingData:
         self.output_dir = Path(output_dir)
         os.makedirs(output_dir, exist_ok=True)
 
-    def create_graphs(self) -> None:
+    def create_graphs(self) -> int:
         """Make all graphs and save them to the output directory. We first make
         each subgraph, then create some specific combined graphs. We combine the
         coessential, opencell, and hi_union graphs into a single positive graph.
@@ -115,29 +115,43 @@ class PrepareTrainingData:
         filtering`.
         """
         # download files
-        self.download_reference_files()
+        # self.download_reference_files()
 
         # Create and save individual graphs
-        graphs = {
-            "coessential_pos": self.coessential_graph()[0],
-            "coessential_neg": self.coessential_graph()[1],
-            "opencell": self.opencell_graph(),
-            "sc_cop": self.sc_cop_graph(),
-            "hi_union": self.hi_union_graph(),
-            "string": self.physical_string_graph(),
-            "go": self.go_graph(),
-        }
+        # graphs = {
+        #     "coessential_pos": self.coessential_graph()[0],
+        #     "coessential_neg": self.coessential_graph()[1],
+        #     "opencell": self.opencell_graph(),
+        #     "sc_cop": self.sc_cop_graph(),
+        #     "hi_union": self.hi_union_graph(),
+        #     "string": self.physical_string_graph(),
+        #     "go": self.go_graph(),
+        # }
 
         # Save individual graphs
-        for name, graph in graphs.items():
-            self.save_graph(graph, f"{name}_graph.pkl")
+        # for name, graph in graphs.items():
+        #     self.save_graph(graph, f"{name}_graph.pkl")
+
+        # load individual graphs
+        graphs: Dict[str, Any] = {
+            "coessential_pos": set(),
+            "opencell": set(),
+            "hi_union": set(),
+            "sc_cop": set(),
+            "string": set(),
+            "go": set(),
+        }
+        for name in graphs:
+            with open(self.output_dir / f"{name}_graph.pkl", "rb") as f:
+                graphs[name] = pickle.load(f)
 
         # Create and save combined graphs
-        experimentally_derived_edges = (
-            self.gene_only_edges(graphs["coessential_pos"])
-            | graphs["opencell"]
-            | graphs["hi_union"]
-            | graphs["sc_cop"]
+        coessential_pos = self.gene_only_edges(graphs["coessential_pos"])
+        experimentally_derived_edges = self.combine_exp_derived_edges(
+            (coessential_pos, "coessential"),
+            (graphs["opencell"], "opencell"),
+            (graphs["hi_union"], "hi_union"),
+            (graphs["sc_cop"], "sc_cop"),
         )
         self.save_graph(
             experimentally_derived_edges, "experimentally_derived_edges.pkl"
@@ -150,6 +164,25 @@ class PrepareTrainingData:
         self.save_graph(all_positive_edges, "all_positive_edges.pkl")
 
         print("All graphs created and saved successfully.")
+        return len(experimentally_derived_edges)
+
+    def combine_exp_derived_edges(
+        self, *edge_sets: Tuple[Set[Tuple[str, ...]], str]
+    ) -> Set[Tuple[str, str, Tuple[str, ...]]]:
+        """Combine experimentally derived edges and add source information."""
+        combined_edges: Dict[Tuple[str, str], Set[str]] = defaultdict(set)
+        for edges, source in edge_sets:
+            for edge in edges:
+                if len(edge) != 2:
+                    raise ValueError(
+                        f"Expected edge to be a tuple of 2 elements, got {edge}"
+                    )
+                key: Tuple[str, str] = (
+                    edge[0],
+                    edge[1],
+                )
+                combined_edges[key].add(source)
+        return {(*k, tuple(sorted(v))) for k, v in combined_edges.items()}
 
     def negative_sampler(
         self,
@@ -387,7 +420,7 @@ class PrepareTrainingData:
 
         print("All files downloaded and processed successfully.")
 
-    def save_graph(self, graph: Set[Tuple[str, ...]], filename: str) -> None:
+    def save_graph(self, graph: Any, filename: str) -> None:
         """Simple utility to pickle edges"""
         output_path = self.output_dir / filename
         with open(output_path, "wb") as f:
@@ -460,10 +493,10 @@ def main() -> None:
     data_prep_obect = PrepareTrainingData(
         "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data"
     )
-    data_prep_obect.create_graphs()
+    len_edges = data_prep_obect.create_graphs()
 
     # make negative samples, with n = positive samples
-    negative_samples = data_prep_obect.negative_sampler(n_random_edges=148042)
+    negative_samples = data_prep_obect.negative_sampler(n_random_edges=len_edges)
 
     with open(
         "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/negative_edges.pkl",
