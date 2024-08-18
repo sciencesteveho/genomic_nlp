@@ -147,7 +147,9 @@ def _map_proteins_to_gene_symbols(
 
 def main() -> None:
     """Main function"""
-    genes = gencode_genes("gencode.v45.basic.annotation.gtf")
+    genes = gencode_genes(
+        "/ocean/projects/bio210019p/stevesho/genomic_nlp/data/gencode.v45.basic.annotation.gtf"
+    )
 
     with open(
         "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_synonyms.pkl",
