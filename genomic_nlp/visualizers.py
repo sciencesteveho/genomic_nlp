@@ -53,7 +53,7 @@ class BaselineModelVisualizer:
             color="lightcoral",
         )
 
-        self._finalize_plot(axis, model_names)
+        self._finalize_plot(axis=axis, model_names=model_names, savename="train_test")
 
     def plot_stratified_performance(
         self, stratified_results: Dict[str, Dict[str, float]]
@@ -85,7 +85,11 @@ class BaselineModelVisualizer:
             axis.bar(source_bar_positions, source_scores, bar_width, label=source)
 
         self._finalize_plot(
-            axis, model_names, legend_title="Source", legend_loc="upper left"
+            axis,
+            model_names,
+            savename="stratified",
+            legend_title="Source",
+            legend_loc="upper left",
         )
 
     def _setup_plot(
@@ -103,6 +107,7 @@ class BaselineModelVisualizer:
         self,
         axis: plt.Axes,
         model_names: List[str],
+        savename: str,
         legend_loc: str = "best",
         legend_title: Optional[str] = None,
     ) -> None:
@@ -112,7 +117,7 @@ class BaselineModelVisualizer:
             axis.legend(title=legend_title, bbox_to_anchor=(1.05, 1), loc=legend_loc)
         else:
             axis.legend()
-        self.plot_layout_and_save(plt=plt)
+        self.plot_layout_and_save(plt=plt, savename=savename)
 
     def plot_bootstrap_results(
         self,
@@ -157,15 +162,16 @@ class BaselineModelVisualizer:
             if i == 0:
                 ax.set_ylabel("Models")
 
-        self.plot_layout_and_save(plt=plt)
+        self.plot_layout_and_save(plt=plt, savename="bootstrap_results")
 
     def plot_layout_and_save(
         self,
         plt: plt.Figure,
+        savename: str,
     ) -> None:
         """Adjust the layout and save the plot."""
         plt.tight_layout()
-        plt.savefig(self.output_path)
+        plt.savefig(f"{self.output_path}/{savename}.png")
         plt.close()
 
     @staticmethod
