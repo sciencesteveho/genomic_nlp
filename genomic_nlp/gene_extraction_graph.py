@@ -71,7 +71,10 @@ def write_gene_edges_to_file(edge_set: Set[Tuple[str, str]], filename: str) -> N
 def process_abstract_file(args: Tuple[int, Dict[str, str]]) -> Set[Tuple[str, str]]:
     """Process a single abstract file and return gene edges."""
     num, synonym_to_gene = args
-    with open(f"tokens_cleaned_abstracts_remove_punct_finetune_{num}.pkl", "rb") as f:
+    with open(
+        f"/ocean/projects/bio210019p/stevesho/genomic_nlp/data/tokens_cleaned_abstracts_remove_punct_finetune_{num}.pkl",
+        "rb",
+    ) as f:
         abstracts = pickle.load(f)
     gene_relations = gene_mentions_per_abstract(abstracts, synonym_to_gene)
     return collect_gene_edges(gene_relations)
@@ -147,7 +150,10 @@ def main() -> None:
     gene_edges = extract_gene_edges_from_abstracts(10, genes=synonym_to_gene)
 
     # write to text file
-    write_gene_edges_to_file(gene_edges, "text_extracted_gene_edges_syns.tsv")
+    write_gene_edges_to_file(
+        gene_edges,
+        "/ocean/projects/bio210019p/stevesho/genomic_nlp/ppi/text_extracted_gene_edges_syns.tsv",
+    )
     # unique_genes = {gene for edge in gene_edges for gene in edge}
     # len(unique_genes)  # 20785
 
