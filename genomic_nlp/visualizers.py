@@ -7,6 +7,7 @@
 
 from typing import Dict, List, Optional, Tuple
 
+from matplotlib.figure import Figure  # type: ignore
 import matplotlib.pyplot as plt  # type: ignore
 
 
@@ -160,7 +161,7 @@ class BaselineModelVisualizer:
 
     def plot_layout_and_save(
         self,
-        plt: plt.Pyplot,
+        plt: plt.Figure,
     ) -> None:
         """Adjust the layout and save the plot."""
         plt.tight_layout()

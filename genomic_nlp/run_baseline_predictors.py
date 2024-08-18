@@ -15,16 +15,14 @@ import pickle
 import random
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
-import matplotlib.pyplot as plt  # type: ignore
 import numpy as np
 from scipy import stats  # type: ignore
-import seaborn as sns  # type: ignore
 from sklearn.metrics import average_precision_score  # type: ignore
 from sklearn.metrics import roc_auc_score  # type: ignore
 from sklearn.model_selection import StratifiedKFold  # type: ignore
 
+# from baseline_models import CosineSimilarity
 from baseline_models import BaselineModel
-from baseline_models import CosineSimilarity
 from baseline_models import LogisticRegressionModel
 from baseline_models import MLP
 from baseline_models import RandomForest
