@@ -201,7 +201,7 @@ class BaselineModelVisualizer:
                 "ytick.labelsize": 7,
                 "legend.fontsize": 7,
                 "figure.dpi": 300,
-                "figure.figsize": (3, 3),
+                "figure.figsize": (1.5, 2),
                 "font.sans-serif": "Nimbus Sans",
             }
         )
