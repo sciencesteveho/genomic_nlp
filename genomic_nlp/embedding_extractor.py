@@ -4,6 +4,7 @@
 
 """Extract embeddings from natural language processing models."""
 
+import os
 from pathlib import Path
 import pickle
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -86,8 +87,11 @@ class DeBERTaEmbeddingExtractor:
 
     def __init__(self, model_path: str, max_length: int = 512, batch_size: int = 32):
         """Instantiate the embedding extractor class."""
-        self.model = AutoModel.from_pretrained(model_path)
-        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
+        config_path = os.path.dirname(model_path)
+        self.model = AutoModel.from_pretrained(
+            config_path, state_dict=torch.load(model_path)
+        )
+        self.tokenizer = AutoTokenizer.from_pretrained(config_path)
         self.max_length = max_length
         self.batch_size = batch_size
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
