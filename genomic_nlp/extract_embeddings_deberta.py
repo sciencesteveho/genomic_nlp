@@ -42,6 +42,24 @@ def main() -> None:
     )
     avg_emb, cls_emb, att_emb = extractor.process_dataset(dataset)
 
+    with open(
+        "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/deberta_avg_embeddings.pkl",
+        "wb",
+    ) as file:
+        pickle.dump(avg_emb, file)
+
+    with open(
+        "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/deberta_cls_embeddings.pkl",
+        "wb",
+    ) as file:
+        pickle.dump(cls_emb, file)
+
+    with open(
+        "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/deberta_att_embeddings.pkl",
+        "wb",
+    ) as file:
+        pickle.dump(att_emb, file)
+
 
 if __name__ == "__main__":
     main()
