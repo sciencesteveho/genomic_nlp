@@ -475,6 +475,11 @@ def parse_args() -> argparse.Namespace:
         type=str,
         help="Path to text edges pickle file.",
     )
+    # parser.add_argument(
+    #     "--no_train",
+    #     action="store_true",
+    #     help="Do not train models, only plot results.",
+    # )
     return parser.parse_args()
 
 

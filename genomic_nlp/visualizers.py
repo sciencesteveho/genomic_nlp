@@ -37,10 +37,9 @@ class BaselineModelVisualizer:
         model_names = list(train_results.keys())
 
         _, axis = self._setup_plot(
-            model_names, "Model Performance on Train and Test Sets"
+            model_names, "Model Performance on Train and Test Sets", figsize=(3, 3)
         )
 
-        plt.figsize(3, 3)
         bar_width = 0.35
         group_spacing = 0.8
         x_positions = np.arange(len(model_names)) * (2 * bar_width + group_spacing)
@@ -81,10 +80,8 @@ class BaselineModelVisualizer:
         )
 
         _, axis = self._setup_plot(
-            model_names, "Model Performance on Test Set by Source", figsize=(12, 6)
+            model_names, "Model Performance on Test Set by Source", figsize=(3, 3)
         )
-
-        plt.figsize(3, 3)
         bar_width = 0.15
         group_spacing = 0.8
         x_positions = np.arange(len(model_names)) * (
@@ -145,7 +142,7 @@ class BaselineModelVisualizer:
         models = list(bootstrap_stats.keys())
         metrics = list(bootstrap_stats[models[0]].keys())
 
-        fig, axes = plt.subplots(1, len(metrics), figsize=(12, 6), sharey=True)
+        fig, axes = plt.subplots(1, len(metrics), figsize=(3, 3), sharey=True)
 
         for i, metric in enumerate(metrics):
             ax = axes[i]
@@ -182,7 +179,7 @@ class BaselineModelVisualizer:
         self.plot_layout_and_save(plt=plt, savename="bootstrap_results")
 
     def _setup_plot(
-        self, model_names: List[str], title: str, figsize: Tuple[int, int] = (8, 6)
+        self, model_names: List[str], title: str, figsize: Tuple[int, int] = (3, 3)
     ) -> Tuple[plt.Figure, plt.Axes]:
         """Set up the plot with common parameters."""
         fig, axis = plt.subplots(figsize=figsize)
@@ -228,7 +225,7 @@ class BaselineModelVisualizer:
                 "ytick.labelsize": 7,
                 "legend.fontsize": 7,
                 "figure.dpi": 300,
-                "figure.figsize": (1.5, 2),
+                "figure.figsize": (3, 3),
                 "font.sans-serif": "Nimbus Sans",
             }
         )
