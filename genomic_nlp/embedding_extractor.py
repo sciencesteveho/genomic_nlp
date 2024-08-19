@@ -125,24 +125,32 @@ class DeBERTaEmbeddingExtractor:
             last_hidden_states * attention_weights.unsqueeze(-1)
         ).sum(dim=1)
 
-        return averaged_embeddings, cls_embeddings, attention_weighted_embeddings
+        return (
+            averaged_embeddings.cpu(),
+            cls_embeddings.cpu(),
+            attention_weighted_embeddings.cpu(),
+        )
 
     def process_dataset(
         self, dataset: IterableDataset
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Process a dataset to extract embeddings."""
-        dataloader = DataLoader(dataset, batch_size=self.batch_size, num_workers=4)
+        dataloader = DataLoader(
+            dataset,
+            batch_size=self.batch_size,
+            num_workers=4,
+            pin_memory=True,
+        )
 
-        averaged_embeddings = []
-        cls_embeddings = []
-        attention_weighted_embeddings = []
+        averaged_embeddings, cls_embeddings, attention_weighted_embeddings = [], [], []
 
         for batch in tqdm(dataloader, desc="Processing batches"):
-            avg_emb, cls_emb, att_emb = self.get_embeddings(batch["input_ids"])
+            texts = batch["text"]
+            avg_emb, cls_emb, att_emb = self.get_embeddings(texts)
 
-            averaged_embeddings.append(avg_emb.cpu())
-            cls_embeddings.append(cls_emb.cpu())
-            attention_weighted_embeddings.append(att_emb.cpu())
+            averaged_embeddings.append(avg_emb)
+            cls_embeddings.append(cls_emb)
+            attention_weighted_embeddings.append(att_emb)
 
         return (
             torch.cat(averaged_embeddings, dim=0),

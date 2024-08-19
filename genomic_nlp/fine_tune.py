@@ -7,15 +7,12 @@ masked language modeling object as the fine-tuning task."""
 
 
 import argparse
-import math
 import os
 import pickle
 
 import torch
 import torch.distributed as dist
 from torch.utils.data import DataLoader
-from torch.utils.data import IterableDataset
-from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm  # type: ignore
 from transformers import DataCollatorForLanguageModeling  # type: ignore
 from transformers import DebertaV2ForMaskedLM  # type: ignore
@@ -23,6 +20,7 @@ from transformers import DebertaV2Tokenizer  # type: ignore
 from transformers import Trainer  # type: ignore
 from transformers import TrainingArguments  # type: ignore
 
+from streaming_corpus import FinetuneStreamingCorpus
 from utils import _chunk_locator
 
 
@@ -39,57 +37,6 @@ def _write_abstracts_to_text(abstracts_dir: str, prefix: str) -> None:
                         [" ".join(sentence) for sentence in abstract]
                     ).strip()
                     output.write(f"{line}\n")
-
-
-class StreamingCorpus(IterableDataset):
-    """Class to create a Hugging Face dataset object from text corpus as an iterable"""
-
-    def __init__(self, dataset_file, tokenizer, data_collator, max_length=512):
-        self.dataset_file = dataset_file
-        self.tokenizer = tokenizer
-        self.data_collator = data_collator
-        self.max_length = max_length
-
-    def __iter__(self):
-        """Iterate over the dataset file and yield tokenized examples"""
-        worker_info = torch.utils.data.get_worker_info()
-
-        if worker_info is None:
-            # single-process data loading, return the full iterator
-            start_position = 0
-            end_position = None  # Read until the end of the file
-        else:
-            # Calculate start and end positions for this worker's shard
-            start_position = worker_info.id * self._shard_size(worker_info.num_workers)
-            end_position = start_position + self._shard_size(worker_info.num_workers)
-
-        # Opens the file, ensuring it's closed after iteration
-        with open(self.dataset_file, "r", encoding="utf-8") as file_iterator:
-            if start_position > 0:
-                # Skip lines up to the start position
-                for _ in range(start_position):
-                    next(file_iterator)
-
-            for line_number, line in enumerate(file_iterator):
-                if end_position is not None and line_number >= end_position:
-                    break
-
-                abstract = line.strip()
-                tokenized = self.tokenizer(
-                    abstract,
-                    padding="max_length",
-                    truncation=True,
-                    max_length=self.max_length,
-                    return_tensors="pt",
-                )
-                yield {k: v.squeeze(0) for k, v in tokenized.items()}
-
-    def _shard_size(self, num_workers):
-        """Estimate shard size based on the total number of workers"""
-        with open(self.dataset_file, "r", encoding="utf-8") as f:
-            total_lines = sum(1 for _ in f)
-
-        return math.ceil(total_lines / num_workers)
 
 
 def main() -> None:
@@ -142,7 +89,7 @@ def main() -> None:
     # load dataset generator
     abstracts = f"{abstracts_dir}/combined/tokens_cleaned_abstracts_casefold_finetune_combined.txt"
 
-    streaming_dataset = StreamingCorpus(
+    streaming_dataset = FinetuneStreamingCorpus(
         dataset_file=abstracts,
         tokenizer=tokenizer,
         data_collator=data_collator,

@@ -18,29 +18,45 @@ from tqdm import tqdm  # type: ignore
 from constants import COPY_GENES
 from utils import gencode_genes
 
+# def build_synonym_to_gene_map(
+#     synonyms: Dict[str, Set[str]], genes: Set[str]
+# ) -> Dict[str, str]:
+#     """Reverse map the synonyms to the gene symbol and add genes even if they
+#     have no synonyms.
+#     """
+#     synonym_to_gene = {}
+#     for gene, syn_set in synonyms.items():
+#         for synonym in syn_set:
+#             synonym_to_gene[synonym] = gene
+#         synonym_to_gene[gene] = gene  # include the gene symbol
 
-def build_synonym_to_gene_map(
+#     # add genes not in the synonym set
+#     for gene in genes:
+#         if gene not in synonym_to_gene:
+#             synonym_to_gene[gene] = gene
+
+#     return synonym_to_gene
+
+
+def combine_synonyms(
     synonyms: Dict[str, Set[str]], genes: Set[str]
-) -> Dict[str, str]:
-    """Reverse map the synonyms to the gene symbol and add genes even if they
-    have no synonyms.
+) -> Dict[str, Set[str]]:
+    """Combine synonyms and genes into a single set. For each synonym and gene,
+    add itself to its own set to make a comprehensive list.
     """
-    synonym_to_gene = {}
     for gene, syn_set in synonyms.items():
-        for synonym in syn_set:
-            synonym_to_gene[synonym] = gene
-        synonym_to_gene[gene] = gene  # include the gene symbol
+        syn_set.add(gene)
 
     # add genes not in the synonym set
     for gene in genes:
-        if gene not in synonym_to_gene:
-            synonym_to_gene[gene] = gene
+        if gene not in synonyms:
+            synonyms[gene] = {gene}
 
-    return synonym_to_gene
+    return synonyms
 
 
 def gene_mentions_per_abstract(
-    abstracts: List[List[str]], synonym_to_gene: Dict[str, str]
+    abstracts: List[List[str]], gene_aliases: Dict[str, Set[str]]
 ) -> List[Set[str]]:
     """Loop through tokenized abstracts and create a sublist of mentioned genes
     within the abstract. Gene mentions are based on tokens that either map to
@@ -52,8 +68,10 @@ def gene_mentions_per_abstract(
         gene_mentions: Set[str] = set()
         for sentence in abstract:
             for token in sentence:
-                if token in synonym_to_gene:
-                    gene_mentions.add(synonym_to_gene[token])
+                for gene, alias in gene_aliases.items():
+                    if token in alias:
+                        gene_mentions.add(gene)
+                        break
         if len(gene_mentions) > 2:
             gene_relations.append(gene_mentions)
 
@@ -78,7 +96,9 @@ def write_gene_edges_to_file(edge_set: Set[Tuple[str, str]], filename: str) -> N
             file.write(f"{edge[0]}\t{edge[1]}\n")
 
 
-def process_abstract_file(args: Tuple[int, Dict[str, str]]) -> Set[Tuple[str, str]]:
+def process_abstract_file(
+    args: Tuple[int, Dict[str, Set[str]]]
+) -> Set[Tuple[str, str]]:
     """Process a single abstract file and return gene edges."""
     num, synonym_to_gene = args
     with open(
@@ -86,12 +106,13 @@ def process_abstract_file(args: Tuple[int, Dict[str, str]]) -> Set[Tuple[str, st
         "rb",
     ) as f:
         abstracts = pickle.load(f)
-    gene_relations = gene_mentions_per_abstract(abstracts, synonym_to_gene)
-    return collect_gene_edges(gene_relations)
+    gene_relationships = gene_mentions_per_abstract(abstracts, synonym_to_gene)
+    return collect_gene_edges(gene_relationships)
 
 
 def extract_gene_edges_from_abstracts(
-    index_end: int, genes: Dict[str, str]
+    index_end: int,
+    genes: Dict[str, Set[str]],
 ) -> Set[Tuple[str, str]]:
     """Extract gene edges from abstracts using multiprocessing."""
     with mp.Pool(processes=10) as pool:
@@ -157,9 +178,10 @@ def main() -> None:
     ) as file:
         hgnc_synonyms = pickle.load(file)
 
-    synonym_to_gene = build_synonym_to_gene_map(hgnc_synonyms, genes)
+    # synonym_to_gene = build_synonym_to_gene_map(hgnc_synonyms, genes)
 
-    gene_edges = extract_gene_edges_from_abstracts(10, genes=synonym_to_gene)
+    combined_genes = combine_synonyms(hgnc_synonyms, genes)
+    gene_edges = extract_gene_edges_from_abstracts(10, genes=combined_genes)
 
     # write to text file
     write_gene_edges_to_file(
