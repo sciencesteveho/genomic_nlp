@@ -560,6 +560,9 @@ def main() -> None:
         train_results=train_results, test_results=test_results
     )
     visualizer.plot_stratified_performance(stratified_results=stratified_results)
+    visualizer.plot_roc_curve(
+        models=trained_models, test_features=test_features, test_labels=test_targets
+    )
 
     # bootstrap evaluation
     print("\nBootstrapping evaluation:")

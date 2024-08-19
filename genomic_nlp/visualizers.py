@@ -11,6 +11,10 @@ import matplotlib.colors as mcolors  # type: ignore
 from matplotlib.figure import Figure  # type: ignore
 import matplotlib.pyplot as plt  # type: ignore
 import numpy as np
+from sklearn.metrics import roc_auc_score  # type: ignore
+from sklearn.metrics import roc_curve
+
+from baseline_models import BaselineModel
 
 
 class BaselineModelVisualizer:
@@ -22,6 +26,7 @@ class BaselineModelVisualizer:
     ) -> None:
         """Instantiate a PerformanceVisualizer object."""
         self.output_path = output_path
+        self._set_matplotlib_publication_parameters()
 
     def plot_model_performances(
         self,
@@ -108,12 +113,32 @@ class BaselineModelVisualizer:
             legend_loc="upper left",
         )
 
+    def plot_roc_curve(
+        self,
+        models: Dict[str, BaselineModel],
+        test_features: np.ndarray,
+        test_labels: np.ndarray,
+    ) -> None:
+        """Plot ROC curves for all models."""
+        for model_name, model in models.items():
+            y_pred = model.predict_probability(test_features)
+            fpr, tpr, _ = roc_curve(test_labels, y_pred)
+            auc = roc_auc_score(test_labels, y_pred)
+            plt.plot(fpr, tpr, label=f"{model_name} (AUC = {auc:.2f})")
+
+        plt.plot([0, 1], [0, 1], color="black", linestyle="--")
+        plt.xlabel("False Positive Rate")
+        plt.ylabel("True Positive Rate")
+        plt.title("ROC Curve")
+        plt.legend()
+
+        self.plot_layout_and_save(plt=plt, savename="roc_curves")
+
     def plot_bootstrap_results(
         self,
         bootstrap_stats: Dict[str, Dict[str, Dict[str, float]]],
     ) -> None:
         """Plot results of the bootstrapped evaluation."""
-        self._set_matplotlib_publication_parameters()
         models = list(bootstrap_stats.keys())
         metrics = list(bootstrap_stats[models[0]].keys())
 
@@ -157,7 +182,6 @@ class BaselineModelVisualizer:
         self, model_names: List[str], title: str, figsize: Tuple[int, int] = (8, 6)
     ) -> Tuple[plt.Figure, plt.Axes]:
         """Set up the plot with common parameters."""
-        self._set_matplotlib_publication_parameters()
         fig, axis = plt.subplots(figsize=figsize)
         axis.set_ylabel("AUC Score")
         axis.set_title(title)

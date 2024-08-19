@@ -6,7 +6,7 @@
 
 from pathlib import Path
 import pickle
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from gensim.models import Word2Vec  # type: ignore
 import numpy as np
@@ -16,6 +16,8 @@ from torch.utils.data import IterableDataset
 from tqdm import tqdm  # type: ignore
 from transformers import AutoModel  # type: ignore
 from transformers import AutoTokenizer  # type: ignore
+
+from streaming_corpus import EmbeddingExtractorStreamingCorpus
 
 
 class Word2VecEmbeddingExtractor:
@@ -82,7 +84,7 @@ class Word2VecEmbeddingExtractor:
 class DeBERTaEmbeddingExtractor:
     """Extract embeddings from natural language processing models."""
 
-    def __init__(self, model_path: str, max_length=512, batch_size=32):
+    def __init__(self, model_path: str, max_length: int = 512, batch_size: int = 32):
         """Instantiate the embedding extractor class."""
         self.model = AutoModel.from_pretrained(model_path)
         self.tokenizer = AutoTokenizer.from_pretrained(model_path)
@@ -93,23 +95,21 @@ class DeBERTaEmbeddingExtractor:
         self.model.eval()
 
     def get_embeddings(
-        self, texts: List[str]
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        self, batch: Dict[str, torch.Tensor]
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Get three different types of embeddings from a DeBERTa model:
 
         1. Averaged embeddings - average over all token embeddings
         2. CLS embeddings - embeddings of the [CLS] token
         3. Attention-weighted embeddings - embeddings weighted by attention weights
         """
-        inputs = self.tokenizer(
-            texts,
-            padding=True,
-            truncation=True,
-            max_length=self.max_length,
-            return_tensors="pt",
-        )
-        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        inputs = {
+            k: v.to(self.device)
+            for k, v in batch.items()
+            if k in ["input_ids", "attention_mask", "token_type_ids"]
+        }
 
+        # get outputs from model - last_hidden_state, attention, hidden_states
         with torch.no_grad():
             outputs = self.model(
                 **inputs, output_attentions=True, output_hidden_states=True
@@ -126,14 +126,14 @@ class DeBERTaEmbeddingExtractor:
         ).sum(dim=1)
 
         return (
-            averaged_embeddings.cpu(),
-            cls_embeddings.cpu(),
-            attention_weighted_embeddings.cpu(),
+            averaged_embeddings.cpu().numpy(),
+            cls_embeddings.cpu().numpy(),
+            attention_weighted_embeddings.cpu().numpy(),
         )
 
     def process_dataset(
-        self, dataset: IterableDataset
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        self, dataset: EmbeddingExtractorStreamingCorpus
+    ) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray], Dict[str, np.ndarray]]:
         """Process a dataset to extract embeddings."""
         dataloader = DataLoader(
             dataset,
@@ -142,21 +142,39 @@ class DeBERTaEmbeddingExtractor:
             pin_memory=True,
         )
 
-        averaged_embeddings, cls_embeddings, attention_weighted_embeddings = [], [], []
+        # initialize dictionary to store embeddings
+        embeddings: Dict[str, Dict[str, List[np.ndarray]]] = {}
 
+        # process batches and get embeddings
         for batch in tqdm(dataloader, desc="Processing batches"):
-            texts = batch["text"]
-            avg_emb, cls_emb, att_emb = self.get_embeddings(texts)
+            avg_emb, cls_emb, att_emb = self.get_embeddings(batch)
 
-            averaged_embeddings.append(avg_emb)
-            cls_embeddings.append(cls_emb)
-            attention_weighted_embeddings.append(att_emb)
+            for i, gene in enumerate(batch["gene"]):
+                if gene not in embeddings:
+                    embeddings[gene] = {
+                        "averaged": [],
+                        "cls": [],
+                        "attention_weighted": [],
+                    }
 
-        return (
-            torch.cat(averaged_embeddings, dim=0),
-            torch.cat(cls_embeddings, dim=0),
-            torch.cat(attention_weighted_embeddings, dim=0),
-        )
+                embeddings[gene]["averaged"].append(avg_emb[i])
+                embeddings[gene]["cls"].append(cls_emb[i])
+                embeddings[gene]["attention_weighted"].append(att_emb[i])
+
+        # initialize new dicts to avoid type errors
+        averaged_embeddings: Dict[str, np.ndarray] = {}
+        cls_embeddings: Dict[str, np.ndarray] = {}
+        attention_weighted_embeddings: Dict[str, np.ndarray] = {}
+
+        # average embedding types across occurences
+        for gene, gene_embeddings in embeddings.items():
+            averaged_embeddings[gene] = np.mean(gene_embeddings["averaged"], axis=0)
+            cls_embeddings[gene] = np.mean(gene_embeddings["cls"], axis=0)
+            attention_weighted_embeddings[gene] = np.mean(
+                gene_embeddings["attention_weighted"], axis=0
+            )
+
+        return averaged_embeddings, cls_embeddings, attention_weighted_embeddings
 
 
 def casefold_genes(genes: Set[str]) -> Set[str]:
@@ -169,37 +187,3 @@ def filter_zero_embeddings(embeddings: Dict[str, np.ndarray]) -> Dict[str, np.nd
     zeroes.
     """
     return {key: value for key, value in embeddings.items() if np.any(value != 0)}
-
-
-# gene_catalogue_file = (
-#     "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/gene_catalogue.pkl"
-# )
-# synonyms_file = (
-#     "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_synonyms.pkl"
-# )
-# w2v_model = "/ocean/projects/bio210019p/stevesho/genomic_nlp/models/w2v/word2vec_300_dimensions_2024-08-13.model"
-
-# with open(gene_catalogue_file, "rb") as file:
-#     gene_catalogue = pickle.load(file)
-
-# with open(synonyms_file, "rb") as file:
-#     synonyms = pickle.load(file)
-
-# genes = casefold_genes(gene_catalogue)
-# w2v_extractor = Word2VecEmbeddingExtractor(model_path=w2v_model, synonyms=synonyms)
-
-# embeddings, synonym_embeddings = w2v_extractor.extract_embeddings(list(genes))
-
-# with open("w2v_embeddings.pkl", "wb") as file:
-#     pickle.dump(embeddings, file)
-
-# with open("w2v_synonym_embeddings.pkl", "wb") as file:
-#     pickle.dump(synonym_embeddings, file)
-
-# embeddings = filter_zero_embeddings(embeddings)
-# synonym_embeddings = filter_zero_embeddings(synonym_embeddings)
-
-# with open("w2v_filtered_embeddings.pkl", "wb") as file:
-#     pickle.dump(embeddings, file)
-# with open("w2v_filtered_synonym_embeddings.pkl", "wb") as file:
-#     pickle.dump(synonym_embeddings, file)
