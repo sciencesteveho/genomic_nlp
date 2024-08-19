@@ -20,6 +20,7 @@ from tqdm import tqdm  # type: ignore
 from transformers import AutoConfig  # type: ignore
 from transformers import AutoModel  # type: ignore
 from transformers import AutoTokenizer  # type: ignore
+from transformers import DebertaV2Model  # type: ignore
 from transformers import DebertaV2Tokenizer  # type: ignore
 
 from streaming_corpus import EmbeddingExtractorStreamingCorpus
@@ -92,21 +93,18 @@ class DeBERTaEmbeddingExtractor:
     def __init__(self, model_path: str, max_length: int = 512, batch_size: int = 32):
         """Instantiate the embedding extractor class."""
         config_path = os.path.dirname(model_path)
-        config = AutoConfig.from_pretrained(config_path)
-        self.model = AutoModel.from_config(config)
 
-        statedict = load_file(model_path)
-        new_statedict = {re.sub(r"^module\.", "", k): v for k, v in statedict.items()}
-        model_keys = set(self.model.state_dict().keys())
-        new_statedict = {k: v for k, v in new_statedict.items() if k in model_keys}
-        missing_keys, unexpected_keys = self.model.load_state_dict(
-            new_statedict, strict=False
-        )
+        # Load the model directly with DebertaV2Model
+        self.model = DebertaV2Model.from_pretrained(config_path)
 
-        if missing_keys:
-            print(f"Warning: Missing keys: {missing_keys}")
-        if unexpected_keys:
-            print(f"Warning: Unexpected keys: {unexpected_keys}")
+        # Load the state dict
+        state_dict = load_file(model_path)
+
+        missing, unexpected = self.model.load_state_dict(state_dict, strict=False)
+        if missing:
+            print(f"Warning: Missing keys: {missing}")
+        if unexpected:
+            print(f"Warning: Unexpected keys: {unexpected}")
 
         self.tokenizer = DebertaV2Tokenizer.from_pretrained("microsoft/deberta-v3-base")
 
@@ -163,12 +161,16 @@ class DeBERTaEmbeddingExtractor:
             num_workers=4,
             pin_memory=True,
         )
+        total_batches = len(dataloader)
 
         # initialize dictionary to store embeddings
         embeddings: Dict[str, Dict[str, List[np.ndarray]]] = {}
 
         # process batches and get embeddings
-        for batch in tqdm(dataloader, desc="Processing batches"):
+        for batch_idx, batch in enumerate(
+            tqdm(dataloader, desc="Processing batches", unit="batch"), start=1
+        ):
+
             avg_emb, cls_emb, att_emb = self.get_embeddings(batch)
 
             for i, gene in enumerate(batch["gene"]):
@@ -182,6 +184,9 @@ class DeBERTaEmbeddingExtractor:
                 embeddings[gene]["averaged"].append(avg_emb[i])
                 embeddings[gene]["cls"].append(cls_emb[i])
                 embeddings[gene]["attention_weighted"].append(att_emb[i])
+
+            percentage = (batch_idx / total_batches) * 100
+            tqdm.set_postfix_str(f"Completed: {percentage:.2f}%")
 
         # initialize new dicts to avoid type errors
         averaged_embeddings: Dict[str, np.ndarray] = {}
