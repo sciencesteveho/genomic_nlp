@@ -98,14 +98,38 @@ class DeBERTaEmbeddingExtractor:
         self.model = DebertaV2Model.from_pretrained(config_path)
 
         # Load the state dict
-        state_dict = load_file(model_path)
-        new_state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
+        state_dict = torch.load(model_path, map_location="cpu")
 
-        missing, unexpected = self.model.load_state_dict(new_state_dict)
+        # Create a new state dict with the correct key structure
+        new_state_dict = {}
+        for k, v in state_dict.items():
+            if k.startswith("deberta."):
+                new_key = k.replace("deberta.", "")
+                new_state_dict[new_key] = v
+            elif not k.startswith(
+                "cls."
+            ):  # Ignore 'cls.' keys as they're not part of DebertaV2Model
+                new_state_dict[k] = v
+
+        # Load the weights, ignoring mismatched keys
+        missing, unexpected = self.model.load_state_dict(new_state_dict, strict=False)
+
         if missing:
             print(f"Warning: Missing keys: {missing}")
         if unexpected:
             print(f"Warning: Unexpected keys: {unexpected}")
+
+        print("Sample keys from loaded state dict:")
+        for i, (k, v) in enumerate(state_dict.items()):
+            if i > 10:  # Print first 10 keys
+                break
+            print(f"{k}: {v.shape}")
+
+        print("\nSample keys from model state dict:")
+        for i, (k, v) in enumerate(self.model.state_dict().items()):
+            if i > 10:  # Print first 10 keys
+                break
+            print(f"{k}: {v.shape}")
 
         self.tokenizer = DebertaV2Tokenizer.from_pretrained("microsoft/deberta-v3-base")
 
