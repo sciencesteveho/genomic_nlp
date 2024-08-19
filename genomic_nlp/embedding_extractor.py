@@ -99,8 +99,9 @@ class DeBERTaEmbeddingExtractor:
 
         # Load the state dict
         state_dict = load_file(model_path)
+        new_state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
 
-        missing, unexpected = self.model.load_state_dict(state_dict, strict=False)
+        missing, unexpected = self.model.load_state_dict(new_state_dict)
         if missing:
             print(f"Warning: Missing keys: {missing}")
         if unexpected:
@@ -155,13 +156,14 @@ class DeBERTaEmbeddingExtractor:
         self, dataset: EmbeddingExtractorStreamingCorpus
     ) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray], Dict[str, np.ndarray]]:
         """Process a dataset to extract embeddings."""
+        TOTAL_BATCHES = 3889578
+
         dataloader = DataLoader(
             dataset,
             batch_size=self.batch_size,
             num_workers=4,
             pin_memory=True,
         )
-        total_batches = len(dataloader)
 
         # initialize dictionary to store embeddings
         embeddings: Dict[str, Dict[str, List[np.ndarray]]] = {}
@@ -185,7 +187,7 @@ class DeBERTaEmbeddingExtractor:
                 embeddings[gene]["cls"].append(cls_emb[i])
                 embeddings[gene]["attention_weighted"].append(att_emb[i])
 
-            percentage = (batch_idx / total_batches) * 100
+            percentage = (batch_idx / TOTAL_BATCHES) * 100
             tqdm.set_postfix_str(f"Completed: {percentage:.2f}%")
 
         # initialize new dicts to avoid type errors
