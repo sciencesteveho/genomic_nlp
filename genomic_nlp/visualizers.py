@@ -40,6 +40,7 @@ class BaselineModelVisualizer:
             model_names, "Model Performance on Train and Test Sets"
         )
 
+        plt.figsize(3, 3)
         bar_width = 0.35
         group_spacing = 0.8
         x_positions = np.arange(len(model_names)) * (2 * bar_width + group_spacing)
@@ -83,6 +84,7 @@ class BaselineModelVisualizer:
             model_names, "Model Performance on Test Set by Source", figsize=(12, 6)
         )
 
+        plt.figsize(3, 3)
         bar_width = 0.15
         group_spacing = 0.8
         x_positions = np.arange(len(model_names)) * (
@@ -126,6 +128,7 @@ class BaselineModelVisualizer:
             auc = roc_auc_score(test_labels, y_pred)
             plt.plot(fpr, tpr, label=f"{model_name} (AUC = {auc:.2f})")
 
+        plt.figsize(3, 3)
         plt.plot([0, 1], [0, 1], color="black", linestyle="--")
         plt.xlabel("False Positive Rate")
         plt.ylabel("True Positive Rate")
