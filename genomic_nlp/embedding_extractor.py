@@ -93,16 +93,22 @@ class DeBERTaEmbeddingExtractor:
         config_path = os.path.dirname(model_path)
         config = AutoConfig.from_pretrained(config_path)
         self.model = AutoModel.from_config(config)
+
         statedict = load_file(model_path)
+        new_statedict = {re.sub(r"^module\.", "", k): v for k, v in statedict.items()}
+        model_keys = set(self.model.state_dict().keys())
+        new_statedict = {k: v for k, v in new_statedict.items() if k in model_keys}
+        missing_keys, unexpected_keys = self.model.load_state_dict(
+            new_statedict, strict=False
+        )
 
-        # remove module prefix from torch distributed
-        adjusted_states = {re.sub(r"^module\.", "", k): v for k, v in statedict.items()}
-        model_keys = set(self.model.statedict().keys())
-        adjusted_states = {k: v for k, v in adjusted_states.items() if k in model_keys}
-        self.model.load_state_dict(adjusted_states, strict=False)
+        if missing_keys:
+            print(f"Warning: Missing keys: {missing_keys}")
+        if unexpected_keys:
+            print(f"Warning: Unexpected keys: {unexpected_keys}")
 
-        # Load the tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(config_path)
+
         self.max_length = max_length
         self.batch_size = batch_size
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
