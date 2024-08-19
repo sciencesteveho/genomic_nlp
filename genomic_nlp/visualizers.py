@@ -125,7 +125,6 @@ class BaselineModelVisualizer:
             auc = roc_auc_score(test_labels, y_pred)
             plt.plot(fpr, tpr, label=f"{model_name} (AUC = {auc:.2f})")
 
-        plt.figsize(3, 3)
         plt.plot([0, 1], [0, 1], color="black", linestyle="--")
         plt.xlabel("False Positive Rate")
         plt.ylabel("True Positive Rate")
