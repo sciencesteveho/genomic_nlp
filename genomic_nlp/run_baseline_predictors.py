@@ -564,17 +564,17 @@ def main() -> None:
         models=trained_models, test_features=test_features, test_labels=test_targets
     )
 
-    # bootstrap evaluation
-    print("\nBootstrapping evaluation:")
-    bootstrap_evaluator = BootstrapEvaluator(
-        models=trained_models,
-        test_features=test_features,
-        test_targets=test_targets,
-    )
-    bootstrap_results = bootstrap_evaluator.bootstrap_test_evaluation()
+    # # bootstrap evaluation
+    # print("\nBootstrapping evaluation:")
+    # bootstrap_evaluator = BootstrapEvaluator(
+    #     models=trained_models,
+    #     test_features=test_features,
+    #     test_targets=test_targets,
+    # )
+    # bootstrap_results = bootstrap_evaluator.bootstrap_test_evaluation()
 
-    # plot results
-    visualizer.plot_bootstrap_results(bootstrap_stats=bootstrap_results)
+    # # plot results
+    # visualizer.plot_bootstrap_results(bootstrap_stats=bootstrap_results)
 
 
 if __name__ == "__main__":
