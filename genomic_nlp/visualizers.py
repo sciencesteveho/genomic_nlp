@@ -126,9 +126,9 @@ class BaselineModelVisualizer:
             plt.plot(fpr, tpr, label=f"{model_name} (AUC = {auc:.2f})")
 
         plt.plot([0, 1], [0, 1], color="black", linestyle="--")
-        plt.xlabel("False Positive Rate")
-        plt.ylabel("True Positive Rate")
-        plt.title("ROC Curve")
+        plt.xlabel("False positive rate")
+        plt.ylabel("True positive rate")
+        plt.title("ROC curve - model performances on test set")
         plt.legend()
 
         self.plot_layout_and_save(plt=plt, savename="roc_curves")
@@ -182,7 +182,7 @@ class BaselineModelVisualizer:
     ) -> Tuple[plt.Figure, plt.Axes]:
         """Set up the plot with common parameters."""
         fig, axis = plt.subplots(figsize=figsize)
-        axis.set_ylabel("AUC Score")
+        axis.set_ylabel("AUC score")
         axis.set_title(title)
         axis.set_xticks(range(len(model_names)))
         return fig, axis

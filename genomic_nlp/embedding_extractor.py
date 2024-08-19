@@ -20,6 +20,7 @@ from tqdm import tqdm  # type: ignore
 from transformers import AutoConfig  # type: ignore
 from transformers import AutoModel  # type: ignore
 from transformers import AutoTokenizer  # type: ignore
+from transformers import DebertaV2Tokenizer  # type: ignore
 
 from streaming_corpus import EmbeddingExtractorStreamingCorpus
 
@@ -107,7 +108,7 @@ class DeBERTaEmbeddingExtractor:
         if unexpected_keys:
             print(f"Warning: Unexpected keys: {unexpected_keys}")
 
-        self.tokenizer = AutoTokenizer.from_pretrained(config_path)
+        self.tokenizer = DebertaV2Tokenizer.from_pretrained("microsoft/deberta-v3-base")
 
         self.max_length = max_length
         self.batch_size = batch_size
