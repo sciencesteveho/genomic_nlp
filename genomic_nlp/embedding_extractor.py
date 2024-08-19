@@ -11,10 +11,12 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from gensim.models import Word2Vec  # type: ignore
 import numpy as np
+from safetensors.torch import load_file  # type: ignore
 import torch
 from torch.utils.data import DataLoader
 from torch.utils.data import IterableDataset
 from tqdm import tqdm  # type: ignore
+from transformers import AutoConfig  # type: ignore
 from transformers import AutoModel  # type: ignore
 from transformers import AutoTokenizer  # type: ignore
 
@@ -88,9 +90,12 @@ class DeBERTaEmbeddingExtractor:
     def __init__(self, model_path: str, max_length: int = 512, batch_size: int = 32):
         """Instantiate the embedding extractor class."""
         config_path = os.path.dirname(model_path)
-        self.model = AutoModel.from_pretrained(
-            config_path, state_dict=torch.load(model_path)
-        )
+        config = AutoConfig.from_pretrained(config_path)
+        self.model = AutoModel.from_config(config)
+        statedict = load_file(model_path)
+        self.model.load_state_dict(statedict)
+
+        # Load the tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(config_path)
         self.max_length = max_length
         self.batch_size = batch_size
