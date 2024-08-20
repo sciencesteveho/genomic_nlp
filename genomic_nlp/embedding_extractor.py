@@ -91,9 +91,9 @@ class Word2VecEmbeddingExtractor:
 class DeBERTaEmbeddingExtractor:
     """Extract embeddings from natural language processing models."""
 
-    def __init__(self, model_path: str, max_length: int = 512, batch_size: int = 32):
-        """Instantiate the embedding extractor class."""
-        # Print directory contents
+    def __init__(self, model_path: str, max_length: int = 512, batch_size: int = 256):
+        """instantiate the embedding extractor class."""
+        # print directory contents
         model_dir = os.path.dirname(model_path)
         print(f"Contents of {model_dir}:")
         for item in os.listdir(model_dir):
@@ -102,19 +102,19 @@ class DeBERTaEmbeddingExtractor:
         config_path = os.path.join(model_dir, "config.json")
         model_path = os.path.join(model_dir, "model.safetensors")
 
-        # Load the configuration
+        # load the configuration
         config = DebertaV2Config.from_pretrained(config_path)
 
-        # Initialize the model with the configuration
+        # initialize the model with the configuration
         full_model = DebertaV2ForMaskedLM(config)
 
-        # Load the state dict
+        # load the state dict
         state_dict = load_file(model_path)
 
-        # Remove the 'module.' prefix if it exists
+        # remove the 'module.' prefix if it exists
         new_state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
 
-        # Load the weights
+        # load the weights
         missing, unexpected = full_model.load_state_dict(new_state_dict, strict=False)
 
         if missing:
@@ -122,18 +122,18 @@ class DeBERTaEmbeddingExtractor:
         if unexpected:
             print(f"Warning: Unexpected keys: {unexpected}")
 
-        # Extract the base model
+        # extract the base model
         self.model = full_model.deberta
 
         print("Sample keys from loaded state dict:")
         for i, (k, v) in enumerate(new_state_dict.items()):
-            if i > 10:  # Print first 10 keys
+            if i > 10:  # print first 10 keys
                 break
             print(f"{k}: {v.shape}")
 
         print("\nSample keys from model state dict:")
         for i, (k, v) in enumerate(self.model.state_dict().items()):
-            if i > 10:  # Print first 10 keys
+            if i > 10:  # print first 10 keys
                 break
             print(f"{k}: {v.shape}")
 
@@ -146,6 +146,7 @@ class DeBERTaEmbeddingExtractor:
 
         print("Model loaded successfully.")
 
+    @torch.no_grad()
     def get_embeddings(
         self, batch: Dict[str, torch.Tensor]
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -156,16 +157,15 @@ class DeBERTaEmbeddingExtractor:
         3. Attention-weighted embeddings - embeddings weighted by attention weights
         """
         inputs = {
-            k: v.to(self.device)
+            k: v.to(self.device, non_blocking=True)
             for k, v in batch.items()
             if k in ["input_ids", "attention_mask", "token_type_ids"]
         }
 
         # get outputs from model - last_hidden_state, attention, hidden_states
-        with torch.no_grad():
-            outputs = self.model(
-                **inputs, output_attentions=True, output_hidden_states=True
-            )
+        outputs = self.model(
+            **inputs, output_attentions=True, output_hidden_states=True
+        )
 
         last_hidden_states = outputs.last_hidden_state
         attention_weights = outputs.attentions[-1]
@@ -192,46 +192,58 @@ class DeBERTaEmbeddingExtractor:
         dataloader = DataLoader(
             dataset,
             batch_size=self.batch_size,
-            num_workers=4,
+            num_workers=10,
             pin_memory=True,
+            prefetch_factor=2,
         )
 
-        # initialize dictionary to store embeddings
-        embeddings: Dict[str, Dict[str, List[np.ndarray]]] = {}
+        embeddings = {"averaged": {}, "cls": {}, "attention_weighted": {}}
 
-        # process batches and get embeddings
         with tqdm(total=TOTAL_BATCHES, desc="Processing batches") as pbar:
             for batch in dataloader:
                 avg_emb, cls_emb, att_emb = self.get_embeddings(batch)
 
                 for i, gene in enumerate(batch["gene"]):
-                    if gene not in embeddings:
-                        embeddings[gene] = {
-                            "averaged": [],
-                            "cls": [],
-                            "attention_weighted": [],
-                        }
+                    if gene not in embeddings["averaged"]:
+                        embeddings["averaged"][gene] = []
+                        embeddings["cls"][gene] = []
+                        embeddings["attention_weighted"][gene] = []
 
-                    embeddings[gene]["averaged"].append(avg_emb[i])
-                    embeddings[gene]["cls"].append(cls_emb[i])
-                    embeddings[gene]["attention_weighted"].append(att_emb[i])
+                    embeddings["averaged"][gene].append(avg_emb[i])
+                    embeddings["cls"][gene].append(cls_emb[i])
+                    embeddings["attention_weighted"][gene].append(att_emb[i])
+
+                if len(embeddings["averaged"]) > 10000:  # periodic processing
+                    self.process_accumulated_embeddings(embeddings)
 
                 pbar.update(1)
 
-        # initialize new dicts to avoid type errors
-        averaged_embeddings: Dict[str, np.ndarray] = {}
-        cls_embeddings: Dict[str, np.ndarray] = {}
-        attention_weighted_embeddings: Dict[str, np.ndarray] = {}
+        # final processing for any remaining embeddings
+        self.process_accumulated_embeddings(embeddings)
 
-        # average embedding types across occurences
-        for gene, gene_embeddings in embeddings.items():
-            averaged_embeddings[gene] = np.mean(gene_embeddings["averaged"], axis=0)
-            cls_embeddings[gene] = np.mean(gene_embeddings["cls"], axis=0)
-            attention_weighted_embeddings[gene] = np.mean(
-                gene_embeddings["attention_weighted"], axis=0
-            )
+        return (
+            embeddings["averaged"],
+            embeddings["cls"],
+            embeddings["attention_weighted"],
+        )
 
-        return averaged_embeddings, cls_embeddings, attention_weighted_embeddings
+    def process_accumulated_embeddings(self, embeddings):
+        for emb_type in embeddings:
+            for gene, gene_embeddings in embeddings[emb_type].items():
+                if len(gene_embeddings) > 1:
+                    embeddings[emb_type][gene] = (
+                        torch.stack(gene_embeddings).mean(dim=0).cpu().numpy()
+                    )
+                else:
+                    embeddings[emb_type][gene] = gene_embeddings[0].cpu().numpy()
+
+        # clear processed embeddings to free up memory
+        for emb_type in embeddings:
+            embeddings[emb_type] = {
+                gene: emb
+                for gene, emb in embeddings[emb_type].items()
+                if isinstance(emb, list)
+            }
 
 
 def casefold_genes(genes: Set[str]) -> Set[str]:
