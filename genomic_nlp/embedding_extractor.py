@@ -21,7 +21,7 @@ from transformers import AutoConfig  # type: ignore
 from transformers import AutoModel  # type: ignore
 from transformers import AutoTokenizer  # type: ignore
 from transformers import DebertaV2Config  # type: ignore
-from transformers import DebertaV2Model  # type: ignore
+from transformers import DebertaV2ForMaskedLM  # type: ignore
 from transformers import DebertaV2Tokenizer  # type: ignore
 
 from streaming_corpus import EmbeddingExtractorStreamingCorpus
@@ -106,35 +106,26 @@ class DeBERTaEmbeddingExtractor:
         config = DebertaV2Config.from_pretrained(config_path)
 
         # Initialize the model with the configuration
-        self.model = DebertaV2Model(config)
+        full_model = DebertaV2ForMaskedLM(config)
 
         # Load the state dict
         state_dict = load_file(model_path)
 
-        # Create a new state dict with the correct key structure
-        new_state_dict = {}
-        for k, v in state_dict.items():
-            if k.startswith("module.deberta."):
-                new_key = k.replace("module.deberta.", "")
-                if new_key.startswith("encoder."):
-                    new_key = new_key.replace("encoder.", "", 1)
-                elif new_key == "embeddings.word_embeddings.weight":
-                    new_key = "embeddings.word_embeddings.weight"
-                elif new_key.startswith("embeddings."):
-                    new_key = new_key
-                else:
-                    new_key = f"encoder.{new_key}"
-                new_state_dict[new_key] = v
+        # Remove the 'module.' prefix if it exists
+        new_state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
 
-        # Load the weights, ignoring mismatched keys
-        missing, unexpected = self.model.load_state_dict(new_state_dict, strict=False)
+        # Load the weights
+        missing, unexpected = full_model.load_state_dict(new_state_dict, strict=False)
 
         if missing:
             print(f"Warning: Missing keys: {missing}")
         if unexpected:
             print(f"Warning: Unexpected keys: {unexpected}")
 
-        print("Sample keys from new state dict:")
+        # Extract the base model
+        self.model = full_model.deberta
+
+        print("Sample keys from loaded state dict:")
         for i, (k, v) in enumerate(new_state_dict.items()):
             if i > 10:  # Print first 10 keys
                 break
