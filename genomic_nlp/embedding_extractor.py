@@ -125,17 +125,17 @@ class DeBERTaEmbeddingExtractor:
         # extract the base model
         self.model = full_model.deberta
 
-        print("Sample keys from loaded state dict:")
-        for i, (k, v) in enumerate(new_state_dict.items()):
-            if i > 10:  # print first 10 keys
-                break
-            print(f"{k}: {v.shape}")
+        # print("Sample keys from loaded state dict:")
+        # for i, (k, v) in enumerate(new_state_dict.items()):
+        #     if i > 10:  # print first 10 keys
+        #         break
+        #     print(f"{k}: {v.shape}")
 
-        print("\nSample keys from model state dict:")
-        for i, (k, v) in enumerate(self.model.state_dict().items()):
-            if i > 10:  # print first 10 keys
-                break
-            print(f"{k}: {v.shape}")
+        # print("\nSample keys from model state dict:")
+        # for i, (k, v) in enumerate(self.model.state_dict().items()):
+        #     if i > 10:  # print first 10 keys
+        #         break
+        #     print(f"{k}: {v.shape}")
 
         self.tokenizer = DebertaV2Tokenizer.from_pretrained("microsoft/deberta-v3-base")
         self.max_length = max_length
@@ -187,7 +187,7 @@ class DeBERTaEmbeddingExtractor:
         self, dataset: EmbeddingExtractorStreamingCorpus
     ) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray], Dict[str, np.ndarray]]:
         """Process a dataset to extract embeddings."""
-        TOTAL_BATCHES = 3889578 // self.batch_size
+        TOTAL_BATCHES = 3088709 // self.batch_size
 
         dataloader = DataLoader(
             dataset,

@@ -29,7 +29,7 @@ def main() -> None:
 
     # abstracts_dir = f"{args.root_dir}/data"
     trained_model = "/ocean/projects/bio210019p/stevesho/genomic_nlp/models/deberta/model.safetensors"
-    abstracts = "/ocean/projects/bio210019p/stevesho/genomic_nlp/data/combined/tokens_cleaned_abstracts_casefold_finetune_combined.txt"
+    abstracts = "/ocean/projects/bio210019p/stevesho/genomic_nlp/data/combined/tokens_cleaned_abstracts_casefold_finetune_combined_onlygenetokens_nosyn_debertaext.txt"
 
     extractor = DeBERTaEmbeddingExtractor(trained_model)
     dataset = EmbeddingExtractorStreamingCorpus(
