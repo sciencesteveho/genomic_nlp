@@ -192,7 +192,7 @@ class DeBERTaEmbeddingExtractor:
         dataloader = DataLoader(
             dataset,
             batch_size=self.batch_size,
-            num_workers=10,
+            num_workers=5,
             pin_memory=True,
             prefetch_factor=2,
         )
