@@ -111,6 +111,18 @@ class DeBERTaEmbeddingExtractor:
         # Load the state dict
         state_dict = load_file(model_path)
 
+        # Create a new state dict with the correct key structure
+        new_state_dict = {}
+        for k, v in state_dict.items():
+            if k.startswith("module.deberta."):
+                new_key = k.replace("module.deberta.", "")
+                new_state_dict[new_key] = v
+            elif k.startswith("module."):
+                new_key = k.replace("module.", "")
+                if new_key.startswith("cls."):
+                    continue  # Skip classification head
+                new_state_dict[new_key] = v
+
         # Load the weights, ignoring mismatched keys
         missing, unexpected = self.model.load_state_dict(state_dict, strict=False)
 
