@@ -116,23 +116,20 @@ class DeBERTaEmbeddingExtractor:
         for k, v in state_dict.items():
             if k.startswith("module.deberta."):
                 new_key = k.replace("module.deberta.", "")
-                new_state_dict[new_key] = v
-            elif k.startswith("module."):
-                new_key = k.replace("module.", "")
-                if new_key.startswith("cls."):
-                    continue  # Skip classification head
+                if new_key.startswith("encoder."):
+                    new_key = new_key.replace("encoder.", "", 1)
                 new_state_dict[new_key] = v
 
         # Load the weights, ignoring mismatched keys
-        missing, unexpected = self.model.load_state_dict(state_dict, strict=False)
+        missing, unexpected = self.model.load_state_dict(new_state_dict, strict=False)
 
         if missing:
             print(f"Warning: Missing keys: {missing}")
         if unexpected:
             print(f"Warning: Unexpected keys: {unexpected}")
 
-        print("Sample keys from loaded state dict:")
-        for i, (k, v) in enumerate(state_dict.items()):
+        print("Sample keys from new state dict:")
+        for i, (k, v) in enumerate(new_state_dict.items()):
             if i > 10:  # Print first 10 keys
                 break
             print(f"{k}: {v.shape}")
@@ -144,12 +141,13 @@ class DeBERTaEmbeddingExtractor:
             print(f"{k}: {v.shape}")
 
         self.tokenizer = DebertaV2Tokenizer.from_pretrained("microsoft/deberta-v3-base")
-
         self.max_length = max_length
         self.batch_size = batch_size
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
         self.model.eval()
+
+        print("Model loaded successfully.")
 
     def get_embeddings(
         self, batch: Dict[str, torch.Tensor]
