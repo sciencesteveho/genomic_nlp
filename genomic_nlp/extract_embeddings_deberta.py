@@ -6,36 +6,31 @@
 
 
 import pickle
+from typing import List
 
 import torch
 from tqdm import tqdm  # type: ignore
 
 from embedding_extractor import DeBERTaEmbeddingExtractor
-from gene_extraction_graph import combine_synonyms
 from streaming_corpus import EmbeddingExtractorStreamingCorpus
-from utils import gencode_genes
+
+
+def load_tokens(filename: str) -> List[str]:
+    """Load gene tokens from a file."""
+    with open(filename, "r") as f:
+        return [line.strip().lower() for line in f]
 
 
 def main() -> None:
     """Main function"""
-    genes = gencode_genes(
-        "/ocean/projects/bio210019p/stevesho/genomic_nlp/data/gencode.v45.basic.annotation.gtf"
-    )
 
-    with open(
-        "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_synonyms_nocasefold.pkl",
-        "rb",
-    ) as file:
-        hgnc_synonyms = pickle.load(file)
-
-    combined_genes = combine_synonyms(hgnc_synonyms, genes)
-    gene_tokens = list(combined_genes)
+    token_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_tokens_nosyn.txt"
+    gene_tokens = load_tokens(token_file)
 
     # abstracts_dir = f"{args.root_dir}/data"
     trained_model = "/ocean/projects/bio210019p/stevesho/genomic_nlp/models/deberta/model.safetensors"
     abstracts = "/ocean/projects/bio210019p/stevesho/genomic_nlp/data/combined/tokens_cleaned_abstracts_casefold_finetune_combined.txt"
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     extractor = DeBERTaEmbeddingExtractor(trained_model)
     dataset = EmbeddingExtractorStreamingCorpus(
         dataset_file=abstracts, tokenizer=extractor.tokenizer, genes=gene_tokens
