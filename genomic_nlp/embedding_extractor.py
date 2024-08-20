@@ -20,6 +20,7 @@ from tqdm import tqdm  # type: ignore
 from transformers import AutoConfig  # type: ignore
 from transformers import AutoModel  # type: ignore
 from transformers import AutoTokenizer  # type: ignore
+from transformers import DebertaV2Config  # type: ignore
 from transformers import DebertaV2Model  # type: ignore
 from transformers import DebertaV2Tokenizer  # type: ignore
 
@@ -98,17 +99,37 @@ class DeBERTaEmbeddingExtractor:
         for item in os.listdir(model_dir):
             print(item)
 
-        try:
-            # Attempt to load the model directly
-            print(f"Attempting to load model from: {model_path}")
-            self.model = DebertaV2Model.from_pretrained(model_path)
-        except Exception as e:
-            print(f"Error loading model: {e}")
-            print("Attempting to load model from parent directory...")
-            # If that fails, try loading from the parent directory
-            parent_path = os.path.dirname(model_path)
-            print(f"Attempting to load model from: {parent_path}")
-            self.model = DebertaV2Model.from_pretrained(parent_path)
+        config_path = os.path.join(model_dir, "config.json")
+        model_path = os.path.join(model_dir, "model.safetensors")
+
+        # Load the configuration
+        config = DebertaV2Config.from_pretrained(config_path)
+
+        # Initialize the model with the configuration
+        self.model = DebertaV2Model(config)
+
+        # Load the state dict
+        state_dict = load_file(model_path)
+
+        # Load the weights, ignoring mismatched keys
+        missing, unexpected = self.model.load_state_dict(state_dict, strict=False)
+
+        if missing:
+            print(f"Warning: Missing keys: {missing}")
+        if unexpected:
+            print(f"Warning: Unexpected keys: {unexpected}")
+
+        print("Sample keys from loaded state dict:")
+        for i, (k, v) in enumerate(state_dict.items()):
+            if i > 10:  # Print first 10 keys
+                break
+            print(f"{k}: {v.shape}")
+
+        print("\nSample keys from model state dict:")
+        for i, (k, v) in enumerate(self.model.state_dict().items()):
+            if i > 10:  # Print first 10 keys
+                break
+            print(f"{k}: {v.shape}")
 
         self.tokenizer = DebertaV2Tokenizer.from_pretrained("microsoft/deberta-v3-base")
 
@@ -172,26 +193,23 @@ class DeBERTaEmbeddingExtractor:
         embeddings: Dict[str, Dict[str, List[np.ndarray]]] = {}
 
         # process batches and get embeddings
-        for batch_idx, batch in enumerate(
-            tqdm(dataloader, desc="Processing batches", unit="batch"), start=1
-        ):
+        with tqdm(total=TOTAL_BATCHES, desc="Processing batches") as pbar:
+            for batch in dataloader:
+                avg_emb, cls_emb, att_emb = self.get_embeddings(batch)
 
-            avg_emb, cls_emb, att_emb = self.get_embeddings(batch)
+                for i, gene in enumerate(batch["gene"]):
+                    if gene not in embeddings:
+                        embeddings[gene] = {
+                            "averaged": [],
+                            "cls": [],
+                            "attention_weighted": [],
+                        }
 
-            for i, gene in enumerate(batch["gene"]):
-                if gene not in embeddings:
-                    embeddings[gene] = {
-                        "averaged": [],
-                        "cls": [],
-                        "attention_weighted": [],
-                    }
+                    embeddings[gene]["averaged"].append(avg_emb[i])
+                    embeddings[gene]["cls"].append(cls_emb[i])
+                    embeddings[gene]["attention_weighted"].append(att_emb[i])
 
-                embeddings[gene]["averaged"].append(avg_emb[i])
-                embeddings[gene]["cls"].append(cls_emb[i])
-                embeddings[gene]["attention_weighted"].append(att_emb[i])
-
-            percentage = (batch_idx / TOTAL_BATCHES) * 100
-            tqdm.set_postfix_str(f"Completed: {percentage:.2f}%")
+                pbar.update(1)
 
         # initialize new dicts to avoid type errors
         averaged_embeddings: Dict[str, np.ndarray] = {}
