@@ -187,7 +187,7 @@ class DeBERTaEmbeddingExtractor:
         self, dataset: EmbeddingExtractorStreamingCorpus
     ) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray], Dict[str, np.ndarray]]:
         """Process a dataset to extract embeddings."""
-        TOTAL_BATCHES = 3889578
+        TOTAL_BATCHES = 3889578 // self.batch_size
 
         dataloader = DataLoader(
             dataset,
