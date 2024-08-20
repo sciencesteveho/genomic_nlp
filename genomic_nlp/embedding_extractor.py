@@ -14,6 +14,8 @@ from gensim.models import Word2Vec  # type: ignore
 import numpy as np
 from safetensors.torch import load_file  # type: ignore
 import torch
+from torch.amp import autocast
+from torch.cuda.amp import GradScaler
 from torch.utils.data import DataLoader
 from torch.utils.data import IterableDataset
 from tqdm import tqdm  # type: ignore
@@ -125,21 +127,10 @@ class DeBERTaEmbeddingExtractor:
         # extract the base model
         self.model = full_model.deberta
 
-        # print("Sample keys from loaded state dict:")
-        # for i, (k, v) in enumerate(new_state_dict.items()):
-        #     if i > 10:  # print first 10 keys
-        #         break
-        #     print(f"{k}: {v.shape}")
-
-        # print("\nSample keys from model state dict:")
-        # for i, (k, v) in enumerate(self.model.state_dict().items()):
-        #     if i > 10:  # print first 10 keys
-        #         break
-        #     print(f"{k}: {v.shape}")
-
         self.tokenizer = DebertaV2Tokenizer.from_pretrained("microsoft/deberta-v3-base")
         self.max_length = max_length
         self.batch_size = batch_size
+        self.amp_dtype = torch.float16
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
         self.model.eval()
@@ -161,21 +152,19 @@ class DeBERTaEmbeddingExtractor:
             for k, v in batch.items()
             if k in ["input_ids", "attention_mask", "token_type_ids"]
         }
+        with torch.amp.autocast(device_type=self.device.type, dtype=self.amp_dtype):
+            outputs = self.model(
+                **inputs, output_attentions=True, output_hidden_states=True
+            )
+            last_hidden_states = outputs.last_hidden_state
+            attention_weights = outputs.attentions[-1]
 
-        # get outputs from model - last_hidden_state, attention, hidden_states
-        outputs = self.model(
-            **inputs, output_attentions=True, output_hidden_states=True
-        )
-
-        last_hidden_states = outputs.last_hidden_state
-        attention_weights = outputs.attentions[-1]
-
-        averaged_embeddings = last_hidden_states.mean(dim=1)
-        cls_embeddings = last_hidden_states[:, 0, :]
-        attention_weights = attention_weights.mean(dim=1).mean(dim=1)
-        attention_weighted_embeddings = (
-            last_hidden_states * attention_weights.unsqueeze(-1)
-        ).sum(dim=1)
+            averaged_embeddings = last_hidden_states.mean(dim=1)
+            cls_embeddings = last_hidden_states[:, 0, :]
+            attention_weights = attention_weights.mean(dim=1).mean(dim=1)
+            attention_weighted_embeddings = (
+                last_hidden_states * attention_weights.unsqueeze(-1)
+            ).sum(dim=1)
 
         return (
             averaged_embeddings.cpu().numpy(),
@@ -194,7 +183,7 @@ class DeBERTaEmbeddingExtractor:
             batch_size=self.batch_size,
             num_workers=5,
             pin_memory=True,
-            prefetch_factor=2,
+            prefetch_factor=4,
         )
 
         embeddings = {"averaged": {}, "cls": {}, "attention_weighted": {}}
@@ -202,6 +191,10 @@ class DeBERTaEmbeddingExtractor:
         with tqdm(total=TOTAL_BATCHES, desc="Processing batches") as pbar:
             for batch in dataloader:
                 avg_emb, cls_emb, att_emb = self.get_embeddings(batch)
+
+                avg_emb = avg_emb.astype(np.float32)
+                cls_emb = cls_emb.astype(np.float32)
+                att_emb = att_emb.astype(np.float32)
 
                 for i, gene in enumerate(batch["gene"]):
                     if gene not in embeddings["averaged"]:
