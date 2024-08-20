@@ -118,6 +118,12 @@ class DeBERTaEmbeddingExtractor:
                 new_key = k.replace("module.deberta.", "")
                 if new_key.startswith("encoder."):
                     new_key = new_key.replace("encoder.", "", 1)
+                elif new_key == "embeddings.word_embeddings.weight":
+                    new_key = "embeddings.word_embeddings.weight"
+                elif new_key.startswith("embeddings."):
+                    new_key = new_key
+                else:
+                    new_key = f"encoder.{new_key}"
                 new_state_dict[new_key] = v
 
         # Load the weights, ignoring mismatched keys
