@@ -43,7 +43,7 @@ def main() -> None:
     model_name: str = "microsoft/deberta-v3-base"
     tokenizer: DebertaV2Tokenizer = DebertaV2Tokenizer.from_pretrained(model_name)
 
-    data_dir: str = "/ocean/projects/bio210019p/stevesho/genomic_nlp/data/combined/"
+    data_dir: str = "/ocean/projects/bio210019p/stevesho/genomic_nlp/data/combined"
     input_file: str = (
         f"{data_dir}/tokens_cleaned_abstracts_casefold_finetune_combined_onlygenetokens_nosyn_debertaext.txt"
     )
@@ -53,10 +53,9 @@ def main() -> None:
     with open(input_file, "r", encoding="utf-8") as f:
         lines: List[str] = f.readlines()
 
-    # determine number of processes
     num_processes: int = get_physical_cores()
 
-    # split the data into chunks
+    # chunk abstracts
     chunk_size: int = len(lines) // num_processes
     chunks: List[List[str]] = [
         lines[i : i + chunk_size] for i in range(0, len(lines), chunk_size)
@@ -68,7 +67,7 @@ def main() -> None:
         for i, chunk in enumerate(chunks)
     ]
 
-    # use multiprocessing to tokenize and save chunks
+    # tokenize and save chunks
     with mp.Pool(processes=num_processes) as pool:
         list(
             tqdm(
