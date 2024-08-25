@@ -93,7 +93,7 @@ class Word2VecEmbeddingExtractor:
 class DeBERTaEmbeddingExtractor:
     """Extract embeddings from natural language processing models."""
 
-    def __init__(self, model_path: str, max_length: int = 512, batch_size: int = 32):
+    def __init__(self, model_path: str, max_length: int = 512, batch_size: int = 8):
         """instantiate the embedding extractor class."""
         # print directory contents
         model_dir = os.path.dirname(model_path)
