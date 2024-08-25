@@ -47,7 +47,6 @@ def main() -> None:
     input_file: str = (
         f"{data_dir}/tokens_cleaned_abstracts_casefold_finetune_combined_onlygenetokens_nosyn_debertaext.txt"
     )
-    output_dir: str = f"{data_dir}/tokenized_chunks_deberta"
 
     # read all lines
     with open(input_file, "r", encoding="utf-8") as f:
@@ -63,7 +62,7 @@ def main() -> None:
 
     # prepare arguments for multiprocessing
     chunk_args: List[Tuple[List[str], DebertaV2Tokenizer, str]] = [
-        (chunk, tokenizer, f"{output_dir}/chunk_{i}.pkl")
+        (chunk, tokenizer, f"{data_dir}/tokenized_chunk_{i}.pkl")
         for i, chunk in enumerate(chunks)
     ]
 
@@ -76,7 +75,7 @@ def main() -> None:
             )
         )
 
-    print(f"Tokenized data saved to {output_dir}")
+    print(f"Tokenized data saved to {data_dir}")
 
 
 if __name__ == "__main__":
