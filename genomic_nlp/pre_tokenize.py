@@ -53,7 +53,7 @@ def main() -> None:
         lines: List[str] = f.readlines()
 
     # num_processes: int = get_physical_cores()
-    num_processes = 24
+    num_processes = 8
 
     # chunk abstracts
     chunk_size: int = len(lines) // num_processes
