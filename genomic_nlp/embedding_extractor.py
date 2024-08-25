@@ -93,7 +93,7 @@ class Word2VecEmbeddingExtractor:
 class DeBERTaEmbeddingExtractor:
     """Extract embeddings from natural language processing models."""
 
-    def __init__(self, model_path: str, max_length: int = 512, batch_size: int = 128):
+    def __init__(self, model_path: str, max_length: int = 512, batch_size: int = 32):
         """instantiate the embedding extractor class."""
         # print directory contents
         model_dir = os.path.dirname(model_path)
@@ -139,7 +139,8 @@ class DeBERTaEmbeddingExtractor:
 
     @torch.inference_mode()
     def get_embeddings(
-        self, batch: Dict[str, torch.Tensor]
+        self,
+        batch: Dict[str, torch.Tensor],
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Get three different types of embeddings from a DeBERTa model:
 
@@ -169,7 +170,7 @@ class DeBERTaEmbeddingExtractor:
         return averaged_embeddings, cls_embeddings, attention_weighted_embeddings
 
     def process_dataset(
-        self, dataset: EmbeddingExtractorStreamingCorpus
+        self, dataset: EmbeddingExtractorStreamingCorpus, total_tokens: int
     ) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray], Dict[str, np.ndarray]]:
         """Process a dataset to extract embeddings."""
         TOTAL_BATCHES = 3088709 // self.batch_size
@@ -188,26 +189,43 @@ class DeBERTaEmbeddingExtractor:
             "attention_weighted": {},
         }
 
+        # pre-allocate CUDA tensors for accumulating embeddings
+        accumulated_embeddings = {
+            emb_type: torch.zeros(
+                (total_tokens, 768), dtype=torch.float32, device=self.device
+            )
+            for emb_type in embeddings
+        }
+        counts = torch.zeros(total_tokens, dtype=torch.int32, device=self.device)
+
         with tqdm(total=TOTAL_BATCHES, desc="Processing batches") as pbar:
             for batch in dataloader:
                 avg_emb, cls_emb, att_emb = self.get_embeddings(batch)
+
+                gene_indices = torch.tensor(
+                    [dataset.gene_to_index[gene] for gene in batch["gene"]],
+                    device=self.device,
+                )
 
                 for emb_type, emb in zip(
                     ["averaged", "cls", "attention_weighted"],
                     [avg_emb, cls_emb, att_emb],
                 ):
-                    for i, gene in enumerate(batch["gene"]):
-                        if gene not in embeddings[emb_type]:
-                            embeddings[emb_type][gene] = []
-                        embeddings[emb_type][gene].append(emb[i].cpu().numpy())
+                    accumulated_embeddings[emb_type].index_add_(0, gene_indices, emb)
+
+                counts.index_add_(
+                    0, gene_indices, torch.ones_like(gene_indices, dtype=torch.int32)
+                )
 
                 pbar.update(1)
 
-        # average over all embeddings
+        # average the embeddings
         for emb_type in embeddings:
+            avg_embeddings = (
+                (accumulated_embeddings[emb_type] / counts.unsqueeze(1)).cpu().numpy()
+            )
             embeddings[emb_type] = {
-                gene: np.mean(embs, axis=0)
-                for gene, embs in embeddings[emb_type].items()
+                gene: avg_embeddings[i] for i, gene in enumerate(dataset.genes)
             }
 
         return (

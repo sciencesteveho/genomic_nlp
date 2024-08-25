@@ -85,7 +85,8 @@ class EmbeddingExtractorStreamingCorpus(IterableDataset):
         self.tokenizer = tokenizer
         self.max_length = max_length
         self.context_window = context_window
-        self.genes = genes
+        self.genes = list(set(genes))
+        self.gene_to_index = {gene: i for i, gene in enumerate(self.genes)}
 
     def __iter__(self) -> Iterator[Dict[str, Any]]:
         """Iterate over the dataset file and yield tokenized examples"""

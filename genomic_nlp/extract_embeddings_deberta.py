@@ -35,7 +35,9 @@ def main() -> None:
     dataset = EmbeddingExtractorStreamingCorpus(
         dataset_file=abstracts, tokenizer=extractor.tokenizer, genes=gene_tokens
     )
-    avg_emb, cls_emb, att_emb = extractor.process_dataset(dataset)
+    avg_emb, cls_emb, att_emb = extractor.process_dataset(
+        dataset=dataset, total_tokens=len(gene_tokens)
+    )
 
     with open(
         "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/deberta_avg_embeddings.pkl",
