@@ -93,7 +93,7 @@ class Word2VecEmbeddingExtractor:
 class DeBERTaEmbeddingExtractor:
     """Extract embeddings from natural language processing models."""
 
-    def __init__(self, model_path: str, max_length: int = 512, batch_size: int = 8):
+    def __init__(self, model_path: str, max_length: int = 512, batch_size: int = 64):
         """instantiate the embedding extractor class."""
         # print directory contents
         model_dir = os.path.dirname(model_path)
@@ -126,6 +126,7 @@ class DeBERTaEmbeddingExtractor:
 
         # extract the base model
         self.model = full_model.deberta
+        # self.model = torch.compile(self.model)  # compile to improve performance
 
         self.tokenizer = DebertaV2Tokenizer.from_pretrained("microsoft/deberta-v3-base")
         self.max_length = max_length
@@ -181,6 +182,7 @@ class DeBERTaEmbeddingExtractor:
             num_workers=5,
             pin_memory=True,
             prefetch_factor=10,
+            persistent_workers=True,
         )
 
         embeddings: Dict[str, Dict[str, Any]] = {
