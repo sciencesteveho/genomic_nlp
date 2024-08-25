@@ -7,7 +7,7 @@
 
 import multiprocessing as mp
 import pickle
-from typing import List
+from typing import Callable, List
 
 import psutil  # type: ignore
 from tqdm import tqdm  # type: ignore
@@ -21,20 +21,14 @@ def get_physical_cores() -> int:
     return psutil.cpu_count(logical=False) - 1
 
 
-def tokenize_text(
-    text: str,
-    tokenizer: DebertaV2Tokenizer,
-) -> list:
+def tokenize_text(text: str, tokenizer: DebertaV2Tokenizer) -> List[int]:
     """function to tokenize text"""
     return tokenizer.encode(
         text, add_special_tokens=True, truncation=True, max_length=512
     )
 
 
-def process_chunk(
-    chunk: list,
-    tokenizer: DebertaV2Tokenizer,
-) -> list:
+def process_chunk(chunk: List[str], tokenizer: DebertaV2Tokenizer) -> List[List[int]]:
     """function to process a chunk of text"""
     return [tokenize_text(line.strip(), tokenizer) for line in chunk]
 
@@ -45,7 +39,6 @@ def main() -> None:
     tokenizer = DebertaV2Tokenizer.from_pretrained(model_name)
 
     data_dir = "/ocean/projects/bio210019p/stevesho/genomic_nlp/data/combined/"
-
     input_file = f"{data_dir}/tokens_cleaned_abstracts_casefold_finetune_combined_onlygenetokens_nosyn_debertaext.txt"
     output_file = f"{data_dir}/tokenized_abs_deberta.pkl"
 
@@ -62,15 +55,17 @@ def main() -> None:
 
     # use multiprocessing to tokenize
     with mp.Pool(processes=num_processes) as pool:
-        tokenized_chunks = list(
+        tokenized_chunks: List[List[List[int]]] = list(
             tqdm(
-                pool.imap(lambda chunk: process_chunk(chunk, tokenizer), chunks),
+                pool.starmap(process_chunk, [(chunk, tokenizer) for chunk in chunks]),
                 total=len(chunks),
             )
         )
 
     # flatten the list of chunks
-    tokenized_data = [item for sublist in tokenized_chunks for item in sublist]
+    tokenized_data: List[List[int]] = [
+        item for sublist in tokenized_chunks for item in sublist
+    ]
 
     # save the tokenized data
     with open(output_file, "wb") as f:
