@@ -47,7 +47,7 @@ def main() -> None:
     input_file: str = (
         f"{data_dir}/tokens_cleaned_abstracts_casefold_finetune_combined_onlygenetokens_nosyn_debertaext.txt"
     )
-    output_dir: str = f"{data_dir}/tokenized_chunks_deberta/"
+    output_dir: str = f"{data_dir}/tokenized_chunks_deberta"
 
     # read all lines
     with open(input_file, "r", encoding="utf-8") as f:
