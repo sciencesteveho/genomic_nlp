@@ -6,8 +6,9 @@
 
 
 import multiprocessing as mp
+import os
 import pickle
-from typing import Callable, List
+from typing import List, Tuple
 
 import psutil  # type: ignore
 from tqdm import tqdm  # type: ignore
@@ -28,50 +29,55 @@ def tokenize_text(text: str, tokenizer: DebertaV2Tokenizer) -> List[int]:
     )
 
 
-def process_chunk(chunk: List[str], tokenizer: DebertaV2Tokenizer) -> List[List[int]]:
-    """function to process a chunk of text"""
-    return [tokenize_text(line.strip(), tokenizer) for line in chunk]
+def process_and_save_chunk(
+    chunk: List[str], tokenizer: DebertaV2Tokenizer, output_file: str
+) -> None:
+    """function to process a chunk of text and save it"""
+    tokenized_chunk = [tokenize_text(line.strip(), tokenizer) for line in chunk]
+    with open(output_file, "wb") as f:
+        pickle.dump(tokenized_chunk, f)
 
 
 def main() -> None:
     """main func"""
-    model_name = "microsoft/deberta-v3-base"
-    tokenizer = DebertaV2Tokenizer.from_pretrained(model_name)
+    model_name: str = "microsoft/deberta-v3-base"
+    tokenizer: DebertaV2Tokenizer = DebertaV2Tokenizer.from_pretrained(model_name)
 
-    data_dir = "/ocean/projects/bio210019p/stevesho/genomic_nlp/data/combined/"
-    input_file = f"{data_dir}/tokens_cleaned_abstracts_casefold_finetune_combined_onlygenetokens_nosyn_debertaext.txt"
-    output_file = f"{data_dir}/tokenized_abs_deberta.pkl"
+    data_dir: str = "/ocean/projects/bio210019p/stevesho/genomic_nlp/data/combined/"
+    input_file: str = (
+        f"{data_dir}/tokens_cleaned_abstracts_casefold_finetune_combined_onlygenetokens_nosyn_debertaext.txt"
+    )
+    output_dir: str = f"{data_dir}/tokenized_chunks_deberta/"
 
     # read all lines
     with open(input_file, "r", encoding="utf-8") as f:
-        lines = f.readlines()
+        lines: List[str] = f.readlines()
 
     # determine number of processes
-    num_processes = get_physical_cores()
+    num_processes: int = get_physical_cores()
 
     # split the data into chunks
-    chunk_size = len(lines) // num_processes
-    chunks = [lines[i : i + chunk_size] for i in range(0, len(lines), chunk_size)]
+    chunk_size: int = len(lines) // num_processes
+    chunks: List[List[str]] = [
+        lines[i : i + chunk_size] for i in range(0, len(lines), chunk_size)
+    ]
 
-    # use multiprocessing to tokenize
+    # prepare arguments for multiprocessing
+    chunk_args: List[Tuple[List[str], DebertaV2Tokenizer, str]] = [
+        (chunk, tokenizer, f"{output_dir}/chunk_{i}.pkl")
+        for i, chunk in enumerate(chunks)
+    ]
+
+    # use multiprocessing to tokenize and save chunks
     with mp.Pool(processes=num_processes) as pool:
-        tokenized_chunks: List[List[List[int]]] = list(
+        list(
             tqdm(
-                pool.starmap(process_chunk, [(chunk, tokenizer) for chunk in chunks]),
+                pool.starmap(process_and_save_chunk, chunk_args),
                 total=len(chunks),
             )
         )
 
-    # flatten the list of chunks
-    tokenized_data: List[List[int]] = [
-        item for sublist in tokenized_chunks for item in sublist
-    ]
-
-    # save the tokenized data
-    with open(output_file, "wb") as f:
-        pickle.dump(tokenized_data, f)
-
-    print(f"tokenized data saved to {output_file}")
+    print(f"Tokenized data saved to {output_dir}")
 
 
 if __name__ == "__main__":
