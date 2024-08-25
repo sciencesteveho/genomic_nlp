@@ -52,7 +52,8 @@ def main() -> None:
     with open(input_file, "r", encoding="utf-8") as f:
         lines: List[str] = f.readlines()
 
-    num_processes: int = get_physical_cores()
+    # num_processes: int = get_physical_cores()
+    num_processes = 24
 
     # chunk abstracts
     chunk_size: int = len(lines) // num_processes
