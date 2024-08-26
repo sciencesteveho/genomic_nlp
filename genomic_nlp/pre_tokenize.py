@@ -6,19 +6,18 @@
 
 
 import multiprocessing as mp
-import os
 import pickle
-from typing import Dict, List, Tuple
+from typing import Dict, List, Set, Tuple
 
 import psutil  # type: ignore
 from tqdm import tqdm  # type: ignore
 from transformers import DebertaV2Tokenizer  # type: ignore
 
 
-def load_tokens(filename: str) -> List[str]:
+def load_tokens(filename: str) -> Set[str]:
     """Load gene tokens from a file."""
     with open(filename, "r") as f:
-        return [line.strip().lower() for line in f]
+        return {line.strip().lower() for line in f}
 
 
 def get_physical_cores() -> int:
@@ -29,36 +28,62 @@ def get_physical_cores() -> int:
 
 
 def tokenize_text(text: str, tokenizer: DebertaV2Tokenizer) -> List[int]:
-    """function to tokenize text"""
+    """Function to tokenize text"""
     return tokenizer.encode(
         text, add_special_tokens=True, truncation=True, max_length=512
     )
 
 
 def process_and_save_chunk(
-    chunk: List[str],
+    abstract_chunk: List[str],
     tokenizer: DebertaV2Tokenizer,
-    genes: List[str],
+    genes: Set[str],
     output_file: str,
 ) -> None:
-    """function to process a chunk of text and save it"""
-    tokenized_chunk: List[List[int]] = []
+    """Function to process a chunk of text and save it"""
+    tokenized_abstracts: List[List[int]] = []
     gene_occurrences: Dict[str, List[Tuple[int, int]]] = {gene: [] for gene in genes}
 
-    for abstract_idx, abstract in enumerate(chunk):
-        tokens = tokenizer.encode(
-            abstract.strip(), add_special_tokens=True, truncation=True, max_length=512
+    batch_size = 32
+    for chunk_start in tqdm(
+        range(0, len(abstract_chunk), batch_size), desc="Processing abstracts"
+    ):
+        abstract_batch = abstract_chunk[chunk_start : chunk_start + batch_size]
+        encoded_batch = tokenizer.batch_encode_plus(
+            abstract_batch,
+            add_special_tokens=True,
+            truncation=True,
+            max_length=512,
+            padding=True,
+            return_tensors="pt",
         )
-        tokenized_chunk.append(tokens)
 
-        for token_idx, token_id in enumerate(tokens):
-            token = tokenizer.convert_ids_to_tokens([token_id])[0]
-            if token.casefold() in (gene.casefold() for gene in genes):
-                gene = next(g for g in genes if g.casefold() == token.casefold())
-                gene_occurrences[gene].append((abstract_idx, token_idx))
+        for batch_index, (input_ids, token_type_ids) in enumerate(
+            zip(encoded_batch["input_ids"], encoded_batch["token_type_ids"])
+        ):
+            abstract_index = chunk_start + batch_index
+            token_ids = input_ids.tolist()
+            tokenized_abstracts.append(token_ids)
 
-    with open(output_file, "wb") as f:
-        pickle.dump((tokenized_chunk, gene_occurrences), f)
+            # match genes
+            decoded_text = tokenizer.decode(token_ids)
+            lowercase_text = decoded_text.lower()
+            for gene in genes:
+                start_position = 0
+                while True:
+                    gene_position = lowercase_text.find(gene, start_position)
+                    if gene_position == -1:
+                        break
+                    token_index = len(
+                        tokenizer.encode(
+                            decoded_text[:gene_position], add_special_tokens=False
+                        )
+                    )
+                    gene_occurrences[gene].append((abstract_index, token_index))
+                    start_position = gene_position + len(gene)
+
+    with open(output_file, "wb") as output:
+        pickle.dump((tokenized_abstracts, gene_occurrences), output)
 
 
 def main() -> None:
@@ -81,7 +106,8 @@ def main() -> None:
         lines: List[str] = f.readlines()
 
     # set up chunks by cores
-    num_processes = get_physical_cores()
+    # num_processes = get_physical_cores()
+    num_processes = 7
     chunk_size: int = len(lines) // num_processes
 
     # process chunks
@@ -90,7 +116,7 @@ def main() -> None:
     ]
 
     # prepare arguments for multiprocessing
-    chunk_args: List[Tuple[List[str], DebertaV2Tokenizer, List[str], str]] = [
+    chunk_args: List[Tuple[List[str], DebertaV2Tokenizer, Set[str], str]] = [
         (chunk, tokenizer, genes, f"{data_dir}/tokenized_chunk_{i}.pkl")
         for i, chunk in enumerate(chunks)
     ]

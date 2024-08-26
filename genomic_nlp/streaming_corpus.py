@@ -10,6 +10,7 @@ import math
 import pickle
 from typing import Any, Dict, Iterator, List, Tuple
 
+import numpy as np
 import torch
 from torch.utils.data import IterableDataset
 from transformers import PreTrainedTokenizer  # type: ignore
@@ -69,7 +70,7 @@ class FinetuneStreamingCorpus(IterableDataset):
 
 class EmbeddingExtractorStreamingCorpus(IterableDataset):
     """Creates a Hugging Face dataset object for embedding extraction from text
-    corpus
+    corpus.
     """
 
     def __init__(
@@ -77,11 +78,13 @@ class EmbeddingExtractorStreamingCorpus(IterableDataset):
         tokenized_files: List[str],
         max_length: int = 512,
         context_window: int = 128,
+        batch_size: int = 32,
     ) -> None:
         """Instantiate the streaming corpus class."""
         self.tokenized_files = tokenized_files
         self.max_length = max_length
         self.context_window = context_window
+        self.batch_size = batch_size
         self.gene_to_index: Dict[str, int] = {}
         self.load_gene_occurrences()
 
@@ -105,15 +108,17 @@ class EmbeddingExtractorStreamingCorpus(IterableDataset):
                 if worker_info.id < worker_info.num_workers - 1
                 else None
             )
-            self.tokenized_files = self.tokenized_files[start:end]
+            files_to_process = self.tokenized_files[start:end]
+        else:
+            files_to_process = self.tokenized_files  # single worker
 
-        for file in self.tokenized_files:
+        for file in files_to_process:
             with open(file, "rb") as f:
                 tokenized_abstracts, gene_occurrences = pickle.load(f)
-                for abstract_idx, tokens in enumerate(tokenized_abstracts):
-                    yield from self.process_tokenized_abstract(
-                        tokens, abstract_idx, gene_occurrences
-                    )
+            for abstract_idx, tokens in enumerate(tokenized_abstracts):
+                yield from self.process_tokenized_abstract(
+                    tokens, abstract_idx, gene_occurrences
+                )
 
     def process_tokenized_abstract(
         self,
@@ -122,23 +127,51 @@ class EmbeddingExtractorStreamingCorpus(IterableDataset):
         gene_occurrences: Dict[str, List[Tuple[int, int]]],
     ) -> Iterator[Dict[str, Any]]:
         """Process a tokenized abstract to extract gene embeddings."""
-        for gene, occurrences in gene_occurrences.items():
-            for abs_idx, token_idx in occurrences:
-                if abs_idx == abstract_idx:
-                    context_start = max(0, token_idx - self.context_window // 2)
-                    context_end = min(len(tokens), token_idx + self.context_window // 2)
-                    context = tokens[context_start:context_end]
+        all_occurrences = [
+            (gene, idx)
+            for gene, occs in gene_occurrences.items()
+            for _, idx in occs
+            if _ == abstract_idx
+        ]
 
-                    padded_context = self.pad_or_truncate(context)
-                    attention_mask = [1] * len(context) + [0] * (
-                        self.max_length - len(context)
-                    )
+        for i in range(0, len(all_occurrences), self.batch_size):
+            batch_occurrences = all_occurrences[i : i + self.batch_size]
+            if not batch_occurrences:
+                continue
 
-                    yield {
-                        "gene": gene,
-                        "input_ids": torch.tensor(padded_context),
-                        "attention_mask": torch.tensor(attention_mask),
-                    }
+            genes, token_indices = zip(*batch_occurrences)
+
+            context_starts = np.maximum(
+                0, np.array(token_indices) - self.context_window // 2
+            )
+            context_ends = np.minimum(
+                len(tokens), np.array(token_indices) + self.context_window // 2
+            )
+
+            contexts = [
+                tokens[start:end] for start, end in zip(context_starts, context_ends)
+            ]
+
+            padded_contexts = np.zeros((len(contexts), self.max_length), dtype=int)
+            attention_masks = np.zeros((len(contexts), self.max_length), dtype=int)
+
+            for i, context in enumerate(contexts):
+                padded_contexts[i, : len(context)] = context
+                attention_masks[i, : len(context)] = 1
+
+            yield {
+                "gene": genes,
+                "input_ids": torch.tensor(padded_contexts),
+                "attention_mask": torch.tensor(attention_masks),
+            }
+
+    def collate_batch(self, batch: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Collate a batch of tokenized examples."""
+        return {
+            "gene": [item["gene"] for item in batch],
+            "input_ids": torch.stack([item["input_ids"] for item in batch]),
+            "attention_mask": torch.stack([item["attention_mask"] for item in batch]),
+        }
 
     def pad_or_truncate(self, token_ids: List[int]) -> List[int]:
         """Pad or truncate the token ids to the max length."""

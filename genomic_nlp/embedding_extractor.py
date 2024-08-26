@@ -95,47 +95,35 @@ class DeBERTaEmbeddingExtractor:
 
     def __init__(self, model_path: str, max_length: int = 512, batch_size: int = 64):
         """instantiate the embedding extractor class."""
-        # print directory contents
         model_dir = os.path.dirname(model_path)
-        print(f"Contents of {model_dir}:")
-        for item in os.listdir(model_dir):
-            print(item)
-
         config_path = os.path.join(model_dir, "config.json")
         model_path = os.path.join(model_dir, "model.safetensors")
 
-        # load the configuration
+        # load model and initialize with pretrained state dict
         config = DebertaV2Config.from_pretrained(config_path)
-
-        # initialize the model with the configuration
         full_model = DebertaV2ForMaskedLM(config)
-
-        # load the state dict
-        old_states = load_file(model_path)
-
-        # remove the 'module.' prefix if it exists
-        new_states = {k.replace("module.", ""): v for k, v in old_states.items()}
+        model_state = self._rename_state_dict_keys(load_file(model_path))
 
         # load the weights
-        missing, unexpected = full_model.load_state_dict(new_states, strict=False)
-
+        missing, unexpected = full_model.load_state_dict(model_state, strict=False)
         if missing:
             print(f"Warning: Missing keys: {missing}")
         if unexpected:
             print(f"Warning: Unexpected keys: {unexpected}")
 
-        # extract the base model
         self.model = full_model.deberta
-        # self.model = torch.compile(self.model)  # compile to improve performance
-
         self.max_length = max_length
         self.batch_size = batch_size
-        self.amp_dtype = torch.float16
+        self.amp_dtype = torch.float16  # mixed precision for speed gains
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
         self.model.eval()
 
         print("Model loaded successfully.")
+
+    def _rename_state_dict_keys(self, state_dict: Dict[str, Any]) -> Dict[str, Any]:
+        """Rename state dict keys to remove the 'module.' prefix."""
+        return {k.replace("module.", ""): v for k, v in state_dict.items()}
 
     @torch.inference_mode()
     def get_embeddings(
@@ -170,11 +158,21 @@ class DeBERTaEmbeddingExtractor:
         return averaged_embeddings, cls_embeddings, attention_weighted_embeddings
 
     def process_dataset(
-        self, dataset: EmbeddingExtractorStreamingCorpus, total_tokens: int
+        self,
+        tokenized_files: List[str],
+        total_genes: int,
     ) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray], Dict[str, np.ndarray]]:
         """Process a dataset to extract embeddings."""
         TOTAL_BATCHES = 3088709 // self.batch_size
 
+        embeddings: Dict[str, Dict[str, Any]] = {
+            "averaged": {},
+            "cls": {},
+            "attention_weighted": {},
+        }
+
+        # prepare the dataset and dataloader
+        dataset = EmbeddingExtractorStreamingCorpus(tokenized_files)
         dataloader = DataLoader(
             dataset,
             batch_size=self.batch_size,
@@ -184,21 +182,16 @@ class DeBERTaEmbeddingExtractor:
             persistent_workers=True,
         )
 
-        embeddings: Dict[str, Dict[str, Any]] = {
-            "averaged": {},
-            "cls": {},
-            "attention_weighted": {},
-        }
-
         # pre-allocate CUDA tensors for accumulating embeddings
         accumulated_embeddings = {
             emb_type: torch.zeros(
-                (total_tokens, 768), dtype=torch.float32, device=self.device
+                (total_genes, 768), dtype=torch.float32, device=self.device
             )
             for emb_type in embeddings
         }
-        counts = torch.zeros(total_tokens, dtype=torch.int32, device=self.device)
+        counts = torch.zeros(total_genes, dtype=torch.int32, device=self.device)
 
+        # process dataset and extract embeddings
         with tqdm(total=TOTAL_BATCHES, desc="Processing batches") as pbar:
             for batch in dataloader:
                 avg_emb, cls_emb, att_emb = self.get_embeddings(batch)
@@ -226,7 +219,7 @@ class DeBERTaEmbeddingExtractor:
                 (accumulated_embeddings[emb_type] / counts.unsqueeze(1)).cpu().numpy()
             )
             embeddings[emb_type] = {
-                gene: avg_embeddings[i] for i, gene in enumerate(dataset.genes)
+                gene: avg_embeddings[i] for gene, i in dataset.gene_to_index.items()
             }
 
         return (
