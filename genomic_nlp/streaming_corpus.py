@@ -7,8 +7,8 @@ embedding extraction."""
 
 
 import math
-import re
-from typing import Any, Dict, Iterator, List
+import pickle
+from typing import Any, Dict, Iterator, List, Tuple
 
 import torch
 from torch.utils.data import IterableDataset
@@ -74,89 +74,75 @@ class EmbeddingExtractorStreamingCorpus(IterableDataset):
 
     def __init__(
         self,
-        dataset_file: str,
-        tokenizer: PreTrainedTokenizer,
-        genes: List[str],
+        tokenized_files: List[str],
         max_length: int = 512,
         context_window: int = 128,
     ) -> None:
         """Instantiate the streaming corpus class."""
-        self.dataset_file = dataset_file
-        self.tokenizer = tokenizer
+        self.tokenized_files = tokenized_files
         self.max_length = max_length
         self.context_window = context_window
-        self.genes = list(set(genes))
-        self.gene_to_index = {gene: i for i, gene in enumerate(self.genes)}
+        self.gene_to_index: Dict[str, int] = {}
+        self.load_gene_occurrences()
+
+    def load_gene_occurrences(self) -> None:
+        """Load the gene occurence dictionary from the tokenized files."""
+        all_genes: set = set()
+        for file in self.tokenized_files:
+            with open(file, "rb") as f:
+                _, gene_occurrences = pickle.load(f)
+                all_genes.update(gene_occurrences.keys())
+
+        self.gene_to_index = {gene: i for i, gene in enumerate(sorted(all_genes))}
 
     def __iter__(self) -> Iterator[Dict[str, Any]]:
         """Iterate over the dataset file and yield tokenized examples"""
-        worker_info = torch.utils.data.get_worker_info()
+        if worker_info := torch.utils.data.get_worker_info():
+            per_worker = len(self.tokenized_files) // worker_info.num_workers
+            start = worker_info.id * per_worker
+            end = (
+                start + per_worker
+                if worker_info.id < worker_info.num_workers - 1
+                else None
+            )
+            self.tokenized_files = self.tokenized_files[start:end]
 
-        with open(self.dataset_file, "r", encoding="utf-8") as file:
-            if worker_info:
-                file_size = file.seek(0, 2)  # file size
-                chunk_size = file_size // worker_info.num_workers
-                start = worker_info.id * chunk_size  # find start position for worker
-                end = (
-                    start + chunk_size
-                    if worker_info.id < worker_info.num_workers - 1
-                    else file_size
-                )
+        for file in self.tokenized_files:
+            with open(file, "rb") as f:
+                tokenized_abstracts, gene_occurrences = pickle.load(f)
+                for abstract_idx, tokens in enumerate(tokenized_abstracts):
+                    yield from self.process_tokenized_abstract(
+                        tokens, abstract_idx, gene_occurrences
+                    )
 
-                # move to start position
-                file.seek(start)
-                if start > 0:
-                    file.readline()
+    def process_tokenized_abstract(
+        self,
+        tokens: List[int],
+        abstract_idx: int,
+        gene_occurrences: Dict[str, List[Tuple[int, int]]],
+    ) -> Iterator[Dict[str, Any]]:
+        """Process a tokenized abstract to extract gene embeddings."""
+        for gene, occurrences in gene_occurrences.items():
+            for abs_idx, token_idx in occurrences:
+                if abs_idx == abstract_idx:
+                    context_start = max(0, token_idx - self.context_window // 2)
+                    context_end = min(len(tokens), token_idx + self.context_window // 2)
+                    context = tokens[context_start:context_end]
 
-                for line in iter(file.readline, ""):
-                    if file.tell() > end:
-                        break
-                    yield from self.process_line(line)
-            else:
-                # process entire file if single worker
-                for line in file:
-                    yield from self.process_line(line)
+                    padded_context = self.pad_or_truncate(context)
+                    attention_mask = [1] * len(context) + [0] * (
+                        self.max_length - len(context)
+                    )
 
-    def process_line(self, line: str) -> Iterator[Dict[str, Any]]:
-        """Process a line of text to extract embeddings"""
-        # tokenize the abstract
-        abstract = line.strip()
-        tokenized_abstract = self.tokenizer(
-            abstract, padding=False, truncation=False, return_tensors="pt"
-        )
+                    yield {
+                        "gene": gene,
+                        "input_ids": torch.tensor(padded_context),
+                        "attention_mask": torch.tensor(attention_mask),
+                    }
 
-        tokens = self.tokenizer.convert_ids_to_tokens(
-            tokenized_abstract["input_ids"][0]
-        )
-
-        for i, token in enumerate(tokens):
-            if token.casefold() in (gene.casefold() for gene in self.genes):
-                gene_mention = token
-                gene_name = next(
-                    gene for gene in self.genes if gene.casefold() == token.casefold()
-                )
-
-                # extract context
-                context_start = max(0, i - self.context_window // 2)
-                context_end = min(len(tokens), i + self.context_window // 2)
-
-                # get tokenized context
-                context_slice = {
-                    k: v[0, context_start:context_end]
-                    for k, v in tokenized_abstract.items()
-                }
-
-                # pad or truncate the context to the required length
-                padded_context = self.tokenizer.pad(
-                    context_slice,
-                    padding="max_length",
-                    max_length=self.max_length,
-                    return_tensors="pt",
-                )
-
-                yield {
-                    "gene": gene_name,
-                    "mention": gene_mention,
-                    "context": self.tokenizer.decode(context_slice["input_ids"]),
-                    **{k: v.squeeze(0) for k, v in padded_context.items()},
-                }
+    def pad_or_truncate(self, token_ids: List[int]) -> List[int]:
+        """Pad or truncate the token ids to the max length."""
+        if len(token_ids) > self.max_length:
+            return token_ids[: self.max_length]
+        else:
+            return token_ids + [0] * (self.max_length - len(token_ids))

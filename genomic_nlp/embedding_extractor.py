@@ -128,7 +128,6 @@ class DeBERTaEmbeddingExtractor:
         self.model = full_model.deberta
         # self.model = torch.compile(self.model)  # compile to improve performance
 
-        self.tokenizer = DebertaV2Tokenizer.from_pretrained("microsoft/deberta-v3-base")
         self.max_length = max_length
         self.batch_size = batch_size
         self.amp_dtype = torch.float16
