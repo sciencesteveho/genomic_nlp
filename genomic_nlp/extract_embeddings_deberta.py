@@ -5,38 +5,32 @@
 """Extract embeddings from a DeBERTa v3 model."""
 
 
+import glob
 import pickle
 from typing import List
 
-import torch
 from tqdm import tqdm  # type: ignore
 
 from embedding_extractor import DeBERTaEmbeddingExtractor
-from streaming_corpus import EmbeddingExtractorStreamingCorpus
-
-
-def load_tokens(filename: str) -> List[str]:
-    """Load gene tokens from a file."""
-    with open(filename, "r") as f:
-        return [line.strip().lower() for line in f]
+from pre_tokenize import load_tokens
 
 
 def main() -> None:
     """Main function"""
-
+    data_dir = "/ocean/projects/bio210019p/stevesho/genomic_nlp/data/combined"
+    model_path = "/ocean/projects/bio210019p/stevesho/genomic_nlp/models/deberta"
     token_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_tokens_nosyn.txt"
+
+    # load tokens to get the total number of genes
     gene_tokens = load_tokens(token_file)
+    total_genes = len(gene_tokens)
 
-    # abstracts_dir = f"{args.root_dir}/data"
-    trained_model = "/ocean/projects/bio210019p/stevesho/genomic_nlp/models/deberta/model.safetensors"
-    abstracts = "/ocean/projects/bio210019p/stevesho/genomic_nlp/data/combined/tokens_cleaned_abstracts_casefold_finetune_combined_onlygenetokens_nosyn_debertaext.txt"
+    # load tokenized files
+    tokenized_files = glob.glob(f"{data_dir}/tokenized_chunk_*.pkl")
 
-    extractor = DeBERTaEmbeddingExtractor(trained_model)
-    dataset = EmbeddingExtractorStreamingCorpus(
-        dataset_file=abstracts, tokenizer=extractor.tokenizer, genes=gene_tokens
-    )
+    extractor = DeBERTaEmbeddingExtractor(model_path=model_path)
     avg_emb, cls_emb, att_emb = extractor.process_dataset(
-        dataset=dataset, total_tokens=len(gene_tokens)
+        tokenized_files=tokenized_files, total_genes=total_genes
     )
 
     with open(
