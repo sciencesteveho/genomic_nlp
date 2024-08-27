@@ -4,6 +4,7 @@
 """Utilities for bio-genetics-NLP"""
 
 
+from collections import Counter
 import contextlib
 from datetime import timedelta
 import functools
@@ -13,14 +14,28 @@ import os
 from pathlib import Path
 import pickle
 import random
+import re
 import time
-from typing import Any, Callable, List, Optional, Set, Union
+from typing import Any, Callable, Dict, List, Optional, Set, Union
 
+import numpy as np
 import pandas as pd
 import pybedtools  # type: ignore
 from tqdm import tqdm  # type: ignore
 
 from constants import COPY_GENES
+
+
+def casefold_genes(genes: Set[str]) -> Set[str]:
+    """Casefold all genes."""
+    return {gene.casefold() for gene in genes}
+
+
+def filter_zero_embeddings(embeddings: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+    """Filter out key: value pairs where the value (embedding) consists of all
+    zeroes.
+    """
+    return {key: value for key, value in embeddings.items() if np.any(value != 0)}
 
 
 def gencode_genes(gtf: str) -> Set[str]:
@@ -109,13 +124,20 @@ def time_decorator(print_args: bool = False, display_arg: str = "") -> Callable:
     return _time_decorator_func
 
 
-def filter_abstract_by_terms(string: str, substr: str, matches, remove, keep):
+def filter_abstract_by_terms(
+    string: str,
+    substr: Set[str],
+    matches: int,
+    remove: Set[str] = set(),
+    keep: str = "match",
+) -> List[str]:
+    """Filter abstracts by the number of matches of substrings"""
     filtered = []
     for s in tqdm(string):
         if keep == "match":
             if len(substr.intersection(s.split())) >= matches:
-                if len(remove) > 0:
-                    if len(remove.intersection(s.split())) == 0:
+                if remove:
+                    if not remove.intersection(s.split()):
                         filtered.append(s)
                 else:
                     filtered.append(s)
@@ -167,7 +189,7 @@ def is_number(entry: str) -> bool:
         return False
 
 
-def avg_len(lst: List[str]) -> int:
+def avg_len(lst: List[str]) -> float:
     """Takes the average length of elements in a list
 
     Args:

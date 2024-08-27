@@ -227,15 +227,3 @@ class DeBERTaEmbeddingExtractor:
             embeddings["cls"],
             embeddings["attention_weighted"],
         )
-
-
-def casefold_genes(genes: Set[str]) -> Set[str]:
-    """Casefold all genes."""
-    return {gene.casefold() for gene in genes}
-
-
-def filter_zero_embeddings(embeddings: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
-    """Filter out key: value pairs where the value (embedding) consists of all
-    zeroes.
-    """
-    return {key: value for key, value in embeddings.items() if np.any(value != 0)}
