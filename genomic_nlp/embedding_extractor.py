@@ -95,9 +95,9 @@ class DeBERTaEmbeddingExtractor:
 
     def __init__(self, model_path: str, max_length: int = 512, batch_size: int = 64):
         """instantiate the embedding extractor class."""
-        model_dir = os.path.dirname(model_path)
-        config_path = os.path.join(model_dir, "config.json")
-        model_path = os.path.join(model_dir, "model.safetensors")
+        model_dir = Path(model_path)
+        config_path = model_dir / "config.json"
+        model_path = str(model_dir / "model.safetensors")
 
         # load model and initialize with pretrained state dict
         config = DebertaV2Config.from_pretrained(config_path)
