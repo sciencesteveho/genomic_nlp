@@ -155,6 +155,12 @@ class DeBERTaEmbeddingExtractor:
         output_file: str,
     ) -> None:
         """Process a single chunk of data and save embeddings."""
+        # get number of samples for tqdm
+        with open(tokenized_file, "rb") as f:
+            tokenized_abstracts, _ = pickle.load(f)
+        total_examples = len(tokenized_abstracts)
+        del tokenized_abstracts
+
         dataset = EmbeddingExtractorStreamingCorpus(
             [tokenized_file],
             max_length=self.max_length,
@@ -166,7 +172,7 @@ class DeBERTaEmbeddingExtractor:
             num_workers=1,
             pin_memory=True,
             prefetch_factor=2,
-            collate_fn=dataset.collate_batch,
+            collate_fn=self.collate_batch,
         )
 
         embeddings: Dict[str, Dict[str, Any]] = {
@@ -175,7 +181,12 @@ class DeBERTaEmbeddingExtractor:
             "attention_weighted": {},
         }
 
-        for batch in tqdm(dataloader, desc=f"Processing {tokenized_file}"):
+        processed_examples = 0
+        pbar = tqdm(
+            total=total_examples, desc=f"Processing {Path(tokenized_file).name}"
+        )
+
+        for batch in dataloader:
             avg_emb, cls_emb, att_emb = self.get_embeddings(batch)
 
             for gene, avg, cls, att in zip(
@@ -192,6 +203,11 @@ class DeBERTaEmbeddingExtractor:
                 embeddings["averaged"][gene].append(avg)
                 embeddings["cls"][gene].append(cls)
                 embeddings["attention_weighted"][gene].append(att)
+
+            processed_examples += len(batch["gene"])
+            pbar.update(len(batch["gene"]))
+
+        pbar.close()
 
         # average embeddings for genes with multiple occurrences
         for emb_type, value in embeddings.items():
@@ -252,6 +268,21 @@ class DeBERTaEmbeddingExtractor:
         # save combined embeddings
         with open(output_file, "wb") as f:
             pickle.dump(combined_embeddings, f)
+
+    @staticmethod
+    def collate_batch(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Collate a batch of tokenized examples."""
+        return {
+            "gene": [item["gene"] for item in batch],
+            "input_ids": torch.nn.utils.rnn.pad_sequence(
+                [item["input_ids"] for item in batch], batch_first=True, padding_value=0
+            ),
+            "attention_mask": torch.nn.utils.rnn.pad_sequence(
+                [item["attention_mask"] for item in batch],
+                batch_first=True,
+                padding_value=0,
+            ),
+        }
 
     # def process_dataset(
     #     self,
