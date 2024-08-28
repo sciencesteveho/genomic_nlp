@@ -179,3 +179,10 @@ class EmbeddingExtractorStreamingCorpus(IterableDataset):
             return token_ids[: self.max_length]
         else:
             return token_ids + [0] * (self.max_length - len(token_ids))
+
+    def __getitem__(self, idx):
+        item = super().__getitem__(idx)
+        print(
+            f"Item {idx} shapes: input_ids: {item['input_ids'].shape}, attention_mask: {item['attention_mask'].shape}"
+        )
+        return item

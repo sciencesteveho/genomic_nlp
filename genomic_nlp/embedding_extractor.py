@@ -282,50 +282,36 @@ class DeBERTaEmbeddingExtractor:
     def collate_batch(self, batch: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Collate a batch of tokenized examples."""
 
-        def pad_and_truncate(
-            tensor: Union[List[int], torch.Tensor], target_len: int
-        ) -> torch.Tensor:
-            if isinstance(tensor, list):
-                tensor = torch.tensor(tensor)
-            if len(tensor) > target_len:
+        def pad_and_truncate(tensor: torch.Tensor, target_len: int) -> torch.Tensor:
+            if tensor.size(0) > target_len:
                 return tensor[:target_len]
             return torch.nn.functional.pad(
-                tensor, (0, target_len - len(tensor)), value=0
+                tensor, (0, target_len - tensor.size(0)), value=0
             )
 
-        try:
-            collated_batch: Dict[str, Any] = {
-                "gene": [item["gene"] for item in batch],
-                "input_ids": [
-                    pad_and_truncate(item["input_ids"], self.max_length)
-                    for item in batch
-                ],
-                "attention_mask": [
-                    pad_and_truncate(item["attention_mask"], self.max_length)
-                    for item in batch
-                ],
-            }
+        collated_batch: Dict[str, Union[List[Any], torch.Tensor]] = {
+            "gene": [],
+            "input_ids": [],
+            "attention_mask": [],
+        }
 
-            collated_batch["input_ids"] = torch.stack(collated_batch["input_ids"])
-            collated_batch["attention_mask"] = torch.stack(
-                collated_batch["attention_mask"]
+        for item in batch:
+            collated_batch["gene"].append(item["gene"])
+            collated_batch["input_ids"].append(
+                pad_and_truncate(item["input_ids"], self.max_length)
+            )
+            collated_batch["attention_mask"].append(
+                pad_and_truncate(item["attention_mask"], self.max_length)
             )
 
-            print("Collated batch shapes:")
-            print(f"input_ids: {collated_batch['input_ids'].shape}")
-            print(f"attention_mask: {collated_batch['attention_mask'].shape}")
+        collated_batch["input_ids"] = torch.stack(collated_batch["input_ids"])
+        collated_batch["attention_mask"] = torch.stack(collated_batch["attention_mask"])
 
-            return collated_batch
-        except Exception as e:
-            print(f"Error in collate_batch: {str(e)}")
-            print("Batch contents:")
-            for i, item in enumerate(batch):
-                print(f"Item {i}:")
-                for k, v in item.items():
-                    print(
-                        f"  {k}: {type(v)}, {len(v) if hasattr(v, '__len__') else 'N/A'}"
-                    )
-            raise
+        print("Collated batch shapes:")
+        print(f"input_ids: {collated_batch['input_ids'].shape}")
+        print(f"attention_mask: {collated_batch['attention_mask'].shape}")
+
+        return collated_batch
 
     # def process_dataset(
     #     self,
