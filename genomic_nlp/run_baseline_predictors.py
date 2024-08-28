@@ -24,11 +24,11 @@ from sklearn.metrics import roc_auc_score  # type: ignore
 from sklearn.model_selection import StratifiedKFold  # type: ignore
 
 # from baseline_models import CosineSimilarity
-from baseline_models import BaselineModel
-from baseline_models import LogisticRegressionModel
-from baseline_models import MLP
-from baseline_models import RandomForest
-from baseline_models import XGBoost
+from interaction_models import BaselineModel
+from interaction_models import LogisticRegressionModel
+from interaction_models import MLP
+from interaction_models import RandomForest
+from interaction_models import XGBoost
 from visualizers import BaselineModelVisualizer
 
 RANDOM_SEED = 42

@@ -86,7 +86,7 @@ class Word2VecEmbeddingExtractor:
 class DeBERTaEmbeddingExtractor:
     """Extract embeddings from natural language processing models."""
 
-    def __init__(self, model_path: str, max_length: int = 512, batch_size: int = 8):
+    def __init__(self, model_path: str, max_length: int = 512, batch_size: int = 16):
         """instantiate the embedding extractor class."""
         model_dir = Path(model_path)
         config_path = model_dir / "config.json"
@@ -132,55 +132,68 @@ class DeBERTaEmbeddingExtractor:
         2. CLS embeddings - embeddings of the [CLS] token
         3. Attention-weighted embeddings - embeddings weighted by attention weights
         """
-        embeddings: Dict[str, Dict[str, Any]] = {
+        embeddings: Dict[str, Dict[str, List[torch.Tensor]]] = {
+            "averaged": defaultdict(list),
+            "cls": defaultdict(list),
+            "attention_weighted": defaultdict(list),
+        }
+
+        # batched processing
+        all_occurrences = [
+            (gene, abstract_idx, token_idx)
+            for gene, occurrences in gene_occurrences.items()
+            for abstract_idx, token_idx in occurrences
+        ]
+
+        for i in tqdm(
+            range(0, len(all_occurrences), self.batch_size), desc="Processing batches"
+        ):
+            batch = all_occurrences[i : i + self.batch_size]
+            input_ids = torch.tensor(
+                [tokenized_abstracts[abstract_idx] for _, abstract_idx, _ in batch]
+            ).to(self.device)
+            attention_mask = torch.ones_like(input_ids)
+            token_indices = torch.tensor([token_idx for _, _, token_idx in batch]).to(
+                self.device
+            )
+
+            outputs = self.model(
+                input_ids, attention_mask=attention_mask, output_attentions=True
+            )
+            last_hidden_state = outputs.last_hidden_state
+            attentions = outputs.attentions[-1]  # final layer attention
+
+            for j, (gene, _, _) in enumerate(batch):
+                embeddings["averaged"][gene].append(
+                    last_hidden_state[j, token_indices[j]]
+                )
+                embeddings["cls"][gene].append(last_hidden_state[j, 0])
+
+                attention_weights = attentions[j, :, token_indices[j], :].mean(dim=0)
+                weighted_embedding = (
+                    last_hidden_state[j] * attention_weights.unsqueeze(-1)
+                ).sum(dim=0)
+                embeddings["attention_weighted"][gene].append(weighted_embedding)
+
+        # average embeddings for each gene
+        final_embeddings: Dict[str, Dict[str, torch.Tensor]] = {
             "averaged": {},
             "cls": {},
             "attention_weighted": {},
         }
 
-        for gene, occurrences in tqdm(
-            gene_occurrences.items(), desc="Processing genes"
-        ):
-            gene_embeddings: Dict[str, List[torch.Tensor]] = {
-                "averaged": [],
-                "cls": [],
-                "attention_weighted": [],
-            }
+        for embed_type in final_embeddings:
+            for gene, gene_embeddings in embeddings[embed_type].items():
+                if gene_embeddings:
+                    final_embeddings[embed_type][gene] = torch.stack(
+                        gene_embeddings
+                    ).mean(dim=0)
+                else:
+                    print(
+                        f"Warning: No embeddings found for gene {gene} in {embed_type}"
+                    )
 
-            for abstract_idx, token_idx in occurrences:
-                input_ids = (
-                    torch.tensor(tokenized_abstracts[abstract_idx])
-                    .unsqueeze(0)
-                    .to(self.device)
-                )
-                attention_mask = torch.ones_like(input_ids)
-
-                outputs = self.model(
-                    input_ids, attention_mask=attention_mask, output_attentions=True
-                )
-                last_hidden_state = outputs.last_hidden_state
-                attentions = outputs.attentions[-1]  # attention from final layer
-
-                # averaged token embeddings
-                gene_embeddings["averaged"].append(last_hidden_state[0, token_idx])
-
-                # CLS embedding
-                gene_embeddings["cls"].append(last_hidden_state[0, 0])
-
-                # attention-weighted embedding
-                attention_weights = attentions[0, :, token_idx, :].mean(dim=0)
-                weighted_embedding = (
-                    last_hidden_state[0] * attention_weights.unsqueeze(-1)
-                ).sum(dim=0)
-                gene_embeddings["attention_weighted"].append(weighted_embedding)
-
-            # average embeddings across all occurrences
-            for embed_type in embeddings:
-                embeddings[embed_type][gene] = torch.stack(
-                    gene_embeddings[embed_type]
-                ).mean(dim=0)
-
-        return embeddings
+        return final_embeddings
 
     def process_chunks_for_embeddings(
         self, chunk_files: List[str]
@@ -216,6 +229,13 @@ class DeBERTaEmbeddingExtractor:
 
         for embed_type in final_embeddings:
             for gene, embeddings in all_embeddings[embed_type].items():
-                final_embeddings[embed_type][gene] = torch.stack(embeddings).mean(dim=0)
+                if embeddings:
+                    final_embeddings[embed_type][gene] = torch.stack(embeddings).mean(
+                        dim=0
+                    )
+                else:
+                    print(
+                        f"Warning: No embeddings found for gene {gene} in {embed_type}"
+                    )
 
-        return final_embeddings, gene_counts
+        return final_embeddings, dict(gene_counts)
