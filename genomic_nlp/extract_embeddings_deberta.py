@@ -6,50 +6,42 @@
 
 
 import glob
+from pathlib import Path
 import pickle
-from typing import List
+from typing import Dict, List
 
+import torch
 from tqdm import tqdm  # type: ignore
 
 from embedding_extractor import DeBERTaEmbeddingExtractor
-from pre_tokenize import load_tokens
 
 
 def main() -> None:
     """Main function"""
     data_dir = "/ocean/projects/bio210019p/stevesho/genomic_nlp/data/combined"
     model_path = "/ocean/projects/bio210019p/stevesho/genomic_nlp/models/deberta"
-    token_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_tokens_nosyn.txt"
     output_dir = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings"
-
-    # load tokens to get the total number of genes
-    # gene_tokens = load_tokens(token_file)
-    # total_genes = len(gene_tokens)
 
     # load tokenized files
     tokenized_files = glob.glob(f"{data_dir}/tokenized_chunk_*.pkl")
     tokenized_files = [tokenized_files[0]]  # testing first for now
 
+    # instantiate the embedding extractor
     extractor = DeBERTaEmbeddingExtractor(model_path=model_path)
-    extractor.process_all_chunks(tokenized_files=tokenized_files, output_dir=output_dir)
 
-    # with open(
-    #     "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/deberta_avg_embeddings.pkl",
-    #     "wb",
-    # ) as file:
-    #     pickle.dump(avg_emb, file)
+    with torch.inference_mode():
+        final_embeddings: Dict[str, Dict[str, torch.Tensor]]
+        gene_counts: Dict[str, int]
+        final_embeddings, gene_counts = extractor.process_chunks_for_embeddings(
+            tokenized_files
+        )
 
-    # with open(
-    #     "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/deberta_cls_embeddings.pkl",
-    #     "wb",
-    # ) as file:
-    #     pickle.dump(cls_emb, file)
+    for embed_type, embeddings in final_embeddings.items():
+        with open(Path(output_dir) / f"{embed_type}_embeddings.pkl", "wb") as f:
+            pickle.dump(embeddings, f)
 
-    # with open(
-    #     "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/deberta_att_embeddings.pkl",
-    #     "wb",
-    # ) as file:
-    #     pickle.dump(att_emb, file)
+    with open(Path(output_dir) / "gene_counts.pkl", "wb") as f:
+        pickle.dump(gene_counts, f)
 
 
 if __name__ == "__main__":

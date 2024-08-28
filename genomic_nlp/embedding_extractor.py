@@ -5,10 +5,11 @@
 """Extract embeddings from natural language processing models."""
 
 
+from collections import defaultdict
 import os
 from pathlib import Path
 import pickle
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, DefaultDict, Dict, List, Optional, Set, Tuple, Union
 
 from gensim.models import Word2Vec  # type: ignore
 import numpy as np
@@ -19,8 +20,6 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm  # type: ignore
 from transformers import DebertaV2Config  # type: ignore
 from transformers import DebertaV2ForMaskedLM  # type: ignore
-
-from streaming_corpus import EmbeddingExtractorStreamingCorpus
 
 
 class Word2VecEmbeddingExtractor:
@@ -122,269 +121,101 @@ class DeBERTaEmbeddingExtractor:
         return {k.replace("module.", ""): v for k, v in state_dict.items()}
 
     @torch.inference_mode()
-    def get_embeddings(
+    def extract_embeddings(
         self,
-        batch: Dict[str, torch.Tensor],
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        tokenized_abstracts: List[List[int]],
+        gene_occurrences: Dict[str, List[Tuple[int, int]]],
+    ) -> Dict[str, Dict[str, torch.Tensor]]:
         """Get three different types of embeddings from a DeBERTa model:
 
         1. Averaged embeddings - average over all token embeddings
         2. CLS embeddings - embeddings of the [CLS] token
         3. Attention-weighted embeddings - embeddings weighted by attention weights
         """
-        inputs = {
-            k: v.to(self.device, non_blocking=True)
-            for k, v in batch.items()
-            if k in ["input_ids", "attention_mask"]
-        }
-
-        print(f"Input shape: {inputs['input_ids'].shape}")
-        print(f"Attention mask shape: {inputs['attention_mask'].shape}")
-
-        with torch.amp.autocast(device_type=self.device.type, dtype=self.amp_dtype):
-            outputs = self.model(
-                **inputs, output_attentions=True, output_hidden_states=True
-            )
-            last_hidden_states = outputs.last_hidden_state
-            attention_weights = outputs.attentions[-1]
-
-            print(f"Last hidden states shape: {last_hidden_states.shape}")
-            print(f"Attention weights shape: {attention_weights.shape}")
-
-            averaged_embeddings = last_hidden_states.mean(dim=1)
-            cls_embeddings = last_hidden_states[:, 0, :]
-            attention_weights = attention_weights.mean(dim=1).mean(dim=1)
-            attention_weighted_embeddings = (
-                last_hidden_states * attention_weights.unsqueeze(-1)
-            ).sum(dim=1)
-
-        return averaged_embeddings, cls_embeddings, attention_weighted_embeddings
-
-    def process_chunk(
-        self,
-        tokenized_file: str,
-        output_file: str,
-    ) -> None:
-        """Process a single chunk of data and save embeddings."""
-        # get number of samples for tqdm
-        # with open(tokenized_file, "rb") as f:
-        #     tokenized_abstracts, _ = pickle.load(f)
-        # total_examples = len(tokenized_abstracts)
-        # del tokenized_abstracts
-
-        dataset = EmbeddingExtractorStreamingCorpus(
-            [tokenized_file],
-            max_length=self.max_length,
-            batch_size=self.batch_size,
-        )
-        total_batches = sum(1 for _ in dataset)
-        # dataloader = DataLoader(
-        #     dataset,
-        #     batch_size=self.batch_size,
-        #     num_workers=1,
-        #     pin_memory=True,
-        #     prefetch_factor=2,
-        #     collate_fn=self.collate_batch,
-        # )
-
         embeddings: Dict[str, Dict[str, Any]] = {
             "averaged": {},
             "cls": {},
             "attention_weighted": {},
         }
 
-        for batch in tqdm(
-            dataset,
-            total=total_batches,
-            desc=f"Processing {os.path.basename(tokenized_file)}",
-            unit="batch",
+        for gene, occurrences in tqdm(
+            gene_occurrences.items(), desc="Processing genes"
         ):
-            genes = batch["gene"]
-            input_ids = batch["input_ids"].to(self.device)
-            attention_mask = batch["attention_mask"].to(self.device)
+            gene_embeddings: Dict[str, List[torch.Tensor]] = {
+                "averaged": [],
+                "cls": [],
+                "attention_weighted": [],
+            }
 
-            with torch.autocast(device_type="cuda"):
-                avg_emb, cls_emb, att_emb = self.get_embeddings(
-                    {"input_ids": input_ids, "attention_mask": attention_mask}
+            for abstract_idx, token_idx in occurrences:
+                input_ids = (
+                    torch.tensor(tokenized_abstracts[abstract_idx])
+                    .unsqueeze(0)
+                    .to(self.device)
                 )
+                attention_mask = torch.ones_like(input_ids)
 
-            # store embeddings
-            for gene, avg, cls, att in zip(
-                genes,
-                avg_emb.cpu().numpy(),
-                cls_emb.cpu().numpy(),
-                att_emb.cpu().numpy(),
-            ):
-                if gene not in embeddings["averaged"]:
-                    embeddings["averaged"][gene] = []
-                    embeddings["cls"][gene] = []
-                    embeddings["attention_weighted"][gene] = []
+                outputs = self.model(
+                    input_ids, attention_mask=attention_mask, output_attentions=True
+                )
+                last_hidden_state = outputs.last_hidden_state
+                attentions = outputs.attentions[-1]  # attention from final layer
 
-                embeddings["averaged"][gene].append(avg)
-                embeddings["cls"][gene].append(cls)
-                embeddings["attention_weighted"][gene].append(att)
+                # averaged token embeddings
+                gene_embeddings["averaged"].append(last_hidden_state[0, token_idx])
 
-            # clear CUDA cache after processing each batch
-            torch.cuda.empty_cache()
+                # CLS embedding
+                gene_embeddings["cls"].append(last_hidden_state[0, 0])
 
-        # average embeddings for genes with multiple occurrences
-        for emb_type, value in embeddings.items():
-            for gene in value:
-                embeddings[emb_type][gene] = np.mean(embeddings[emb_type][gene], axis=0)
+                # attention-weighted embedding
+                attention_weights = attentions[0, :, token_idx, :].mean(dim=0)
+                weighted_embedding = (
+                    last_hidden_state[0] * attention_weights.unsqueeze(-1)
+                ).sum(dim=0)
+                gene_embeddings["attention_weighted"].append(weighted_embedding)
 
-        # save embeddings
-        with open(output_file, "wb") as f:
-            pickle.dump(embeddings, f)
+            # average embeddings across all occurrences
+            for embed_type in embeddings:
+                embeddings[embed_type][gene] = torch.stack(
+                    gene_embeddings[embed_type]
+                ).mean(dim=0)
 
-    def process_all_chunks(
-        self,
-        tokenized_files: List[str],
-        output_dir: str,
-    ) -> None:
-        """Process all chunks of data and save embeddings."""
-        output_path = Path(output_dir)
-        output_path.mkdir(parents=True, exist_ok=True)
+        return embeddings
 
-        for i, tokenized_file in enumerate(tokenized_files):
-            output_file = output_path / f"deberta_embeddings_chunk_{i}.pkl"
-            self.process_chunk(tokenized_file, str(output_file))
+    def process_chunks_for_embeddings(
+        self, chunk_files: List[str]
+    ) -> Tuple[Dict[str, Dict[str, torch.Tensor]], Dict[str, int]]:
+        """Process a list of chunked and pre-tokenized abstracts one at a time
+        and extract gene embeddings to an `all_embeddings` dictionary`. When all
+        abstracts have been processed, return the dictionary.
+        """
+        all_embeddings: DefaultDict[str, DefaultDict[str, List[torch.Tensor]]] = (
+            defaultdict(lambda: defaultdict(list))
+        )
+        gene_counts: DefaultDict[str, int] = defaultdict(int)
 
-    def combine_embeddings(
-        self,
-        embedding_files: List[str],
-        output_file: str,
-    ) -> None:
-        """Combine embeddings across chunks."""
-        combined_embeddings: Dict[str, Dict[str, Any]] = {
+        for chunk_file in tqdm(chunk_files, desc="Processing chunks"):
+            with open(chunk_file, "rb") as f:
+                tokenized_abstracts, gene_occurrences = pickle.load(f)
+
+            chunk_embeddings = self.extract_embeddings(
+                tokenized_abstracts, gene_occurrences
+            )
+
+            for embed_type in chunk_embeddings:
+                for gene, embedding in chunk_embeddings[embed_type].items():
+                    all_embeddings[embed_type][gene].append(embedding)
+                    gene_counts[gene] += 1
+
+        # average embeddings across all chunks
+        final_embeddings: Dict[str, Dict[str, torch.Tensor]] = {
             "averaged": {},
             "cls": {},
             "attention_weighted": {},
         }
 
-        for file in tqdm(embedding_files, desc="Combining embeddings"):
-            with open(file, "rb") as f:
-                chunk_embeddings = pickle.load(f)
+        for embed_type in final_embeddings:
+            for gene, embeddings in all_embeddings[embed_type].items():
+                final_embeddings[embed_type][gene] = torch.stack(embeddings).mean(dim=0)
 
-            for emb_type in combined_embeddings:
-                for gene, emb in chunk_embeddings[emb_type].items():
-                    if gene not in combined_embeddings[emb_type]:
-                        combined_embeddings[emb_type][gene] = []
-                    combined_embeddings[emb_type][gene].append(emb)
-
-        # average embeddings for genes with multiple occurrences
-        for emb_type, value in combined_embeddings.items():
-            for gene in value:
-                combined_embeddings[emb_type][gene] = (
-                    np.mean(combined_embeddings[emb_type][gene], axis=0)
-                    if len(combined_embeddings[emb_type][gene]) > 1
-                    else combined_embeddings[emb_type][gene][0]
-                )
-        # save combined embeddings
-        with open(output_file, "wb") as f:
-            pickle.dump(combined_embeddings, f)
-
-    def collate_batch(self, batch: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Collate a batch of tokenized examples."""
-        max_len = min(max(len(item["input_ids"]) for item in batch), self.max_length)
-
-        collated_batch: Dict[str, Union[List[Any], torch.Tensor]] = {
-            "gene": [],
-            "input_ids": [],
-            "attention_mask": [],
-        }
-
-        for item in batch:
-            collated_batch["gene"].extend(item["gene"])
-            collated_batch["input_ids"].append(item["input_ids"])
-            collated_batch["attention_mask"].append(item["attention_mask"])
-
-        collated_batch["input_ids"] = torch.cat(collated_batch["input_ids"], dim=0)
-        collated_batch["attention_mask"] = torch.cat(
-            collated_batch["attention_mask"], dim=0
-        )
-
-        # print("Collated batch shapes:")
-        # print(f"input_ids: {collated_batch['input_ids'].shape}")
-        # print(f"attention_mask: {collated_batch['attention_mask'].shape}")
-
-        return collated_batch
-
-    @staticmethod
-    def pad_and_truncate(tensor: torch.Tensor, target_len: int) -> torch.Tensor:
-        """Pad or truncate a tensor to a target length."""
-        if tensor.size(0) > target_len:
-            return tensor[:target_len]
-        return torch.nn.functional.pad(
-            tensor, (0, target_len - tensor.size(0)), value=0
-        )
-
-    # def process_dataset(
-    #     self,
-    #     tokenized_files: List[str],
-    #     total_genes: int,
-    # ) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray], Dict[str, np.ndarray]]:
-    #     """Process a dataset to extract embeddings."""
-    #     TOTAL_BATCHES = 3088709 // self.batch_size
-
-    #     embeddings: Dict[str, Dict[str, Any]] = {
-    #         "averaged": {},
-    #         "cls": {},
-    #         "attention_weighted": {},
-    #     }
-
-    #     # prepare the dataset and dataloader
-    #     dataset = EmbeddingExtractorStreamingCorpus(tokenized_files)
-    #     dataloader = DataLoader(
-    #         dataset,
-    #         batch_size=self.batch_size,
-    #         num_workers=5,
-    #         pin_memory=True,
-    #         prefetch_factor=10,
-    #         persistent_workers=True,
-    #     )
-
-    #     # pre-allocate CUDA tensors for accumulating embeddings
-    #     accumulated_embeddings = {
-    #         emb_type: torch.zeros(
-    #             (total_genes, 768), dtype=torch.float32, device=self.device
-    #         )
-    #         for emb_type in embeddings
-    #     }
-    #     counts = torch.zeros(total_genes, dtype=torch.int32, device=self.device)
-
-    #     # process dataset and extract embeddings
-    #     with tqdm(total=TOTAL_BATCHES, desc="Processing batches") as pbar:
-    #         for batch in dataloader:
-    #             avg_emb, cls_emb, att_emb = self.get_embeddings(batch)
-
-    #             gene_indices = torch.tensor(
-    #                 [dataset.gene_to_index[gene] for gene in batch["gene"]],
-    #                 device=self.device,
-    #             )
-
-    #             for emb_type, emb in zip(
-    #                 ["averaged", "cls", "attention_weighted"],
-    #                 [avg_emb, cls_emb, att_emb],
-    #             ):
-    #                 accumulated_embeddings[emb_type].index_add_(0, gene_indices, emb)
-
-    #             counts.index_add_(
-    #                 0, gene_indices, torch.ones_like(gene_indices, dtype=torch.int32)
-    #             )
-
-    #             pbar.update(1)
-
-    #     # average the embeddings
-    #     for emb_type in embeddings:
-    #         avg_embeddings = (
-    #             (accumulated_embeddings[emb_type] / counts.unsqueeze(1)).cpu().numpy()
-    #         )
-    #         embeddings[emb_type] = {
-    #             gene: avg_embeddings[i] for gene, i in dataset.gene_to_index.items()
-    #         }
-
-    #     return (
-    #         embeddings["averaged"],
-    #         embeddings["cls"],
-    #         embeddings["attention_weighted"],
-    #     )
+        return final_embeddings, gene_counts
