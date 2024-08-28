@@ -5,6 +5,7 @@
 """Extract embeddings from natural language processing models."""
 
 
+import os
 from pathlib import Path
 import pickle
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
@@ -166,24 +167,25 @@ class DeBERTaEmbeddingExtractor:
     ) -> None:
         """Process a single chunk of data and save embeddings."""
         # get number of samples for tqdm
-        with open(tokenized_file, "rb") as f:
-            tokenized_abstracts, _ = pickle.load(f)
-        total_examples = len(tokenized_abstracts)
-        del tokenized_abstracts
+        # with open(tokenized_file, "rb") as f:
+        #     tokenized_abstracts, _ = pickle.load(f)
+        # total_examples = len(tokenized_abstracts)
+        # del tokenized_abstracts
 
         dataset = EmbeddingExtractorStreamingCorpus(
             [tokenized_file],
             max_length=self.max_length,
             batch_size=self.batch_size,
         )
-        dataloader = DataLoader(
-            dataset,
-            batch_size=self.batch_size,
-            num_workers=1,
-            pin_memory=True,
-            prefetch_factor=2,
-            collate_fn=self.collate_batch,
-        )
+        total_batches = sum(1 for _ in dataset)
+        # dataloader = DataLoader(
+        #     dataset,
+        #     batch_size=self.batch_size,
+        #     num_workers=1,
+        #     pin_memory=True,
+        #     prefetch_factor=2,
+        #     collate_fn=self.collate_batch,
+        # )
 
         embeddings: Dict[str, Dict[str, Any]] = {
             "averaged": {},
@@ -191,17 +193,24 @@ class DeBERTaEmbeddingExtractor:
             "attention_weighted": {},
         }
 
-        processed_examples = 0
-        pbar = tqdm(
-            total=total_examples, desc=f"Processing {Path(tokenized_file).name}"
-        )
+        for batch in tqdm(
+            dataset,
+            total=total_batches,
+            desc=f"Processing {os.path.basename(tokenized_file)}",
+            unit="batch",
+        ):
+            genes = batch["gene"]
+            input_ids = batch["input_ids"].to(self.device)
+            attention_mask = batch["attention_mask"].to(self.device)
 
-        for batch in dataloader:
-            print(f"Batch size: {len(batch['gene'])}")
-            avg_emb, cls_emb, att_emb = self.get_embeddings(batch)
+            with torch.autocast(device_type="cuda"):
+                avg_emb, cls_emb, att_emb = self.get_embeddings(
+                    {"input_ids": input_ids, "attention_mask": attention_mask}
+                )
 
+            # store embeddings
             for gene, avg, cls, att in zip(
-                batch["gene"],
+                genes,
                 avg_emb.cpu().numpy(),
                 cls_emb.cpu().numpy(),
                 att_emb.cpu().numpy(),
@@ -215,20 +224,13 @@ class DeBERTaEmbeddingExtractor:
                 embeddings["cls"][gene].append(cls)
                 embeddings["attention_weighted"][gene].append(att)
 
+            # clear CUDA cache after processing each batch
             torch.cuda.empty_cache()
-            processed_examples += len(batch["gene"])
-            pbar.update(len(batch["gene"]))
-
-        pbar.close()
 
         # average embeddings for genes with multiple occurrences
         for emb_type, value in embeddings.items():
             for gene in value:
-                embeddings[emb_type][gene] = (
-                    np.mean(embeddings[emb_type][gene], axis=0)
-                    if len(embeddings[emb_type][gene]) > 1
-                    else embeddings[emb_type][gene][0]
-                )
+                embeddings[emb_type][gene] = np.mean(embeddings[emb_type][gene], axis=0)
 
         # save embeddings
         with open(output_file, "wb") as f:
@@ -301,9 +303,9 @@ class DeBERTaEmbeddingExtractor:
             collated_batch["attention_mask"], dim=0
         )
 
-        print("Collated batch shapes:")
-        print(f"input_ids: {collated_batch['input_ids'].shape}")
-        print(f"attention_mask: {collated_batch['attention_mask'].shape}")
+        # print("Collated batch shapes:")
+        # print(f"input_ids: {collated_batch['input_ids'].shape}")
+        # print(f"attention_mask: {collated_batch['attention_mask'].shape}")
 
         return collated_batch
 

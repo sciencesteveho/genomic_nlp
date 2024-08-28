@@ -78,7 +78,7 @@ class EmbeddingExtractorStreamingCorpus(IterableDataset):
         tokenized_files: List[str],
         max_length: int = 512,
         context_window: int = 128,
-        batch_size: int = 32,
+        batch_size: int = 16,
     ) -> None:
         """Instantiate the streaming corpus class."""
         self.tokenized_files = tokenized_files
@@ -161,17 +161,11 @@ class EmbeddingExtractorStreamingCorpus(IterableDataset):
                 padded_contexts[i, : len(context)] = context
                 attention_masks[i, : len(context)] = 1
 
-            result = {
+            yield {
                 "gene": genes,
                 "input_ids": torch.tensor(padded_contexts),
                 "attention_mask": torch.tensor(attention_masks),
             }
-
-            print(
-                f"Yielding batch: genes: {len(result['gene'])}, input_ids: {result['input_ids'].shape}, attention_mask: {result['attention_mask'].shape}"
-            )
-
-            yield result
 
     def collate_batch(self, batch: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Collate a batch of tokenized examples."""
