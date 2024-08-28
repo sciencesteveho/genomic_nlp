@@ -4,27 +4,19 @@
 
 """Extract embeddings from natural language processing models."""
 
-import os
+
 from pathlib import Path
 import pickle
-import re
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from gensim.models import Word2Vec  # type: ignore
 import numpy as np
 from safetensors.torch import load_file  # type: ignore
 import torch
-from torch.amp import autocast
-from torch.cuda.amp import GradScaler
 from torch.utils.data import DataLoader
-from torch.utils.data import IterableDataset
 from tqdm import tqdm  # type: ignore
-from transformers import AutoConfig  # type: ignore
-from transformers import AutoModel  # type: ignore
-from transformers import AutoTokenizer  # type: ignore
 from transformers import DebertaV2Config  # type: ignore
 from transformers import DebertaV2ForMaskedLM  # type: ignore
-from transformers import DebertaV2Tokenizer  # type: ignore
 
 from streaming_corpus import EmbeddingExtractorStreamingCorpus
 
@@ -157,13 +149,25 @@ class DeBERTaEmbeddingExtractor:
 
         return averaged_embeddings, cls_embeddings, attention_weighted_embeddings
 
-    def process_dataset(
+    def process_chunk(
         self,
-        tokenized_files: List[str],
-        total_genes: int,
-    ) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray], Dict[str, np.ndarray]]:
-        """Process a dataset to extract embeddings."""
-        TOTAL_BATCHES = 3088709 // self.batch_size
+        tokenized_file: str,
+        output_file: str,
+    ) -> None:
+        """Process a single chunk of data and save embeddings."""
+        dataset = EmbeddingExtractorStreamingCorpus(
+            [tokenized_file],
+            max_length=self.max_length,
+            batch_size=self.batch_size,
+        )
+        dataloader = DataLoader(
+            dataset,
+            batch_size=self.batch_size,
+            num_workers=1,
+            pin_memory=True,
+            prefetch_factor=2,
+            collate_fn=dataset.collate_batch,
+        )
 
         embeddings: Dict[str, Dict[str, Any]] = {
             "averaged": {},
@@ -171,59 +175,151 @@ class DeBERTaEmbeddingExtractor:
             "attention_weighted": {},
         }
 
-        # prepare the dataset and dataloader
-        dataset = EmbeddingExtractorStreamingCorpus(tokenized_files)
-        dataloader = DataLoader(
-            dataset,
-            batch_size=self.batch_size,
-            num_workers=5,
-            pin_memory=True,
-            prefetch_factor=10,
-            persistent_workers=True,
-        )
+        for batch in tqdm(dataloader, desc=f"Processing {tokenized_file}"):
+            avg_emb, cls_emb, att_emb = self.get_embeddings(batch)
 
-        # pre-allocate CUDA tensors for accumulating embeddings
-        accumulated_embeddings = {
-            emb_type: torch.zeros(
-                (total_genes, 768), dtype=torch.float32, device=self.device
-            )
-            for emb_type in embeddings
+            for gene, avg, cls, att in zip(
+                batch["gene"],
+                avg_emb.cpu().numpy(),
+                cls_emb.cpu().numpy(),
+                att_emb.cpu().numpy(),
+            ):
+                if gene not in embeddings["averaged"]:
+                    embeddings["averaged"][gene] = []
+                    embeddings["cls"][gene] = []
+                    embeddings["attention_weighted"][gene] = []
+
+                embeddings["averaged"][gene].append(avg)
+                embeddings["cls"][gene].append(cls)
+                embeddings["attention_weighted"][gene].append(att)
+
+        # average embeddings for genes with multiple occurrences
+        for emb_type, value in embeddings.items():
+            for gene in value:
+                embeddings[emb_type][gene] = (
+                    np.mean(embeddings[emb_type][gene], axis=0)
+                    if len(embeddings[emb_type][gene]) > 1
+                    else embeddings[emb_type][gene][0]
+                )
+
+        # save embeddings
+        with open(output_file, "wb") as f:
+            pickle.dump(embeddings, f)
+
+    def process_all_chunks(
+        self,
+        tokenized_files: List[str],
+        output_dir: str,
+    ) -> None:
+        """Process all chunks of data and save embeddings."""
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+
+        for i, tokenized_file in enumerate(tokenized_files):
+            output_file = output_path / f"deberta_embeddings_chunk_{i}.pkl"
+            self.process_chunk(tokenized_file, str(output_file))
+
+    def combine_embeddings(
+        self,
+        embedding_files: List[str],
+        output_file: str,
+    ) -> None:
+        """Combine embeddings across chunks."""
+        combined_embeddings: Dict[str, Dict[str, Any]] = {
+            "averaged": {},
+            "cls": {},
+            "attention_weighted": {},
         }
-        counts = torch.zeros(total_genes, dtype=torch.int32, device=self.device)
 
-        # process dataset and extract embeddings
-        with tqdm(total=TOTAL_BATCHES, desc="Processing batches") as pbar:
-            for batch in dataloader:
-                avg_emb, cls_emb, att_emb = self.get_embeddings(batch)
+        for file in tqdm(embedding_files, desc="Combining embeddings"):
+            with open(file, "rb") as f:
+                chunk_embeddings = pickle.load(f)
 
-                gene_indices = torch.tensor(
-                    [dataset.gene_to_index[gene] for gene in batch["gene"]],
-                    device=self.device,
+            for emb_type in combined_embeddings:
+                for gene, emb in chunk_embeddings[emb_type].items():
+                    if gene not in combined_embeddings[emb_type]:
+                        combined_embeddings[emb_type][gene] = []
+                    combined_embeddings[emb_type][gene].append(emb)
+
+        # average embeddings for genes with multiple occurrences
+        for emb_type, value in combined_embeddings.items():
+            for gene in value:
+                combined_embeddings[emb_type][gene] = (
+                    np.mean(combined_embeddings[emb_type][gene], axis=0)
+                    if len(combined_embeddings[emb_type][gene]) > 1
+                    else combined_embeddings[emb_type][gene][0]
                 )
+        # save combined embeddings
+        with open(output_file, "wb") as f:
+            pickle.dump(combined_embeddings, f)
 
-                for emb_type, emb in zip(
-                    ["averaged", "cls", "attention_weighted"],
-                    [avg_emb, cls_emb, att_emb],
-                ):
-                    accumulated_embeddings[emb_type].index_add_(0, gene_indices, emb)
+    # def process_dataset(
+    #     self,
+    #     tokenized_files: List[str],
+    #     total_genes: int,
+    # ) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray], Dict[str, np.ndarray]]:
+    #     """Process a dataset to extract embeddings."""
+    #     TOTAL_BATCHES = 3088709 // self.batch_size
 
-                counts.index_add_(
-                    0, gene_indices, torch.ones_like(gene_indices, dtype=torch.int32)
-                )
+    #     embeddings: Dict[str, Dict[str, Any]] = {
+    #         "averaged": {},
+    #         "cls": {},
+    #         "attention_weighted": {},
+    #     }
 
-                pbar.update(1)
+    #     # prepare the dataset and dataloader
+    #     dataset = EmbeddingExtractorStreamingCorpus(tokenized_files)
+    #     dataloader = DataLoader(
+    #         dataset,
+    #         batch_size=self.batch_size,
+    #         num_workers=5,
+    #         pin_memory=True,
+    #         prefetch_factor=10,
+    #         persistent_workers=True,
+    #     )
 
-        # average the embeddings
-        for emb_type in embeddings:
-            avg_embeddings = (
-                (accumulated_embeddings[emb_type] / counts.unsqueeze(1)).cpu().numpy()
-            )
-            embeddings[emb_type] = {
-                gene: avg_embeddings[i] for gene, i in dataset.gene_to_index.items()
-            }
+    #     # pre-allocate CUDA tensors for accumulating embeddings
+    #     accumulated_embeddings = {
+    #         emb_type: torch.zeros(
+    #             (total_genes, 768), dtype=torch.float32, device=self.device
+    #         )
+    #         for emb_type in embeddings
+    #     }
+    #     counts = torch.zeros(total_genes, dtype=torch.int32, device=self.device)
 
-        return (
-            embeddings["averaged"],
-            embeddings["cls"],
-            embeddings["attention_weighted"],
-        )
+    #     # process dataset and extract embeddings
+    #     with tqdm(total=TOTAL_BATCHES, desc="Processing batches") as pbar:
+    #         for batch in dataloader:
+    #             avg_emb, cls_emb, att_emb = self.get_embeddings(batch)
+
+    #             gene_indices = torch.tensor(
+    #                 [dataset.gene_to_index[gene] for gene in batch["gene"]],
+    #                 device=self.device,
+    #             )
+
+    #             for emb_type, emb in zip(
+    #                 ["averaged", "cls", "attention_weighted"],
+    #                 [avg_emb, cls_emb, att_emb],
+    #             ):
+    #                 accumulated_embeddings[emb_type].index_add_(0, gene_indices, emb)
+
+    #             counts.index_add_(
+    #                 0, gene_indices, torch.ones_like(gene_indices, dtype=torch.int32)
+    #             )
+
+    #             pbar.update(1)
+
+    #     # average the embeddings
+    #     for emb_type in embeddings:
+    #         avg_embeddings = (
+    #             (accumulated_embeddings[emb_type] / counts.unsqueeze(1)).cpu().numpy()
+    #         )
+    #         embeddings[emb_type] = {
+    #             gene: avg_embeddings[i] for gene, i in dataset.gene_to_index.items()
+    #         }
+
+    #     return (
+    #         embeddings["averaged"],
+    #         embeddings["cls"],
+    #         embeddings["attention_weighted"],
+    #     )
