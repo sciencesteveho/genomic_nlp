@@ -295,11 +295,9 @@ class DeBERTaEmbeddingExtractor:
             collated_batch["input_ids"].append(item["input_ids"])
             collated_batch["attention_mask"].append(item["attention_mask"])
 
-        collated_batch["input_ids"] = pad_sequence(
-            collated_batch["input_ids"], batch_first=True
-        )
-        collated_batch["attention_mask"] = pad_sequence(
-            collated_batch["attention_mask"], batch_first=True
+        collated_batch["input_ids"] = torch.cat(collated_batch["input_ids"], dim=0)
+        collated_batch["attention_mask"] = torch.cat(
+            collated_batch["attention_mask"], dim=0
         )
 
         print("Collated batch shapes:")
