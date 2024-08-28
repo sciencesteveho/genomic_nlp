@@ -86,7 +86,7 @@ class Word2VecEmbeddingExtractor:
 class DeBERTaEmbeddingExtractor:
     """Extract embeddings from natural language processing models."""
 
-    def __init__(self, model_path: str, max_length: int = 512, batch_size: int = 64):
+    def __init__(self, model_path: str, max_length: int = 512, batch_size: int = 8):
         """instantiate the embedding extractor class."""
         model_dir = Path(model_path)
         config_path = model_dir / "config.json"
@@ -215,6 +215,7 @@ class DeBERTaEmbeddingExtractor:
                 embeddings["cls"][gene].append(cls)
                 embeddings["attention_weighted"][gene].append(att)
 
+            torch.cuda.empty_cache()
             processed_examples += len(batch["gene"])
             pbar.update(len(batch["gene"]))
 
