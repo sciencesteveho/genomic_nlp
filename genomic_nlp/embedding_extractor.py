@@ -112,6 +112,8 @@ class DeBERTaEmbeddingExtractor:
         self.model.eval()
 
         print("Model loaded successfully.")
+        print(f"Model hidden size: {config.hidden_size}")
+        print(f"Max length: {self.max_length}")
 
     def _rename_state_dict_keys(self, state_dict: Dict[str, Any]) -> Dict[str, Any]:
         """Rename state dict keys to remove the 'module.' prefix."""
@@ -131,14 +133,21 @@ class DeBERTaEmbeddingExtractor:
         inputs = {
             k: v.to(self.device, non_blocking=True)
             for k, v in batch.items()
-            if k in ["input_ids", "attention_mask", "token_type_ids"]
+            if k in ["input_ids", "attention_mask"]
         }
+
+        print(f"Input shape: {inputs['input_ids'].shape}")
+        print(f"Attention mask shape: {inputs['attention_mask'].shape}")
+
         with torch.amp.autocast(device_type=self.device.type, dtype=self.amp_dtype):
             outputs = self.model(
                 **inputs, output_attentions=True, output_hidden_states=True
             )
             last_hidden_states = outputs.last_hidden_state
             attention_weights = outputs.attentions[-1]
+
+            print(f"Last hidden states shape: {last_hidden_states.shape}")
+            print(f"Attention weights shape: {attention_weights.shape}")
 
             averaged_embeddings = last_hidden_states.mean(dim=1)
             cls_embeddings = last_hidden_states[:, 0, :]
