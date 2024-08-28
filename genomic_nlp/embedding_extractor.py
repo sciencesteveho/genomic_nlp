@@ -281,15 +281,28 @@ class DeBERTaEmbeddingExtractor:
     @staticmethod
     def collate_batch(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Collate a batch of tokenized examples."""
+        max_len = max(len(item["input_ids"]) for item in batch)
         return {
             "gene": [item["gene"] for item in batch],
-            "input_ids": torch.nn.utils.rnn.pad_sequence(
-                [item["input_ids"] for item in batch], batch_first=True, padding_value=0
+            "input_ids": torch.stack(
+                [
+                    torch.nn.functional.pad(
+                        item["input_ids"],
+                        (0, max_len - len(item["input_ids"])),
+                        value=0,
+                    )
+                    for item in batch
+                ]
             ),
-            "attention_mask": torch.nn.utils.rnn.pad_sequence(
-                [item["attention_mask"] for item in batch],
-                batch_first=True,
-                padding_value=0,
+            "attention_mask": torch.stack(
+                [
+                    torch.nn.functional.pad(
+                        item["attention_mask"],
+                        (0, max_len - len(item["attention_mask"])),
+                        value=0,
+                    )
+                    for item in batch
+                ]
             ),
         }
 
