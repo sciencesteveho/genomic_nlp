@@ -13,6 +13,7 @@ from gensim.models import Word2Vec  # type: ignore
 import numpy as np
 from safetensors.torch import load_file  # type: ignore
 import torch
+from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
 from tqdm import tqdm  # type: ignore
 from transformers import DebertaV2Config  # type: ignore
@@ -284,16 +285,26 @@ class DeBERTaEmbeddingExtractor:
         max_len = min(max(len(item["input_ids"]) for item in batch), self.max_length)
 
         collated_batch: Dict[str, Union[List[Any], torch.Tensor]] = {
-            "gene": [item["gene"] for item in batch],
-            "input_ids": torch.stack([item["input_ids"] for item in batch]),
-            "attention_mask": torch.stack([item["attention_mask"] for item in batch]),
+            "gene": [],
+            "input_ids": [],
+            "attention_mask": [],
         }
 
+        for item in batch:
+            collated_batch["gene"].extend(item["gene"])
+            collated_batch["input_ids"].append(item["input_ids"])
+            collated_batch["attention_mask"].append(item["attention_mask"])
+
+        collated_batch["input_ids"] = pad_sequence(
+            collated_batch["input_ids"], batch_first=True
+        )
+        collated_batch["attention_mask"] = pad_sequence(
+            collated_batch["attention_mask"], batch_first=True
+        )
+
         print("Collated batch shapes:")
-        if isinstance(collated_batch["input_ids"], torch.Tensor):
-            print(f"input_ids: {collated_batch['input_ids'].shape}")
-        if isinstance(collated_batch["attention_mask"], torch.Tensor):
-            print(f"attention_mask: {collated_batch['attention_mask'].shape}")
+        print(f"input_ids: {collated_batch['input_ids'].shape}")
+        print(f"attention_mask: {collated_batch['attention_mask'].shape}")
 
         return collated_batch
 
