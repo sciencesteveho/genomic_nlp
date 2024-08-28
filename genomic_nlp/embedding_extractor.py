@@ -279,13 +279,8 @@ class DeBERTaEmbeddingExtractor:
         with open(output_file, "wb") as f:
             pickle.dump(combined_embeddings, f)
 
-    @staticmethod
-    def collate_batch(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def collate_batch(self, batch: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Collate a batch of tokenized examples."""
-        max_len = max(len(item["input_ids"]) for item in batch)
-
-        # ensure max_len doesn't exceed the model's maximum length
-        max_len = min(max_len, 512)
 
         def pad_and_truncate(
             tensor: Union[List[int], torch.Tensor], target_len: int
@@ -299,24 +294,26 @@ class DeBERTaEmbeddingExtractor:
             )
 
         try:
-            collated_batch = {
+            collated_batch: Dict[str, Any] = {
                 "gene": [item["gene"] for item in batch],
-                "input_ids": torch.stack(
-                    [pad_and_truncate(item["input_ids"], max_len) for item in batch]
-                ),
-                "attention_mask": torch.stack(
-                    [
-                        pad_and_truncate(item["attention_mask"], max_len)
-                        for item in batch
-                    ]
-                ),
+                "input_ids": [
+                    pad_and_truncate(item["input_ids"], self.max_length)
+                    for item in batch
+                ],
+                "attention_mask": [
+                    pad_and_truncate(item["attention_mask"], self.max_length)
+                    for item in batch
+                ],
             }
 
+            collated_batch["input_ids"] = torch.stack(collated_batch["input_ids"])
+            collated_batch["attention_mask"] = torch.stack(
+                collated_batch["attention_mask"]
+            )
+
             print("Collated batch shapes:")
-            if isinstance(collated_batch["input_ids"], torch.Tensor):
-                print(f"input_ids: {collated_batch['input_ids'].shape}")
-            if isinstance(collated_batch["attention_mask"], torch.Tensor):
-                print(f"attention_mask: {collated_batch['attention_mask'].shape}")
+            print(f"input_ids: {collated_batch['input_ids'].shape}")
+            print(f"attention_mask: {collated_batch['attention_mask'].shape}")
 
             return collated_batch
         except Exception as e:
