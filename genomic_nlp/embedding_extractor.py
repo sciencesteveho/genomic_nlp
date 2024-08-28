@@ -7,7 +7,7 @@
 
 from pathlib import Path
 import pickle
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from gensim.models import Word2Vec  # type: ignore
 import numpy as np
@@ -196,6 +196,7 @@ class DeBERTaEmbeddingExtractor:
         )
 
         for batch in dataloader:
+            print(f"Batch size: {len(batch['gene'])}")
             avg_emb, cls_emb, att_emb = self.get_embeddings(batch)
 
             for gene, avg, cls, att in zip(
@@ -281,28 +282,53 @@ class DeBERTaEmbeddingExtractor:
     @staticmethod
     def collate_batch(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Collate a batch of tokenized examples."""
-        max_len = max(item["input_ids"].size(0) for item in batch)
+        max_len = max(len(item["input_ids"]) for item in batch)
 
         # ensure max_len doesn't exceed the model's maximum length
         max_len = min(max_len, 512)
 
-        def pad_tensor(tensor: torch.Tensor, target_len: int) -> torch.Tensor:
+        def pad_and_truncate(
+            tensor: Union[List[int], torch.Tensor], target_len: int
+        ) -> torch.Tensor:
+            if isinstance(tensor, list):
+                tensor = torch.tensor(tensor)
+            if len(tensor) > target_len:
+                return tensor[:target_len]
             return torch.nn.functional.pad(
-                tensor, (0, target_len - tensor.size(0)), value=0
+                tensor, (0, target_len - len(tensor)), value=0
             )
 
-        return {
-            "gene": [item["gene"] for item in batch],
-            "input_ids": torch.stack(
-                [pad_tensor(item["input_ids"][:max_len], max_len) for item in batch]
-            ),
-            "attention_mask": torch.stack(
-                [
-                    pad_tensor(item["attention_mask"][:max_len], max_len)
-                    for item in batch
-                ]
-            ),
-        }
+        try:
+            collated_batch = {
+                "gene": [item["gene"] for item in batch],
+                "input_ids": torch.stack(
+                    [pad_and_truncate(item["input_ids"], max_len) for item in batch]
+                ),
+                "attention_mask": torch.stack(
+                    [
+                        pad_and_truncate(item["attention_mask"], max_len)
+                        for item in batch
+                    ]
+                ),
+            }
+
+            print("Collated batch shapes:")
+            if isinstance(collated_batch["input_ids"], torch.Tensor):
+                print(f"input_ids: {collated_batch['input_ids'].shape}")
+            if isinstance(collated_batch["attention_mask"], torch.Tensor):
+                print(f"attention_mask: {collated_batch['attention_mask'].shape}")
+
+            return collated_batch
+        except Exception as e:
+            print(f"Error in collate_batch: {str(e)}")
+            print("Batch contents:")
+            for i, item in enumerate(batch):
+                print(f"Item {i}:")
+                for k, v in item.items():
+                    print(
+                        f"  {k}: {type(v)}, {len(v) if hasattr(v, '__len__') else 'N/A'}"
+                    )
+            raise
 
     # def process_dataset(
     #     self,
