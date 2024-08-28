@@ -156,6 +156,8 @@ class EmbeddingExtractorStreamingCorpus(IterableDataset):
             attention_masks = np.zeros((len(contexts), self.max_length), dtype=int)
 
             for i, context in enumerate(contexts):
+                if len(context) > self.max_length:
+                    context = context[: self.max_length]
                 padded_contexts[i, : len(context)] = context
                 attention_masks[i, : len(context)] = 1
 

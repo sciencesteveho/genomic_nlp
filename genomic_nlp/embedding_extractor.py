@@ -281,37 +281,30 @@ class DeBERTaEmbeddingExtractor:
 
     def collate_batch(self, batch: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Collate a batch of tokenized examples."""
-
-        def pad_and_truncate(tensor: torch.Tensor, target_len: int) -> torch.Tensor:
-            if tensor.size(0) > target_len:
-                return tensor[:target_len]
-            return torch.nn.functional.pad(
-                tensor, (0, target_len - tensor.size(0)), value=0
-            )
+        max_len = min(max(len(item["input_ids"]) for item in batch), self.max_length)
 
         collated_batch: Dict[str, Union[List[Any], torch.Tensor]] = {
-            "gene": [],
-            "input_ids": [],
-            "attention_mask": [],
+            "gene": [item["gene"] for item in batch],
+            "input_ids": torch.stack([item["input_ids"] for item in batch]),
+            "attention_mask": torch.stack([item["attention_mask"] for item in batch]),
         }
 
-        for item in batch:
-            collated_batch["gene"].append(item["gene"])
-            collated_batch["input_ids"].append(
-                pad_and_truncate(item["input_ids"], self.max_length)
-            )
-            collated_batch["attention_mask"].append(
-                pad_and_truncate(item["attention_mask"], self.max_length)
-            )
-
-        collated_batch["input_ids"] = torch.stack(collated_batch["input_ids"])
-        collated_batch["attention_mask"] = torch.stack(collated_batch["attention_mask"])
-
         print("Collated batch shapes:")
-        print(f"input_ids: {collated_batch['input_ids'].shape}")
-        print(f"attention_mask: {collated_batch['attention_mask'].shape}")
+        if isinstance(collated_batch["input_ids"], torch.Tensor):
+            print(f"input_ids: {collated_batch['input_ids'].shape}")
+        if isinstance(collated_batch["attention_mask"], torch.Tensor):
+            print(f"attention_mask: {collated_batch['attention_mask'].shape}")
 
         return collated_batch
+
+    @staticmethod
+    def pad_and_truncate(tensor: torch.Tensor, target_len: int) -> torch.Tensor:
+        """Pad or truncate a tensor to a target length."""
+        if tensor.size(0) > target_len:
+            return tensor[:target_len]
+        return torch.nn.functional.pad(
+            tensor, (0, target_len - tensor.size(0)), value=0
+        )
 
     # def process_dataset(
     #     self,
