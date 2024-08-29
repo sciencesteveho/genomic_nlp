@@ -128,6 +128,39 @@ class TokenizedDataset(IterableDataset):
                     yield encoded, gene_positions
 
 
+def collate_abstracts(
+    batch: List[Tuple[Dict[str, torch.Tensor], List[Tuple[str, int]]]]
+) -> Tuple[Dict[str, torch.Tensor], List[List[Tuple[str, int]]]]:
+    """Handle varying number of genes in each abstract. Keeps gene positions as
+    a list of lists.
+
+    Args:
+        batch: A list of tuples, where each tuple contains:
+               - A dictionary with 'input_ids' and 'attention_mask' tensors
+               - A list of tuples, each containing a gene name (str) and its
+                 position (int)
+
+    Returns:
+        A tuple containing:
+        - A dictionary with batched 'input_ids' and 'attention_mask' tensors
+        - A list of lists, where each inner list contains gene name and position
+        tuples for an abstract
+    """
+    encodings: List[Dict[str, torch.Tensor]] = [item[0] for item in batch]
+    positions: List[List[Tuple[str, int]]] = [item[1] for item in batch]
+
+    # collate the encoded inputs
+    input_ids: torch.Tensor = torch.cat([encoded["input_ids"] for encoded in encodings])
+    attention_mask: torch.Tensor = torch.cat(
+        [encoded["attention_mask"] for encoded in encodings]
+    )
+
+    return {
+        "input_ids": input_ids,
+        "attention_mask": attention_mask,
+    }, positions
+
+
 class DeBERTaEmbeddingExtractor:
     """Extract embeddings from natural language processing models."""
 
@@ -173,7 +206,12 @@ class DeBERTaEmbeddingExtractor:
         embeddings - because DeBERTa models create embeddings per context, we
         average them to get one representation.
         """
-        dataloader = DataLoader(self.dataset, batch_size=self.batch_size, num_workers=4)
+        dataloader = DataLoader(
+            self.dataset,
+            batch_size=self.batch_size,
+            num_workers=4,
+            collate_fn=collate_abstracts,
+        )
 
         gene_embeddings: Dict[str, Any] = {}
         gene_counts: Dict[str, int] = {}
