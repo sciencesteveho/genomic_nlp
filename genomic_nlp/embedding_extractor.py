@@ -29,7 +29,7 @@ class Word2VecEmbeddingExtractor:
     def __init__(
         self,
         model_path: str,
-        # data_path: str,
+        # data_path: str,lgit
         synonyms: Optional[Dict[str, Set[str]]] = None,
     ) -> None:
         """Instantiate the embedding extractor class."""
@@ -121,11 +121,7 @@ class DeBERTaEmbeddingExtractor:
     @torch.no_grad()
     def get_embeddings(self, batch: Dict[str, torch.Tensor]) -> np.ndarray:
         """Get average embedding across all occurences."""
-        inputs = {
-            k: v.to(self.device)
-            for k, v in batch.items()
-            if k in ["input_ids", "attention_mask"]
-        }
+        inputs = {k: v.to(self.device) for k, v in batch.items() if k in ["input_ids"]}
 
         outputs = self.model(**inputs)
         last_hidden_states = outputs.last_hidden_state
@@ -167,26 +163,32 @@ class TokenizedDataset(Dataset):
     """Pre-tokenized dataset for extracting embeddings from DeBERTa models."""
 
     def __init__(self, tokenized_files: List[str], max_length: int = 512):
+        """Instantiate the TokenizedDataset."""
         self.tokenized_files = tokenized_files
         self.max_length = max_length
+        self.total_samples = self._count_samples()
 
-    def __iter__(self) -> Iterator[Dict[str, torch.Tensor]]:
-        """Process tokenized files one file at a time and yield gene
-        embeddings.
-        """
+    def __len__(self) -> int:
+        """Get the total number of samples in the dataset."""
+        return self.total_samples
+
+    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+        """Get a single item from the dataset."""
         for file in self.tokenized_files:
             with open(file, "rb") as f:
                 tokenized_abstracts, gene_occurrences = pickle.load(f)
                 for gene, occurrences in gene_occurrences.items():
-                    for abstract_idx, token_idx in occurrences:
+                    if idx < len(occurrences):
+                        abstract_idx, token_idx = occurrences[idx]
                         context = self.get_context(
                             tokenized_abstracts[abstract_idx], token_idx
                         )
-                        yield {
+                        return {
                             "gene": gene,
                             "input_ids": torch.tensor(context),
-                            "attention_mask": torch.tensor([1] * len(context)),
                         }
+                    idx -= len(occurrences)
+        raise IndexError("Index out of range")
 
     def get_context(self, tokens: List[int], center_idx: int) -> List[int]:
         """Get a context window around a center token."""
@@ -196,6 +198,17 @@ class TokenizedDataset(Dataset):
         if len(context) < self.max_length:
             context = context + [0] * (self.max_length - len(context))
         return context[: self.max_length]
+
+    def _count_samples(self) -> int:
+        """Count the total number of samples across all files."""
+        total = 0
+        for file in self.tokenized_files:
+            with open(file, "rb") as f:
+                _, gene_occurrences = pickle.load(f)
+                total += sum(
+                    len(occurrences) for occurrences in gene_occurrences.values()
+                )
+        return total
 
     # def load_data(
     #     self, tokenized_files: List[str]

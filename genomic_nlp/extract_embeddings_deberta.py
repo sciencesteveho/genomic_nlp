@@ -64,7 +64,8 @@ def extract_embeddings(
 
     for batch in tqdm(dataloader, desc="Extracting embeddings"):
         genes = batch.pop("gene")
-        emb = extractor.get_embeddings(batch)
+        input_ids = batch["input_ids"]
+        emb = extractor.get_embeddings({"input_ids": input_ids})
         for i, gene in enumerate(genes):
             if gene not in embeddings:
                 embeddings[gene] = []
