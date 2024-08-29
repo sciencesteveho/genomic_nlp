@@ -9,7 +9,7 @@ from collections import defaultdict
 import os
 from pathlib import Path
 import pickle
-from typing import Any, DefaultDict, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, DefaultDict, Dict, Iterator, List, Optional, Set, Tuple, Union
 
 from gensim.models import Word2Vec  # type: ignore
 import numpy as np
@@ -87,7 +87,7 @@ class Word2VecEmbeddingExtractor:
 class DeBERTaEmbeddingExtractor:
     """Extract embeddings from natural language processing models."""
 
-    def __init__(self, model_path: str, max_length: int = 512, batch_size: int = 8):
+    def __init__(self, model_path: str, max_length: int = 512, batch_size: int = 16):
         """instantiate the embedding extractor class."""
         model_dir = Path(model_path)
         config_path = model_dir / "config.json"
@@ -118,47 +118,63 @@ class DeBERTaEmbeddingExtractor:
         """Rename state dict keys to remove the 'module.' prefix."""
         return {k.replace("module.", ""): v for k, v in state_dict.items()}
 
-    def get_embeddings(
-        self, batch: Dict[str, torch.Tensor]
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Get embeddings from a DeBERTa model."""
+    @torch.no_grad()
+    def get_embeddings(self, batch: Dict[str, torch.Tensor]) -> np.ndarray:
+        """Get average embedding across all occurences."""
         inputs = {
             k: v.to(self.device)
             for k, v in batch.items()
             if k in ["input_ids", "attention_mask"]
         }
 
-        outputs = self.model(**inputs, output_attentions=True)
+        outputs = self.model(**inputs)
         last_hidden_states = outputs.last_hidden_state
-        attention_weights = outputs.attentions[-1]
 
+        # calculate averaged embeddings
         averaged_embeddings = last_hidden_states.mean(dim=1)
-        cls_embeddings = last_hidden_states[:, 0, :]
-        attention_weights = attention_weights.mean(dim=1).mean(dim=1)
-        attention_weighted_embeddings = (
-            last_hidden_states * attention_weights.unsqueeze(-1)
-        ).sum(dim=1)
 
-        return (
-            averaged_embeddings.cpu().numpy(),
-            cls_embeddings.cpu().numpy(),
-            attention_weighted_embeddings.cpu().numpy(),
-        )
+        return averaged_embeddings.cpu().numpy()
+
+    # def get_embeddings(
+    #     self, batch: Dict[str, torch.Tensor]
+    # ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    #     """Get embeddings from a DeBERTa model."""
+    #     inputs = {
+    #         k: v.to(self.device)
+    #         for k, v in batch.items()
+    #         if k in ["input_ids", "attention_mask"]
+    #     }
+
+    #     outputs = self.model(**inputs, output_attentions=True)
+    #     last_hidden_states = outputs.last_hidden_state
+    #     attention_weights = outputs.attentions[-1]
+
+    #     averaged_embeddings = last_hidden_states.mean(dim=1)
+    #     cls_embeddings = last_hidden_states[:, 0, :]
+    #     attention_weights = attention_weights.mean(dim=1).mean(dim=1)
+    #     attention_weighted_embeddings = (
+    #         last_hidden_states * attention_weights.unsqueeze(-1)
+    #     ).sum(dim=1)
+
+    #     return (
+    #         averaged_embeddings.cpu().numpy(),
+    #         cls_embeddings.cpu().numpy(),
+    #         attention_weighted_embeddings.cpu().numpy(),
+    #     )
 
 
 class TokenizedDataset(Dataset):
     """Pre-tokenized dataset for extracting embeddings from DeBERTa models."""
 
     def __init__(self, tokenized_files: List[str], max_length: int = 512):
+        self.tokenized_files = tokenized_files
         self.max_length = max_length
-        self.data = self.load_data(tokenized_files)
 
-    def load_data(
-        self, tokenized_files: List[str]
-    ) -> List[Tuple[str, List[int], List[int]]]:
-        """Load pre-tokenized data from a list of files."""
-        data = []
-        for file in tokenized_files:
+    def __iter__(self) -> Iterator[Dict[str, torch.Tensor]]:
+        """Process tokenized files one file at a time and yield gene
+        embeddings.
+        """
+        for file in self.tokenized_files:
             with open(file, "rb") as f:
                 tokenized_abstracts, gene_occurrences = pickle.load(f)
                 for gene, occurrences in gene_occurrences.items():
@@ -166,8 +182,11 @@ class TokenizedDataset(Dataset):
                         context = self.get_context(
                             tokenized_abstracts[abstract_idx], token_idx
                         )
-                        data.append((gene, context, [1] * len(context)))
-        return data
+                        yield {
+                            "gene": gene,
+                            "input_ids": torch.tensor(context),
+                            "attention_mask": torch.tensor([1] * len(context)),
+                        }
 
     def get_context(self, tokens: List[int], center_idx: int) -> List[int]:
         """Get a context window around a center token."""
@@ -178,16 +197,41 @@ class TokenizedDataset(Dataset):
             context = context + [0] * (self.max_length - len(context))
         return context[: self.max_length]
 
-    def __len__(self):
-        return len(self.data)
+    # def load_data(
+    #     self, tokenized_files: List[str]
+    # ) -> List[Tuple[str, List[int], List[int]]]:
+    #     """Load pre-tokenized data from a list of files."""
+    #     data = []
+    #     for file in tokenized_files:
+    #         with open(file, "rb") as f:
+    #             tokenized_abstracts, gene_occurrences = pickle.load(f)
+    #             for gene, occurrences in gene_occurrences.items():
+    #                 for abstract_idx, token_idx in occurrences:
+    #                     context = self.get_context(
+    #                         tokenized_abstracts[abstract_idx], token_idx
+    #                     )
+    #                     data.append((gene, context, [1] * len(context)))
+    #     return data
 
-    def __getitem__(self, idx):
-        gene, input_ids, attention_mask = self.data[idx]
-        return {
-            "gene": gene,
-            "input_ids": torch.tensor(input_ids),
-            "attention_mask": torch.tensor(attention_mask),
-        }
+    # def get_context(self, tokens: List[int], center_idx: int) -> List[int]:
+    #     """Get a context window around a center token."""
+    #     start = max(0, center_idx - self.max_length // 2)
+    #     end = min(len(tokens), start + self.max_length)
+    #     context = tokens[start:end]
+    #     if len(context) < self.max_length:
+    #         context = context + [0] * (self.max_length - len(context))
+    #     return context[: self.max_length]
+
+    # def __len__(self):
+    #     return len(self.data)
+
+    # def __getitem__(self, idx):
+    #     gene, input_ids, attention_mask = self.data[idx]
+    #     return {
+    #         "gene": gene,
+    #         "input_ids": torch.tensor(input_ids),
+    #         "attention_mask": torch.tensor(attention_mask),
+    #     }
 
     # @torch.inference_mode()
     # def extract_embeddings(
