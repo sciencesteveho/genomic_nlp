@@ -96,6 +96,7 @@ class TokenizedDataset(IterableDataset):
         self.tokenizer = tokenizer
         self.genes_of_interest = {gene.lower() for gene in genes}
         self.max_length = max_length
+        self.total_abstracts = self._count_abstracts()
 
     def _count_abstracts(self) -> int:
         """Count the number of abstracts in the file."""
@@ -108,7 +109,7 @@ class TokenizedDataset(IterableDataset):
         """Iterate over abstracts, yielding tokenized inputs and gene positions."""
         with open(self.file_path, "r") as f:
             for line in tqdm(
-                iterable=f, total=self._count_abstracts(), desc="Processing abstracts"
+                iterable=f, total=self.total_abstracts, desc="Processing abstracts"
             ):
                 abstract = line.strip()
                 words = abstract.lower().split()
@@ -177,10 +178,12 @@ class DeBERTaEmbeddingExtractor:
         gene_embeddings: Dict[str, Any] = {}
         gene_counts: Dict[str, int] = {}
 
+        total_abstracts = self.dataset.total_abstracts
+        processed_abstracts = 0
+        pbar = tqdm(total=total_abstracts, desc="Extracting embeddings")
+
         with torch.no_grad():
-            for batch, gene_positions_batch in tqdm(
-                iterable=dataloader, total=len(dataloader), desc="Extracting embeddings"
-            ):
+            for batch, gene_positions_batch in dataloader:
                 input_ids = batch["input_ids"].squeeze(1).to(self.device)
                 attention_mask = batch["attention_mask"].squeeze(1).to(self.device)
 
@@ -197,6 +200,9 @@ class DeBERTaEmbeddingExtractor:
 
                         gene_embeddings[gene] += hidden_states[i, position]
                         gene_counts[gene] += 1
+
+                processed_abstracts += len(input_ids)
+                pbar.update(len(input_ids))
 
         # average the embeddings
         return {
