@@ -154,11 +154,8 @@ class TokenizedDataset(IterableDataset):
                     if len(token_pos) < self.max_length - 1:  # account for [CLS]
                         adjusted_positions.append((gene, len(token_pos)))
 
-                yield {
-                    k: v.squeeze(0) for k, v in tokenized.items()
-                }, adjusted_positions
+                yield (dict(tokenized.items()), adjusted_positions)
                 pbar.update(1)
-
             pbar.close()
 
     def _shard_size(self, num_workers: int) -> int:
@@ -226,6 +223,11 @@ class DeBERTaEmbeddingExtractor:
             input_ids = batch["input_ids"].to(self.device)
             attention_mask = batch["attention_mask"].to(self.device)
 
+            # ensure input tensors are 1D
+            if input_ids.dim() == 1:
+                input_ids = input_ids.unsqueeze(0)
+                attention_mask = attention_mask.unsqueeze(0)
+
             outputs = self.model(input_ids, attention_mask=attention_mask)
             hidden_states = outputs.last_hidden_state
 
@@ -240,7 +242,7 @@ class DeBERTaEmbeddingExtractor:
                     gene_embeddings[gene] += hidden_states[i, position]
                     gene_counts[gene] += 1
 
-            pbar.update(len(input_ids))
+            pbar.update(input_ids.size(0))
 
         pbar.close()
 
@@ -261,7 +263,7 @@ class DeBERTaEmbeddingExtractor:
         gene_positions_batch = [item[1] for item in batch]
 
         tokenized_batch = {
-            key: torch.cat([encoded[key] for encoded in encodings])
+            key: torch.cat([encoded[key].squeeze(0) for encoded in encodings])
             for key in encodings[0].keys()
         }
 
