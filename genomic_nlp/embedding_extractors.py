@@ -170,7 +170,8 @@ class DeBERTaEmbeddingExtractor:
         self,
         model_path: str,
         dataset: TokenizedDataset,
-        batch_size: int = 32,
+        batch_size: int = 16,
+        chunk_size: int = 8,
     ):
         """Initialize the embedding extractor class."""
         model_dir = Path(model_path)
@@ -191,11 +192,14 @@ class DeBERTaEmbeddingExtractor:
 
         self.dataset = dataset
         self.batch_size = batch_size
+        self.chunk_size = chunk_size
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.model = full_model.deberta
         self.model.to(self.device)
         self.model.eval()
+        self.model.config.use_cache = False
+        self.model.gradient_checkpointing_enable()
         print("Model loaded successfully.")
 
     def _rename_state_dict_keys(self, state_dict: Dict[str, Any]) -> Dict[str, Any]:
@@ -228,22 +232,32 @@ class DeBERTaEmbeddingExtractor:
                 input_ids = input_ids.unsqueeze(0)
                 attention_mask = attention_mask.unsqueeze(0)
 
-            outputs = self.model(input_ids, attention_mask=attention_mask)
-            hidden_states = outputs.last_hidden_state
+            # process chunks
+            chunk_size = self.chunk_size
+            for i in range(0, input_ids.size(0), chunk_size):
+                chunk_input_ids = input_ids[i : i + chunk_size]
+                chunk_attention_mask = attention_mask[i : i + chunk_size]
 
-            for i, gene_positions in enumerate(gene_positions_batch):
-                for gene, position in gene_positions:
-                    if gene not in gene_embeddings:
-                        gene_embeddings[gene] = torch.zeros(
-                            hidden_states.size(-1), device=self.device
-                        )
-                        gene_counts[gene] = 0
+                outputs = self.model(
+                    chunk_input_ids, attention_mask=chunk_attention_mask
+                )
+                hidden_states = outputs.last_hidden_state
 
-                    gene_embeddings[gene] += hidden_states[i, position]
-                    gene_counts[gene] += 1
+                for j, gene_positions in enumerate(
+                    gene_positions_batch[i : i + chunk_size]
+                ):
+                    for gene, position in gene_positions:
+                        if gene not in gene_embeddings:
+                            gene_embeddings[gene] = torch.zeros(
+                                hidden_states.size(-1), device=self.device
+                            )
+                            gene_counts[gene] = 0
 
+                        gene_embeddings[gene] += hidden_states[j, position]
+                        gene_counts[gene] += 1
+
+                torch.cuda.empty_cache()
             pbar.update(input_ids.size(0))
-
         pbar.close()
 
         # average the embeddings
