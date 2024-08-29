@@ -13,7 +13,6 @@ import pickle
 from typing import List
 
 from gensim.models import Word2Vec  # type: ignore
-from gensim.models.callbacks import CallbackAny2Vec  # type: ignore
 from gensim.models.phrases import Phraser  # type: ignore
 from gensim.models.phrases import Phrases  # type: ignore
 from gensim.models.word2vec import LineSentence  # type: ignore
@@ -21,6 +20,7 @@ import smart_open  # type: ignore
 
 from utils import _chunk_locator
 from utils import _combine_chunks
+from utils import EpochSaver
 from utils import time_decorator
 
 logging.basicConfig(
@@ -69,20 +69,6 @@ def prepare_and_load_abstracts(args: argparse.Namespace) -> None:
     file_suffixes = ["casefold", "remove_genes"]
     for suffix in file_suffixes:
         combine_chunks(suffix)
-
-
-class EpochSaver(CallbackAny2Vec):
-    """Callback to save model after every epoch."""
-
-    def __init__(self, savedir: str):
-        self.epoch = 0
-        self.savedir = savedir
-
-    def on_epoch_end(self, model: Word2Vec) -> None:
-        """Save model after every epoch."""
-        print(f"Save model number {self.epoch}.")
-        model.save(f"{self.savedir}/model_epoch{self.epoch}.pkl")
-        self.epoch += 1
 
 
 class IterableCorpus:
