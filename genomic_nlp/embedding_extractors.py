@@ -5,6 +5,7 @@
 """Extract embeddings from natural language processing models."""
 
 
+import math
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 
@@ -107,58 +108,62 @@ class TokenizedDataset(IterableDataset):
         self,
     ) -> Iterator[Tuple[Dict[str, torch.Tensor], List[Tuple[str, int]]]]:
         """Iterate over abstracts, yielding tokenized inputs and gene positions."""
-        with open(self.file_path, "r") as f:
-            for line in tqdm(
-                iterable=f, total=self.total_abstracts, desc="Processing abstracts"
-            ):
+        worker_info = torch.utils.data.get_worker_info()
+        start_position = 0
+        end_position = None
+
+        if worker_info:
+            start_position = worker_info.id * self._shard_size(worker_info.num_workers)
+            end_position = start_position + self._shard_size(worker_info.num_workers)
+
+        with open(self.file_path, "r", encoding="utf-8") as file_iterator:
+            if start_position > 0:
+                for _ in range(start_position):
+                    next(file_iterator)
+
+            pbar = tqdm(total=self.total_abstracts, desc="Processing abstracts")
+            for line_number, line in enumerate(file_iterator):
+                if end_position is not None and line_number >= end_position:
+                    break
+
                 abstract = line.strip()
                 words = abstract.lower().split()
-                if gene_positions := [
+                gene_positions = [
                     (word, i)
                     for i, word in enumerate(words)
                     if word in self.genes_of_interest
-                ]:
-                    encoded = self.tokenizer.encode_plus(
-                        abstract,
-                        max_length=self.max_length,
+                ]
+
+                tokenized = self.tokenizer(
+                    abstract,
+                    padding="max_length",
+                    truncation=True,
+                    max_length=self.max_length,
+                    return_tensors="pt",
+                )
+
+                # adjust gene positions based on tokenization
+                adjusted_positions = []
+                for gene, pos in gene_positions:
+                    token_pos = self.tokenizer.encode(
+                        " ".join(words[:pos]),
+                        add_special_tokens=False,
                         truncation=True,
-                        padding="max_length",
-                        return_tensors="pt",
+                        max_length=self.max_length,
                     )
-                    yield encoded, gene_positions
+                    if len(token_pos) < self.max_length - 1:  # account for [CLS]
+                        adjusted_positions.append((gene, len(token_pos)))
 
+                yield {
+                    k: v.squeeze(0) for k, v in tokenized.items()
+                }, adjusted_positions
+                pbar.update(1)
 
-def collate_abstracts(
-    batch: List[Tuple[Dict[str, torch.Tensor], List[Tuple[str, int]]]]
-) -> Tuple[Dict[str, torch.Tensor], List[List[Tuple[str, int]]]]:
-    """Handle varying number of genes in each abstract. Keeps gene positions as
-    a list of lists.
+            pbar.close()
 
-    Args:
-        batch: A list of tuples, where each tuple contains:
-               - A dictionary with 'input_ids' and 'attention_mask' tensors
-               - A list of tuples, each containing a gene name (str) and its
-                 position (int)
-
-    Returns:
-        A tuple containing:
-        - A dictionary with batched 'input_ids' and 'attention_mask' tensors
-        - A list of lists, where each inner list contains gene name and position
-        tuples for an abstract
-    """
-    encodings: List[Dict[str, torch.Tensor]] = [item[0] for item in batch]
-    positions: List[List[Tuple[str, int]]] = [item[1] for item in batch]
-
-    # collate the encoded inputs
-    input_ids: torch.Tensor = torch.cat([encoded["input_ids"] for encoded in encodings])
-    attention_mask: torch.Tensor = torch.cat(
-        [encoded["attention_mask"] for encoded in encodings]
-    )
-
-    return {
-        "input_ids": input_ids,
-        "attention_mask": attention_mask,
-    }, positions
+    def _shard_size(self, num_workers: int) -> int:
+        """Estimate shard size based on the total number of workers"""
+        return math.ceil(self.total_abstracts / num_workers)
 
 
 class DeBERTaEmbeddingExtractor:
@@ -210,40 +215,54 @@ class DeBERTaEmbeddingExtractor:
             self.dataset,
             batch_size=self.batch_size,
             num_workers=4,
-            collate_fn=collate_abstracts,
+            collate_fn=self.collate_abstracts,
         )
 
         gene_embeddings: Dict[str, Any] = {}
         gene_counts: Dict[str, int] = {}
 
-        total_abstracts = self.dataset.total_abstracts
-        processed_abstracts = 0
-        pbar = tqdm(total=total_abstracts, desc="Extracting embeddings")
+        pbar = tqdm(total=self.dataset.total_abstracts, desc="Extracting embeddings")
+        for batch, gene_positions_batch in dataloader:
+            input_ids = batch["input_ids"].to(self.device)
+            attention_mask = batch["attention_mask"].to(self.device)
 
-        with torch.no_grad():
-            for batch, gene_positions_batch in dataloader:
-                input_ids = batch["input_ids"].squeeze(1).to(self.device)
-                attention_mask = batch["attention_mask"].squeeze(1).to(self.device)
+            outputs = self.model(input_ids, attention_mask=attention_mask)
+            hidden_states = outputs.last_hidden_state
 
-                outputs = self.model(input_ids, attention_mask=attention_mask)
-                hidden_states = outputs.last_hidden_state
+            for i, gene_positions in enumerate(gene_positions_batch):
+                for gene, position in gene_positions:
+                    if gene not in gene_embeddings:
+                        gene_embeddings[gene] = torch.zeros(
+                            hidden_states.size(-1), device=self.device
+                        )
+                        gene_counts[gene] = 0
 
-                for i, gene_positions in enumerate(gene_positions_batch):
-                    for gene, position in gene_positions:
-                        if gene not in gene_embeddings:
-                            gene_embeddings[gene] = torch.zeros(
-                                hidden_states.size(-1), device=self.device
-                            )
-                            gene_counts[gene] = 0
+                    gene_embeddings[gene] += hidden_states[i, position]
+                    gene_counts[gene] += 1
 
-                        gene_embeddings[gene] += hidden_states[i, position]
-                        gene_counts[gene] += 1
+            pbar.update(len(input_ids))
 
-                processed_abstracts += len(input_ids)
-                pbar.update(len(input_ids))
+        pbar.close()
 
         # average the embeddings
         return {
             gene: (embedding / gene_counts[gene]).cpu().numpy()
             for gene, embedding in gene_embeddings.items()
         }
+
+    @staticmethod
+    def collate_abstracts(
+        batch: List[Tuple[Dict[str, torch.Tensor], List[Tuple[str, int]]]]
+    ) -> Tuple[Dict[str, torch.Tensor], List[List[Tuple[str, int]]]]:
+        """Custom collate function to handle batching of tokenized inputs and gene
+        positions.
+        """
+        encodings = [item[0] for item in batch]
+        gene_positions_batch = [item[1] for item in batch]
+
+        tokenized_batch = {
+            key: torch.cat([encoded[key] for encoded in encodings])
+            for key in encodings[0].keys()
+        }
+
+        return tokenized_batch, gene_positions_batch
