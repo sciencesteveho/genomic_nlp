@@ -86,7 +86,7 @@ class Word2VecEmbeddingExtractor:
 class DeBERTaEmbeddingExtractor:
     """Extract embeddings from natural language processing models."""
 
-    def __init__(self, model_path: str, max_length: int = 512, batch_size: int = 16):
+    def __init__(self, model_path: str, max_length: int = 512, batch_size: int = 8):
         """instantiate the embedding extractor class."""
         model_dir = Path(model_path)
         config_path = model_dir / "config.json"
@@ -149,9 +149,16 @@ class DeBERTaEmbeddingExtractor:
             range(0, len(all_occurrences), self.batch_size), desc="Processing batches"
         ):
             batch = all_occurrences[i : i + self.batch_size]
-            input_ids = torch.tensor(
-                [tokenized_abstracts[abstract_idx] for _, abstract_idx, _ in batch]
-            ).to(self.device)
+            input_ids = torch.nn.utils.rnn.pad_sequence(
+                [
+                    torch.tensor(tokenized_abstracts[abstract_idx][: self.max_length])
+                    for _, abstract_idx, _ in batch
+                ],
+                batch_first=True,
+                padding_value=0,
+            ).to(
+                self.device
+            )  # pad to max length
             attention_mask = torch.ones_like(input_ids)
             token_indices = torch.tensor([token_idx for _, _, token_idx in batch]).to(
                 self.device

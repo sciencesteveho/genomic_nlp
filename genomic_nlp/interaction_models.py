@@ -1,13 +1,13 @@
-# sourcery skip: upper-camel-case-classes
+# sourcery skip: snake-case-arguments, upper-camel-case-classes
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
 
-"""Baseline models for prediction gene-gene interactions. We adopted a base
+"""Baseline models for predicting gene-gene interactions. We adopted a base
 class for which the other models inherit from.
 
 The following are implemented:
-    (1) Pairwise similarity scoring based on cosine distance 
+    (0) Pairwise similarity scoring based on cosine distance 
     (1) Logistic regression
     (2) Random forest
     (3) XGBoost
@@ -23,7 +23,10 @@ from sklearn.ensemble import RandomForestClassifier  # type: ignore
 from sklearn.linear_model import LogisticRegression  # type: ignore
 from sklearn.metrics.pairwise import cosine_similarity  # type: ignore
 from sklearn.neural_network import MLPClassifier  # type: ignore
+from sklearn.svm import SVC  # type: ignore
 from xgboost import XGBClassifier
+
+from constants import RANDOM_STATE
 
 
 class BaselineModel(BaseEstimator, ClassifierMixin):
@@ -84,6 +87,22 @@ class LogisticRegressionModel(BaselineModel):
 
     def __init__(self, **kwargs):
         model = LogisticRegression(**kwargs)
+        super().__init__(model)
+
+
+class SVM(BaselineModel):
+    """Support vector machine - non-linear margin-based classification model."""
+
+    def __init__(
+        self,
+        kernel: str = "rbf",
+        C: float = 1.0,
+        random_state: int = RANDOM_STATE,
+        **kwargs
+    ):
+        model = SVC(
+            kernel=kernel, C=C, probability=True, random_state=random_state, **kwargs
+        )
         super().__init__(model)
 
 

@@ -7,6 +7,7 @@ embeddings as input and predict whether the pair of genes interacts. Models can
 make probability based predictions or binary predictions based on a probability
 threshold."""
 
+
 import argparse
 from collections import defaultdict
 import csv
@@ -27,7 +28,7 @@ from sklearn.model_selection import StratifiedKFold  # type: ignore
 from interaction_models import BaselineModel
 from interaction_models import LogisticRegressionModel
 from interaction_models import MLP
-from interaction_models import RandomForest
+from interaction_models import SVM
 from interaction_models import XGBoost
 from visualizers import BaselineModelVisualizer
 
@@ -518,7 +519,7 @@ def main() -> None:
     # define models
     models = {
         "logistic_regression": LogisticRegressionModel,
-        "random_forest": RandomForest,
+        "svm": SVM,
         "xgboost": XGBoost,
         "mlp": MLP,
     }

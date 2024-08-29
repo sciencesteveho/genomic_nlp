@@ -4,6 +4,7 @@
 
 """Constants for bio NLP."""
 
+RANDOM_STATE = 42
 
 GENERAL_SEARCH_TERMS = [
     "ATAC-seq",
