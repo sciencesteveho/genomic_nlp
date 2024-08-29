@@ -17,6 +17,7 @@ from safetensors.torch import load_file  # type: ignore
 import torch
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
+from torch.utils.data import Dataset
 from tqdm import tqdm  # type: ignore
 from transformers import DebertaV2Config  # type: ignore
 from transformers import DebertaV2ForMaskedLM  # type: ignore
@@ -111,138 +112,210 @@ class DeBERTaEmbeddingExtractor:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
         self.model.eval()
-
         print("Model loaded successfully.")
-        print(f"Model hidden size: {config.hidden_size}")
-        print(f"Max length: {self.max_length}")
 
     def _rename_state_dict_keys(self, state_dict: Dict[str, Any]) -> Dict[str, Any]:
         """Rename state dict keys to remove the 'module.' prefix."""
         return {k.replace("module.", ""): v for k, v in state_dict.items()}
 
-    @torch.inference_mode()
-    def extract_embeddings(
-        self,
-        tokenized_abstracts: List[List[int]],
-        gene_occurrences: Dict[str, List[Tuple[int, int]]],
-    ) -> Dict[str, Dict[str, torch.Tensor]]:
-        """Get three different types of embeddings from a DeBERTa model:
-
-        1. Averaged embeddings - average over all token embeddings
-        2. CLS embeddings - embeddings of the [CLS] token
-        3. Attention-weighted embeddings - embeddings weighted by attention weights
-        """
-        embeddings: Dict[str, Dict[str, List[torch.Tensor]]] = {
-            "averaged": defaultdict(list),
-            "cls": defaultdict(list),
-            "attention_weighted": defaultdict(list),
+    def get_embeddings(
+        self, batch: Dict[str, torch.Tensor]
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Get embeddings from a DeBERTa model."""
+        inputs = {
+            k: v.to(self.device)
+            for k, v in batch.items()
+            if k in ["input_ids", "attention_mask"]
         }
 
-        # batched processing
-        all_occurrences = [
-            (gene, abstract_idx, token_idx)
-            for gene, occurrences in gene_occurrences.items()
-            for abstract_idx, token_idx in occurrences
-        ]
+        outputs = self.model(**inputs, output_attentions=True)
+        last_hidden_states = outputs.last_hidden_state
+        attention_weights = outputs.attentions[-1]
 
-        for i in tqdm(
-            range(0, len(all_occurrences), self.batch_size), desc="Processing batches"
-        ):
-            batch = all_occurrences[i : i + self.batch_size]
-            input_ids = torch.nn.utils.rnn.pad_sequence(
-                [
-                    torch.tensor(tokenized_abstracts[abstract_idx][: self.max_length])
-                    for _, abstract_idx, _ in batch
-                ],
-                batch_first=True,
-                padding_value=0,
-            ).to(
-                self.device
-            )  # pad to max length
-            attention_mask = torch.ones_like(input_ids)
-            token_indices = torch.tensor([token_idx for _, _, token_idx in batch]).to(
-                self.device
-            )
+        averaged_embeddings = last_hidden_states.mean(dim=1)
+        cls_embeddings = last_hidden_states[:, 0, :]
+        attention_weights = attention_weights.mean(dim=1).mean(dim=1)
+        attention_weighted_embeddings = (
+            last_hidden_states * attention_weights.unsqueeze(-1)
+        ).sum(dim=1)
 
-            outputs = self.model(
-                input_ids, attention_mask=attention_mask, output_attentions=True
-            )
-            last_hidden_state = outputs.last_hidden_state
-            attentions = outputs.attentions[-1]  # final layer attention
-
-            for j, (gene, _, _) in enumerate(batch):
-                embeddings["averaged"][gene].append(
-                    last_hidden_state[j, token_indices[j]]
-                )
-                embeddings["cls"][gene].append(last_hidden_state[j, 0])
-
-                attention_weights = attentions[j, :, token_indices[j], :].mean(dim=0)
-                weighted_embedding = (
-                    last_hidden_state[j] * attention_weights.unsqueeze(-1)
-                ).sum(dim=0)
-                embeddings["attention_weighted"][gene].append(weighted_embedding)
-
-        # average embeddings for each gene
-        final_embeddings: Dict[str, Dict[str, torch.Tensor]] = {
-            "averaged": {},
-            "cls": {},
-            "attention_weighted": {},
-        }
-
-        for embed_type in final_embeddings:
-            for gene, gene_embeddings in embeddings[embed_type].items():
-                if gene_embeddings:
-                    final_embeddings[embed_type][gene] = torch.stack(
-                        gene_embeddings
-                    ).mean(dim=0)
-                else:
-                    print(
-                        f"Warning: No embeddings found for gene {gene} in {embed_type}"
-                    )
-
-        return final_embeddings
-
-    def process_chunks_for_embeddings(
-        self, chunk_files: List[str]
-    ) -> Tuple[Dict[str, Dict[str, torch.Tensor]], Dict[str, int]]:
-        """Process a list of chunked and pre-tokenized abstracts one at a time
-        and extract gene embeddings to an `all_embeddings` dictionary`. When all
-        abstracts have been processed, return the dictionary.
-        """
-        all_embeddings: DefaultDict[str, DefaultDict[str, List[torch.Tensor]]] = (
-            defaultdict(lambda: defaultdict(list))
+        return (
+            averaged_embeddings.cpu().numpy(),
+            cls_embeddings.cpu().numpy(),
+            attention_weighted_embeddings.cpu().numpy(),
         )
-        gene_counts: DefaultDict[str, int] = defaultdict(int)
 
-        for chunk_file in tqdm(chunk_files, desc="Processing chunks"):
-            with open(chunk_file, "rb") as f:
+
+class TokenizedDataset(Dataset):
+    """Pre-tokenized dataset for extracting embeddings from DeBERTa models."""
+
+    def __init__(self, tokenized_files: List[str], max_length: int = 512):
+        self.max_length = max_length
+        self.data = self.load_data(tokenized_files)
+
+    def load_data(
+        self, tokenized_files: List[str]
+    ) -> List[Tuple[str, List[int], List[int]]]:
+        """Load pre-tokenized data from a list of files."""
+        data = []
+        for file in tokenized_files:
+            with open(file, "rb") as f:
                 tokenized_abstracts, gene_occurrences = pickle.load(f)
+                for gene, occurrences in gene_occurrences.items():
+                    for abstract_idx, token_idx in occurrences:
+                        context = self.get_context(
+                            tokenized_abstracts[abstract_idx], token_idx
+                        )
+                        data.append((gene, context, [1] * len(context)))
+        return data
 
-            chunk_embeddings = self.extract_embeddings(
-                tokenized_abstracts, gene_occurrences
-            )
+    def get_context(self, tokens: List[int], center_idx: int) -> List[int]:
+        """Get a context window around a center token."""
+        start = max(0, center_idx - self.max_length // 2)
+        end = min(len(tokens), start + self.max_length)
+        context = tokens[start:end]
+        if len(context) < self.max_length:
+            context = context + [0] * (self.max_length - len(context))
+        return context[: self.max_length]
 
-            for embed_type in chunk_embeddings:
-                for gene, embedding in chunk_embeddings[embed_type].items():
-                    all_embeddings[embed_type][gene].append(embedding)
-                    gene_counts[gene] += 1
+    def __len__(self):
+        return len(self.data)
 
-        # average embeddings across all chunks
-        final_embeddings: Dict[str, Dict[str, torch.Tensor]] = {
-            "averaged": {},
-            "cls": {},
-            "attention_weighted": {},
+    def __getitem__(self, idx):
+        gene, input_ids, attention_mask = self.data[idx]
+        return {
+            "gene": gene,
+            "input_ids": torch.tensor(input_ids),
+            "attention_mask": torch.tensor(attention_mask),
         }
 
-        for embed_type in final_embeddings:
-            for gene, embeddings in all_embeddings[embed_type].items():
-                if embeddings:
-                    final_embeddings[embed_type][gene] = torch.stack(embeddings).mean(
-                        dim=0
-                    )
-                else:
-                    print(
-                        f"Warning: No embeddings found for gene {gene} in {embed_type}"
-                    )
+    # @torch.inference_mode()
+    # def extract_embeddings(
+    #     self,
+    #     tokenized_abstracts: List[List[int]],
+    #     gene_occurrences: Dict[str, List[Tuple[int, int]]],
+    # ) -> Dict[str, Dict[str, torch.Tensor]]:
+    #     """Get three different types of embeddings from a DeBERTa model:
 
-        return final_embeddings, dict(gene_counts)
+    #     1. Averaged embeddings - average over all token embeddings
+    #     2. CLS embeddings - embeddings of the [CLS] token
+    #     3. Attention-weighted embeddings - embeddings weighted by attention weights
+    #     """
+    #     embeddings: Dict[str, Dict[str, List[torch.Tensor]]] = {
+    #         "averaged": defaultdict(list),
+    #         "cls": defaultdict(list),
+    #         "attention_weighted": defaultdict(list),
+    #     }
+
+    #     # batched processing
+    #     all_occurrences = [
+    #         (gene, abstract_idx, token_idx)
+    #         for gene, occurrences in gene_occurrences.items()
+    #         for abstract_idx, token_idx in occurrences
+    #     ]
+
+    #     for i in tqdm(
+    #         range(0, len(all_occurrences), self.batch_size), desc="Processing batches"
+    #     ):
+    #         batch = all_occurrences[i : i + self.batch_size]
+    #         input_ids = torch.nn.utils.rnn.pad_sequence(
+    #             [
+    #                 torch.tensor(tokenized_abstracts[abstract_idx][: self.max_length])
+    #                 for _, abstract_idx, _ in batch
+    #             ],
+    #             batch_first=True,
+    #             padding_value=0,
+    #         ).to(
+    #             self.device
+    #         )  # pad to max length
+    #         attention_mask = torch.ones_like(input_ids)
+    #         token_indices = torch.tensor([token_idx for _, _, token_idx in batch]).to(
+    #             self.device
+    #         )
+
+    #         outputs = self.model(
+    #             input_ids, attention_mask=attention_mask, output_attentions=True
+    #         )
+    #         last_hidden_state = outputs.last_hidden_state
+    #         attentions = outputs.attentions[-1]  # final layer attention
+
+    #         for j, (gene, _, _) in enumerate(batch):
+    #             embeddings["averaged"][gene].append(
+    #                 last_hidden_state[j, token_indices[j]]
+    #             )
+    #             embeddings["cls"][gene].append(last_hidden_state[j, 0])
+
+    #             attention_weights = attentions[j, :, token_indices[j], :].mean(dim=0)
+    #             weighted_embedding = (
+    #                 last_hidden_state[j] * attention_weights.unsqueeze(-1)
+    #             ).sum(dim=0)
+    #             embeddings["attention_weighted"][gene].append(weighted_embedding)
+
+    #         # memory management
+    #         del input_ids, attention_mask, outputs, last_hidden_state, attentions
+    #         torch.cuda.empty_cache()
+
+    #     # average embeddings for each gene
+    #     final_embeddings: Dict[str, Dict[str, torch.Tensor]] = {
+    #         "averaged": {},
+    #         "cls": {},
+    #         "attention_weighted": {},
+    #     }
+
+    #     for embed_type in final_embeddings:
+    #         for gene, gene_embeddings in embeddings[embed_type].items():
+    #             if gene_embeddings:
+    #                 final_embeddings[embed_type][gene] = torch.stack(
+    #                     gene_embeddings
+    #                 ).mean(dim=0)
+    #             else:
+    #                 print(
+    #                     f"Warning: No embeddings found for gene {gene} in {embed_type}"
+    #                 )
+
+    #     return final_embeddings
+
+    # def process_chunks_for_embeddings(
+    #     self, chunk_files: List[str]
+    # ) -> Tuple[Dict[str, Dict[str, torch.Tensor]], Dict[str, int]]:
+    #     """Process a list of chunked and pre-tokenized abstracts one at a time
+    #     and extract gene embeddings to an `all_embeddings` dictionary`. When all
+    #     abstracts have been processed, return the dictionary.
+    #     """
+    #     all_embeddings: DefaultDict[str, DefaultDict[str, List[torch.Tensor]]] = (
+    #         defaultdict(lambda: defaultdict(list))
+    #     )
+    #     gene_counts: DefaultDict[str, int] = defaultdict(int)
+
+    #     for chunk_file in tqdm(chunk_files, desc="Processing chunks"):
+    #         with open(chunk_file, "rb") as f:
+    #             tokenized_abstracts, gene_occurrences = pickle.load(f)
+
+    #         chunk_embeddings = self.extract_embeddings(
+    #             tokenized_abstracts, gene_occurrences
+    #         )
+
+    #         for embed_type in chunk_embeddings:
+    #             for gene, embedding in chunk_embeddings[embed_type].items():
+    #                 all_embeddings[embed_type][gene].append(embedding)
+    #                 gene_counts[gene] += 1
+
+    #     # average embeddings across all chunks
+    #     final_embeddings: Dict[str, Dict[str, torch.Tensor]] = {
+    #         "averaged": {},
+    #         "cls": {},
+    #         "attention_weighted": {},
+    #     }
+
+    #     for embed_type in final_embeddings:
+    #         for gene, embeddings in all_embeddings[embed_type].items():
+    #             if embeddings:
+    #                 final_embeddings[embed_type][gene] = torch.stack(embeddings).mean(
+    #                     dim=0
+    #                 )
+    #             else:
+    #                 print(
+    #                     f"Warning: No embeddings found for gene {gene} in {embed_type}"
+    #                 )
+
+    #     return final_embeddings, dict(gene_counts)
