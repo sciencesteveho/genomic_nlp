@@ -19,19 +19,13 @@ import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
-from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm  # type: ignore
 from transformers import AdamW  # type: ignore
 from transformers import DataCollatorForLanguageModeling  # type: ignore
 from transformers import DebertaV2ForMaskedLM  # type: ignore
 from transformers import DebertaV2Tokenizer  # type: ignore
 from transformers import get_linear_schedule_with_warmup  # type: ignore
-from transformers import Trainer  # type: ignore
-from transformers import TrainingArguments  # type: ignore
 
-from streaming_corpus import FinetuneStreamingCorpus
-from streaming_corpus import RobustDataCollator
-from streaming_corpus import SimpleStreamingCorpus
 from streaming_corpus import StreamingCorpus
 from utils import _chunk_locator
 
@@ -89,40 +83,55 @@ def _write_abstracts_to_text(abstracts_dir: str, prefix: str) -> None:
 
 
 def main() -> None:
-    """Main function"""
-    # load classified abstracts
+    """Main function to fine-tune a transformer model on scientific abstracts."""
+    # set some params
+    model_name = "microsoft/deberta-v3-base"
+    token_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_tokens_nosyn.txt"
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--root_dir",
         type=str,
         default="/ocean/projects/bio210019p/stevesho/genomic_nlp",
     )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=8,
+    )
+    parser.add_argument(
+        "--gradient_accumulation_steps",
+        type=int,
+        default=4,
+    )
+    parser.add_argument(
+        "--num_workers",
+        type=int,
+        default=4,
+    )
     args = parser.parse_args()
-
     abstracts_dir = f"{args.root_dir}/data"
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    args.local_rank = int(os.environ.get("LOCAL_RANK", -1))
+    abstracts = f"{abstracts_dir}/combined/tokens_cleaned_abstracts_casefold_finetune_combined.txt"
+    model_out = f"{args.root_dir}/models/deberta"
 
     # set up distributed training environment
+    args.local_rank = int(os.environ.get("LOCAL_RANK", -1))
     if args.local_rank != -1:
-        torch.cuda.set_device(args.local_rank)  # set the device
-        dist.init_process_group(backend="nccl")  # initialize process group
+        torch.cuda.set_device(args.local_rank)
+        dist.init_process_group(backend="nccl")
         logging.info(f"Process {args.local_rank} initialized")
 
-    # load gene tokens
-    token_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_tokens_nosyn.txt"
+    # load gene tokens and make custom tokenizer
     genes = load_tokens(token_file)
-
-    # custom tokenizer
     tokenizer = custom_gene_tokenizer(genes=genes)
 
     # load DeBERTa model
-    model_name = "microsoft/deberta-v3-base"
     model = DebertaV2ForMaskedLM.from_pretrained(model_name)
     model.resize_token_embeddings(len(tokenizer))
     logging.info(
         f"Loaded DeBERTa model and resized token embeddings to {len(tokenizer)}"
     )
+    device = torch.device(f"cuda:{args.local_rank}" if args.local_rank != -1 else "cpu")
+    model.to(device)
 
     # wrap model in ddp
     if args.local_rank != -1:
@@ -131,21 +140,19 @@ def main() -> None:
             model, device_ids=[args.local_rank], output_device=args.local_rank
         )
     print(
-        f"Process {args.local_rank} is using {torch.cuda.get_device_name(args.local_rank)}"
+        f"Process {args.local_rank} is using "
+        f"{torch.cuda.get_device_name(args.local_rank)}"
+    )
+    world_size = (
+        torch.distributed.get_world_size() if torch.distributed.is_initialized() else 1
     )
 
-    # data_collator = RobustDataCollator(
-    #     tokenizer=tokenizer,
-    #     mlm=True,
-    #     mlm_probability=0.15,
-    # )
-    # logging.info("Created data collator.")
+    # set up collator for MLM
     data_collator = DataCollatorForLanguageModeling(
         tokenizer=tokenizer, mlm=True, mlm_probability=0.15
     )
 
     # load dataset generator
-    abstracts = f"{abstracts_dir}/combined/tokens_cleaned_abstracts_casefold_finetune_combined.txt"
     streaming_dataset = StreamingCorpus(
         file_path=abstracts,
         tokenizer=tokenizer,
@@ -154,147 +161,72 @@ def main() -> None:
     logging.info(f"Created StreamingCorpus with {len(streaming_dataset)} abstracts")
 
     dataloader = DataLoader(
-        streaming_dataset, batch_size=8, num_workers=4, collate_fn=data_collator
+        streaming_dataset,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        collate_fn=data_collator,
+        pin_memory=True,
     )
 
-    # optimizer
-    optimizer = AdamW(model.parameters(), lr=5e-5)
-
-    # gradient accumulation
-    accumulation_steps = 4  # Effective batch size will be 4 * 4 = 16
+    # optimizer and scheduler w/ warmup
+    total_steps = (len(dataloader) // world_size) * 3  # 3 epochs
+    optimizer = AdamW(model.parameters(), lr=2e-5, weight_decay=0.01)
+    scheduler = get_linear_schedule_with_warmup(
+        optimizer,
+        num_warmup_steps=int(0.1 * total_steps),
+        num_training_steps=total_steps,
+    )
 
     # mixed precision training
     scaler = torch.cuda.amp.GradScaler()
 
-    # get steps and scheduler
-    total_steps = len(dataloader) * 3  # 3 epochs
-    scheduler = get_linear_schedule_with_warmup(
-        optimizer, num_warmup_steps=0, num_training_steps=total_steps
-    )
-
-    # set device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model.to(device)
-
     # training loop
     for epoch in range(3):
         model.train()
-        epoch_iterator = tqdm(
-            total=len(dataloader), desc=f"Epoch {epoch+1}", position=1, leave=False
-        )
+        if args.local_rank in {0, -1}:
+            epoch_iterator = tqdm(
+                total=len(dataloader) // world_size,
+                desc=f"Epoch {epoch+1}",
+                position=0,
+                leave=True,
+            )
         for step, batch in enumerate(dataloader):
-            batch = {k: v.to(device) for k, v in batch.items()}
+            batch = {k: v.to(f"cuda:{args.local_rank}") for k, v in batch.items()}
 
             with torch.autocast(device_type="cuda"):
                 outputs = model(**batch)
-                loss = outputs.loss / accumulation_steps  # normalize loss
+                loss = (
+                    outputs.loss / args.gradient_accumulation_steps
+                )  # normalize loss for gradient accumulation
 
             scaler.scale(loss).backward()
 
-            if (step + 1) % accumulation_steps == 0:
+            if (step + 1) % args.gradient_accumulation_steps == 0:
+                scaler.unscale_(optimizer)
+                # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 scaler.step(optimizer)
                 scaler.update()
                 scheduler.step()
                 optimizer.zero_grad()
 
-            # update progress bar
-            epoch_iterator.update(1)
-            epoch_iterator.set_postfix(
-                {"loss": f"{loss.item() * accumulation_steps:.4f}"}
-            )
-            if step % 100 == 0:
-                print(
-                    f"Epoch {epoch}, Step {step}, Loss: {loss.item() * accumulation_steps}"
-                )
+                # update progress bar on main process
+                if args.local_rank in {0, -1}:
+                    epoch_iterator.update(1)
+                    epoch_iterator.set_postfix(
+                        {
+                            "loss": f"{loss.item() * args.gradient_accumulation_steps:.4f}"
+                        }
+                    )
+
+                    if step % (100 * args.gradient_accumulation_steps) == 0:
+                        logging.info(
+                            f"Epoch {epoch}, Step {step // world_size}, "
+                            f"Loss: {loss.item() * args.gradient_accumulation_steps:.4f}"
+                        )
 
     if args.local_rank in {0, -1}:
-        model.save_pretrained(f"{args.root_dir}/models/deberta")
-
-    # get max steps fro trainer
-    # num_gpus = 2
-    # num_epochs = 3
-    # batch_size = 16
-    # total_abstracts = 3889578
-    # max_steps = _get_total_steps(num_gpus, num_epochs, batch_size, total_abstracts)
-    # logging.info(f"Calculated max_steps: {max_steps}")
-
-    # # test actual training loop behavior
-    # logging.info("Testing training loop behavior")
-    # train_dataloader = DataLoader(
-    #     streaming_dataset,
-    #     batch_size=16,
-    #     collate_fn=data_collator,
-    # )
-
-    # for i, batch in enumerate(train_dataloader):
-    #     logging.info(f"Batch {i} keys: {batch.keys()}")
-    #     if "input_ids" in batch:
-    #         logging.info(f"Batch {i} input_ids shape: {batch['input_ids'].shape}")
-    #     else:
-    #         logging.warning(f"Batch {i} is missing input_ids")
-    #     if i >= 5:  # test first 5 batches
-    #         break
-
-    # # define training arguments
-    # training_args = TrainingArguments(
-    #     output_dir=f"{args.root_dir}/models/deberta",
-    #     overwrite_output_dir=True,
-    #     num_train_epochs=num_epochs,
-    #     per_device_train_batch_size=batch_size,
-    #     save_steps=10_000,
-    #     save_total_limit=2,
-    #     prediction_loss_only=True,
-    #     logging_dir=f"{args.root_dir}p/models/logs",
-    #     logging_steps=500,
-    #     max_steps=max_steps,
-    #     # fp16=True,  # mixed precision training
-    #     local_rank=args.local_rank,
-    # )
-
-    # # initialize trainer
-    # trainer = Trainer(
-    #     model=model,
-    #     args=training_args,
-    #     data_collator=data_collator,
-    #     train_dataset=streaming_dataset,
-    # )
-    # logging.info("Starting training...")
-    # try:
-    #     trainer.train()
-    # except Exception as e:
-    #     logging.error(f"Error during training: {str(e)}")
-    #     raise
-
-    # save model on the main process
-    # if args.local_rank in {0, -1}:
-    #     trainer.save_model(f"{args.root_dir}/models/deberta")
+        model.save_pretrained(model_out)
 
 
 if __name__ == "__main__":
     main()
-
-
-# class StreamingTrainer(Trainer):
-#     """Helper class to override get_train_dataloader method"""
-
-#     def get_train_dataloader(self) -> DataLoader:
-#         """Return the training dataloader"""
-#         return data_loader
-
-# set up dataloader
-# sampler: Union[DistributedSampler, None] = (
-#     DistributedSampler(streaming_dataset) if args.local_rank != -1 else None
-# )
-# data_loader = DataLoader(
-#     streaming_dataset,
-#     batch_size=batch_size,
-#     collate_fn=data_collator,
-#     num_workers=4,
-#     # sampler=sampler,
-# )
-
-# trainer = StreamingTrainer(
-#     model=model,
-#     args=training_args,
-#     data_collator=data_collator,
-# )
