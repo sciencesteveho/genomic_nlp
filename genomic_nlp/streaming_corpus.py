@@ -11,6 +11,7 @@ import math
 import mmap
 import os
 import pickle
+import threading
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 import numpy as np
@@ -31,6 +32,7 @@ class StreamingCorpus(IterableDataset):
         self.file_size = os.path.getsize(file_path)
         self.num_lines = 3889578
         self.current_position = 0
+        self.lock = threading.Lock()
         logging.info(
             f"Initialized StreamingCorpus with file: {file_path}, size: {self.file_size}"
         )
@@ -62,14 +64,18 @@ class StreamingCorpus(IterableDataset):
             else self.file_size
         )
 
-        # Ensure we start from where we left off
-        start = max(start, self.current_position)
+        with self.lock:
+            # ensure we start from where we left off
+            if self.current_position >= end:
+                self.current_position = start
+            else:
+                start = max(start, self.current_position)
 
         logging.info(
             f"Worker {worker_id} (rank {rank}) processing range: {start} - {end}"
         )
 
-        yield from self.read_abstracts(start, end)
+        return self.read_abstracts(start, end)
 
     def read_abstracts(self, start: int, end: int) -> Iterator[Dict[str, torch.Tensor]]:
         """Read and tokenize abstracts from the file."""
@@ -77,6 +83,7 @@ class StreamingCorpus(IterableDataset):
             mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
             mm.seek(start)
             while mm.tell() < end:
+                current_pos = mm.tell()
                 if line := mm.readline().decode().strip():
                     try:
                         encoded = self.tokenizer.encode_plus(
@@ -90,12 +97,19 @@ class StreamingCorpus(IterableDataset):
                             "input_ids": encoded["input_ids"].squeeze(0),
                             "attention_mask": encoded["attention_mask"].squeeze(0),
                         }
-                        self.current_position = mm.tell()
+                        with self.lock:
+                            self.current_position = mm.tell()
                         yield result
                     except Exception as e:
-                        logging.error(f"Error processing abstract: {str(e)}")
+                        logging.error(
+                            f"Error processing abstract at position {current_pos}: {str(e)}"
+                        )
                         continue
             mm.close()
+
+        # if we've reached the end, reset to the beginning
+        if self.current_position >= self.file_size:
+            self.current_position = 0
 
     def __getitem__(self, index: int) -> Dict[str, torch.Tensor]:
         """
@@ -142,13 +156,22 @@ class RobustDataCollator:
             return {}
 
         try:
+            # filter out empty features
+            valid_features = [
+                f for f in features if f and "input_ids" in f and "attention_mask" in f
+            ]
+
+            if not valid_features:
+                logging.warning("No valid features found after filtering")
+                return {}
+
             # log details about each feature
-            for i, feature in enumerate(features):
+            for i, feature in enumerate(valid_features):
                 logging.info(f"Feature {i} keys: {feature.keys()}")
                 for key, value in feature.items():
                     logging.info(f"Feature {i} {key} shape: {value.shape}")
 
-            batch = self.data_collator(features)
+            batch = self.data_collator(valid_features)
             logging.info(f"Successfully collated batch with keys: {batch.keys()}")
             for key, value in batch.items():
                 logging.info(f"Collated batch {key} shape: {value.shape}")
