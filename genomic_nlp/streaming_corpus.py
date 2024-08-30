@@ -67,6 +67,7 @@ class StreamingCorpus(IterableDataset):
             else self.file_size
         )
 
+        # reset position if we've reached the end of the file
         if self.current_position >= end:
             self.current_position = start
 
@@ -157,7 +158,7 @@ class RobustDataCollator:
             return {}
 
         try:
-            # filter out empty features
+            # Filter out empty features
             valid_features = [
                 f for f in features if f and "input_ids" in f and "attention_mask" in f
             ]
