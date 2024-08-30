@@ -90,6 +90,7 @@ class StreamingCorpus(IterableDataset):
             mm.seek(start)
             count = 0
             empty_count = 0
+            yield_count = 0
             while mm.tell() < end:
                 if line := mm.readline().decode().strip():
                     try:
@@ -129,6 +130,10 @@ class StreamingCorpus(IterableDataset):
                             empty_count += 1
                             continue
 
+                        yield_count += 1
+                        logging.info(
+                            f"Yielding abstract {count} (yield count: {yield_count})"
+                        )
                         yield result
 
                     except Exception as e:
@@ -139,7 +144,7 @@ class StreamingCorpus(IterableDataset):
                     empty_count += 1
             mm.close()
         logging.info(
-            f"Finished processing {count} abstracts. Skipped {empty_count} empty or errored abstracts."
+            f"Finished processing {count} abstracts. Yielded {yield_count} abstracts. Skipped {empty_count} empty or errored abstracts."
         )
 
     def __getitem__(self, index: int) -> Dict[str, torch.Tensor]:
