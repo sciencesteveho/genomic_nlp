@@ -36,7 +36,26 @@ class StreamingCorpus(IterableDataset):
     def __iter__(self) -> Iterator[torch.Tensor]:
         """Create an iterator over the corpus."""
         worker_info = torch.utils.data.get_worker_info()
-        start, end = self._get_start_end(worker_info)
+        num_workers = worker_info.num_workers if worker_info else 1
+        worker_id = worker_info.id if worker_info else 0
+
+        # distribute data across processes for distributed training
+        if torch.distributed.is_initialized():
+            num_replicas = torch.distributed.get_world_size()
+            rank = torch.distributed.get_rank()
+        else:
+            num_replicas = 1
+            rank = 0
+
+        # calculate the range for this worker and process
+        per_worker = self.file_size // (num_workers * num_replicas)
+        start = (rank * num_workers + worker_id) * per_worker
+        end = (
+            start + per_worker
+            if (rank * num_workers + worker_id + 1) < (num_workers * num_replicas)
+            else self.file_size
+        )
+
         return self.read_abstracts(start, end)
 
     def _get_start_end(

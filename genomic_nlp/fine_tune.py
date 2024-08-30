@@ -146,15 +146,15 @@ def main() -> None:
     max_steps = _get_total_steps(num_gpus, num_epochs, batch_size, total_abstracts)
 
     # set up dataloader
-    sampler: Union[DistributedSampler, None] = (
-        DistributedSampler(streaming_dataset) if args.local_rank != -1 else None
-    )
+    # sampler: Union[DistributedSampler, None] = (
+    #     DistributedSampler(streaming_dataset) if args.local_rank != -1 else None
+    # )
     data_loader = DataLoader(
         streaming_dataset,
         batch_size=batch_size,
         collate_fn=data_collator,
         num_workers=4,
-        sampler=sampler,
+        # sampler=sampler,
     )
 
     # define training arguments
