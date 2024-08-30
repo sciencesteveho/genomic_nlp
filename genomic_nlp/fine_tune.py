@@ -189,6 +189,19 @@ def main() -> None:
     except Exception as e:
         logging.error(f"Error in data collation: {str(e)}")
 
+    # test actual training loop behavior
+    logging.info("Testing training loop behavior")
+    train_dataloader = DataLoader(
+        streaming_dataset,
+        batch_size=16,
+        collate_fn=data_collator,
+    )
+
+    for i, batch in enumerate(train_dataloader):
+        logging.info(f"Batch {i} keys: {batch.keys()}")
+        if i >= 5:  # test first 5 batches
+            break
+
     # define training arguments
     training_args = TrainingArguments(
         output_dir=f"{args.root_dir}/models/deberta",
