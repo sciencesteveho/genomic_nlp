@@ -76,7 +76,9 @@ def main() -> None:
     # load classified abstracts
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--root_dir", type=str, default="/ocean/projects/bio210019p/stevesho/nlp"
+        "--root_dir",
+        type=str,
+        default="/ocean/projects/bio210019p/stevesho/genomic_nlp",
     )
     args = parser.parse_args()
 
@@ -164,7 +166,7 @@ def main() -> None:
         save_steps=10_000,
         save_total_limit=2,
         prediction_loss_only=True,
-        logging_dir="/ocean/projects/bio210019p/stevesho/nlp/models/logs",
+        logging_dir="/ocean/projects/bio210019p/stevesho/genomic_nlp/models/logs",
         logging_steps=500,
         max_steps=max_steps,
         # fp16=True,  # mixed precision training
