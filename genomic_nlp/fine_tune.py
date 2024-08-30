@@ -90,7 +90,9 @@ def main() -> None:
     # set some params
     model_name = "microsoft/deberta-v3-base"
     token_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_tokens_nosyn.txt"
-    ds_config_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/genomic_nlp/deepspeed_config.json"
+    ds_config_file = (
+        "/ocean/projects/bio210019p/stevesho/genomic_nlp/deepspeed_config.json"
+    )
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--root_dir",
