@@ -6,6 +6,7 @@
 embedding extraction."""
 
 
+import logging
 import math
 import mmap
 import os
@@ -28,6 +29,9 @@ class StreamingCorpus(IterableDataset):
         self.max_length = max_length
         self.file_size = os.path.getsize(file_path)
         self.num_lines = 3889578
+        logging.info(
+            f"Initialized StreamingCorpus with file: {file_path}, size: {self.file_size}"
+        )
 
     def __len__(self):
         """Return the number of lines in the file."""
@@ -56,7 +60,11 @@ class StreamingCorpus(IterableDataset):
             else self.file_size
         )
 
-        yield from self.read_abstracts(start, end)
+        logging.info(
+            f"Worker {worker_id} (rank {rank}) processing range: {start} - {end}"
+        )
+
+        return self.read_abstracts(start, end)
 
     def _get_start_end(
         self,
@@ -79,6 +87,7 @@ class StreamingCorpus(IterableDataset):
         with open(self.file_path, "r") as f:
             mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
             mm.seek(start)
+            count = 0
             while mm.tell() < end:
                 if line := mm.readline().decode().strip():
                     encoded = self.tokenizer.encode_plus(
@@ -87,11 +96,15 @@ class StreamingCorpus(IterableDataset):
                         padding="max_length",
                         truncation=True,
                     )
+                    count += 1
+                    if count % 1000 == 0:
+                        logging.info(f"Processed {count} abstracts")
                     yield {
                         "input_ids": encoded["input_ids"],
                         "attention_mask": encoded["attention_mask"],
                     }
             mm.close()
+        logging.info(f"Finished processing {count} abstracts")
 
 
 class FinetuneStreamingCorpus(IterableDataset):

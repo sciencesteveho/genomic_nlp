@@ -10,6 +10,7 @@ custom tokenizer that adds gene names to the vocabulary."""
 
 
 import argparse
+import logging
 import os
 import pickle
 from typing import Set, Union
@@ -29,6 +30,8 @@ from transformers import TrainingArguments  # type: ignore
 from streaming_corpus import FinetuneStreamingCorpus
 from streaming_corpus import StreamingCorpus
 from utils import _chunk_locator
+
+logging.basicConfig(level=logging.INFO)
 
 
 def load_tokens(filename: str) -> Set[str]:
@@ -96,10 +99,11 @@ def main() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     args.local_rank = int(os.environ.get("LOCAL_RANK", -1))
 
-    # Set up distributed training environment
+    # set up distributed training environment
     if args.local_rank != -1:
-        torch.cuda.set_device(args.local_rank)  # Set the device
-        dist.init_process_group(backend="nccl")  # Initialize process group
+        torch.cuda.set_device(args.local_rank)  # set the device
+        dist.init_process_group(backend="nccl")  # initialize process group
+        logging.info(f"Process {args.local_rank} initialized")
 
     # load gene tokens
     token_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_tokens_nosyn.txt"
@@ -112,6 +116,9 @@ def main() -> None:
     model_name = "microsoft/deberta-v3-base"
     model = DebertaV2ForMaskedLM.from_pretrained(model_name)
     model.resize_token_embeddings(len(tokenizer))
+    logging.info(
+        f"Loaded DeBERTa model and resized token embeddings to {len(tokenizer)}"
+    )
 
     # wrap model in ddp
     if args.local_rank != -1:
@@ -119,7 +126,6 @@ def main() -> None:
         model = torch.nn.parallel.DistributedDataParallel(
             model, device_ids=[args.local_rank], output_device=args.local_rank
         )
-
     print(
         f"Process {args.local_rank} is using {torch.cuda.get_device_name(args.local_rank)}"
     )
@@ -129,6 +135,7 @@ def main() -> None:
         mlm=True,
         mlm_probability=0.15,
     )
+    logging.info("Created DataCollatorForLanguageModeling")
 
     # load dataset generator
     abstracts = f"{abstracts_dir}/combined/tokens_cleaned_abstracts_casefold_finetune_combined.txt"
@@ -137,6 +144,20 @@ def main() -> None:
         tokenizer=tokenizer,
         max_length=512,
     )
+    logging.info(f"Created StreamingCorpus with {len(streaming_dataset)} abstracts")
+
+    # test data loading
+    try:
+        test_iter = iter(streaming_dataset)
+        test_batch = next(test_iter)
+        logging.info(f"Successfully loaded a sample. Sample keys: {test_batch.keys()}")
+        logging.info(f"Sample input_ids shape: {len(test_batch['input_ids'])}")
+        logging.info(
+            f"Sample attention_mask shape: {len(test_batch['attention_mask'])}"
+        )
+    except Exception as e:
+        logging.error(f"Error loading a sample from StreamingCorpus: {str(e)}")
+        raise
 
     # get max steps fro trainer
     num_gpus = 2
@@ -144,6 +165,7 @@ def main() -> None:
     batch_size = 16
     total_abstracts = 3889578
     max_steps = _get_total_steps(num_gpus, num_epochs, batch_size, total_abstracts)
+    logging.info(f"Calculated max_steps: {max_steps}")
 
     # define training arguments
     training_args = TrainingArguments(
@@ -168,7 +190,7 @@ def main() -> None:
         data_collator=data_collator,
         train_dataset=streaming_dataset,
     )
-
+    logging.info("Initialized Trainer. Starting training...")
     trainer.train()
 
     # save model on the main process
