@@ -89,6 +89,7 @@ class StreamingCorpus(IterableDataset):
             mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
             mm.seek(start)
             count = 0
+            empty_count = 0
             while mm.tell() < end:
                 if line := mm.readline().decode().strip():
                     try:
@@ -103,16 +104,43 @@ class StreamingCorpus(IterableDataset):
                         if count % 1000 == 0:
                             logging.info(f"Processed {count} abstracts")
 
-                        # Ensure we always yield a dictionary with the expected keys
-                        yield {
+                        # additional logging and safeguards
+                        if (
+                            "input_ids" not in encoded
+                            or "attention_mask" not in encoded
+                        ):
+                            logging.warning(
+                                f"Skipping abstract {count}: Missing expected keys"
+                            )
+                            empty_count += 1
+                            continue
+
+                        result = {
                             "input_ids": encoded["input_ids"].squeeze(0),
                             "attention_mask": encoded["attention_mask"].squeeze(0),
                         }
+
+                        # ensure we're not yielding empty tensors
+                        if (
+                            result["input_ids"].numel() == 0
+                            or result["attention_mask"].numel() == 0
+                        ):
+                            logging.warning(f"Skipping abstract {count}: Empty tensor")
+                            empty_count += 1
+                            continue
+
+                        yield result
+
                     except Exception as e:
                         logging.error(f"Error processing abstract {count}: {str(e)}")
+                        empty_count += 1
                         continue
+                else:
+                    empty_count += 1
             mm.close()
-        logging.info(f"Finished processing {count} abstracts")
+        logging.info(
+            f"Finished processing {count} abstracts. Skipped {empty_count} empty or errored abstracts."
+        )
 
     def __getitem__(self, index: int) -> Dict[str, torch.Tensor]:
         """
@@ -159,8 +187,16 @@ class RobustDataCollator:
             return {}
 
         try:
+            # log details about each feature
+            for i, feature in enumerate(features):
+                logging.info(f"Feature {i} keys: {feature.keys()}")
+                for key, value in feature.items():
+                    logging.info(f"Feature {i} {key} shape: {value.shape}")
+
             batch = self.data_collator(features)
             logging.info(f"Successfully collated batch with keys: {batch.keys()}")
+            for key, value in batch.items():
+                logging.info(f"Collated batch {key} shape: {value.shape}")
             return batch
         except Exception as e:
             logging.error(f"Error in DataCollator: {str(e)}")
