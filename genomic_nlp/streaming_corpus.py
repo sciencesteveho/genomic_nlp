@@ -16,6 +16,7 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple
 import numpy as np
 import torch
 from torch.utils.data import IterableDataset
+from transformers import DataCollatorForLanguageModeling  # type: ignore
 from transformers import PreTrainedTokenizer  # type: ignore
 
 
@@ -131,6 +132,53 @@ class StreamingCorpus(IterableDataset):
                         "attention_mask": encoded["attention_mask"].squeeze(0),
                     }
         raise IndexError("Index out of range")
+
+
+class RobustDataCollator:
+    def __init__(
+        self,
+        tokenizer: PreTrainedTokenizer,
+        mlm: bool = True,
+        mlm_probability: float = 0.15,
+    ):
+        self.tokenizer = tokenizer
+        self.mlm = mlm
+        self.mlm_probability = mlm_probability
+        self.data_collator = DataCollatorForLanguageModeling(
+            tokenizer=tokenizer, mlm=mlm, mlm_probability=mlm_probability
+        )
+
+    def __call__(
+        self, features: List[Dict[str, torch.Tensor]]
+    ) -> Dict[str, torch.Tensor]:
+        logging.info(f"DataCollator received {len(features)} features")
+        if not features:
+            logging.warning("DataCollator received an empty list of features")
+            return {}
+
+        try:
+            # Check if the features are already tokenized
+            if isinstance(features[0], dict) and "input_ids" in features[0]:
+                batch = self.data_collator(features)
+            else:
+                # If not tokenized, tokenize the features
+                batch_encoding = self.tokenizer(
+                    features,
+                    truncation=True,
+                    padding="max_length",
+                    max_length=512,
+                    return_tensors="pt",
+                )
+                batch = self.data_collator(batch_encoding["input_ids"])
+
+            logging.info(f"Successfully collated batch with keys: {batch.keys()}")
+            return batch
+        except Exception as e:
+            logging.error(f"Error in DataCollator: {str(e)}")
+            logging.error(
+                f"First feature: {features[0] if features else 'No features'}"
+            )
+            raise
 
 
 class FinetuneStreamingCorpus(IterableDataset):

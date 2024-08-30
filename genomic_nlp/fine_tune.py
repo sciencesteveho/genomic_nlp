@@ -28,6 +28,7 @@ from transformers import Trainer  # type: ignore
 from transformers import TrainingArguments  # type: ignore
 
 from streaming_corpus import FinetuneStreamingCorpus
+from streaming_corpus import RobustDataCollator
 from streaming_corpus import StreamingCorpus
 from utils import _chunk_locator
 
@@ -130,12 +131,12 @@ def main() -> None:
         f"Process {args.local_rank} is using {torch.cuda.get_device_name(args.local_rank)}"
     )
 
-    data_collator = DataCollatorForLanguageModeling(
+    data_collator = RobustDataCollator(
         tokenizer=tokenizer,
         mlm=True,
         mlm_probability=0.15,
     )
-    logging.info("Created DataCollatorForLanguageModeling")
+    logging.info("Created data collator.")
 
     # load dataset generator
     abstracts = f"{abstracts_dir}/combined/tokens_cleaned_abstracts_casefold_finetune_combined.txt"
