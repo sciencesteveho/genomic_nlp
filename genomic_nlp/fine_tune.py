@@ -179,7 +179,9 @@ def main() -> None:
     # training loop
     for epoch in range(3):
         model.train()
-        epoch_iterator = tqdm(dataloader, desc=f"Epoch {epoch+1}", leave=False)
+        epoch_iterator = tqdm(
+            total=len(dataloader), desc=f"Epoch {epoch+1}", position=1, leave=False
+        )
         for step, batch in enumerate(dataloader):
             batch = {k: v.to(device) for k, v in batch.items()}
 
@@ -196,6 +198,7 @@ def main() -> None:
                 optimizer.zero_grad()
 
             # update progress bar
+            epoch_iterator.update(1)
             epoch_iterator.set_postfix(
                 {"loss": f"{loss.item() * accumulation_steps:.4f}"}
             )
