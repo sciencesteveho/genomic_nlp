@@ -128,6 +128,7 @@ def main() -> None:
         tokenizer=tokenizer,
         mlm=True,
         mlm_probability=0.15,
+        return_tensors="pt",
     )
 
     # load dataset generator
@@ -141,7 +142,7 @@ def main() -> None:
     # get max steps fro trainer
     num_gpus = 2
     num_epochs = 3
-    batch_size = 32
+    batch_size = 16
     total_abstracts = 3889578
     max_steps = _get_total_steps(num_gpus, num_epochs, batch_size, total_abstracts)
 
@@ -166,7 +167,7 @@ def main() -> None:
         save_steps=10_000,
         save_total_limit=2,
         prediction_loss_only=True,
-        logging_dir="/ocean/projects/bio210019p/stevesho/genomic_nlp/models/logs",
+        logging_dir=f"{args.root_dir}p/models/logs",
         logging_steps=500,
         max_steps=max_steps,
         # fp16=True,  # mixed precision training
