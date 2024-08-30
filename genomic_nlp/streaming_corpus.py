@@ -6,18 +6,16 @@
 embedding extraction."""
 
 
+import linecache
 import logging
 import math
-import mmap
 import os
 import pickle
-import threading
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 import numpy as np
 import torch
 from torch.utils.data import IterableDataset
-from transformers import DataCollatorForLanguageModeling  # type: ignore
 from transformers import PreTrainedTokenizer  # type: ignore
 
 
@@ -35,6 +33,7 @@ class StreamingCorpus(IterableDataset):
         self.num_lines = 3889578
         self.current_position = 0
         self.iteration_count = 0
+        self.cache: Dict[int, Dict[str, torch.Tensor]] = {}
         logging.info(
             f"Initialized StreamingCorpus with file: {file_path}, size: {self.file_size}"
         )
@@ -79,60 +78,36 @@ class StreamingCorpus(IterableDataset):
 
     def read_abstracts(self, start: int, end: int) -> Iterator[Dict[str, torch.Tensor]]:
         """Read and tokenize abstracts from the file."""
-        with open(self.file_path, "r") as f:
-            mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
-            mm.seek(start)
-            count = 0
-            while mm.tell() < end:
-                if line := mm.readline().decode().strip():
-                    try:
-                        encoded = self.tokenizer.encode_plus(
-                            line,
-                            max_length=self.max_length,
-                            padding="max_length",
-                            truncation=True,
-                            return_tensors="pt",
-                        )
-                        result = {
-                            "input_ids": encoded["input_ids"].squeeze(0),
-                            "attention_mask": encoded["attention_mask"].squeeze(0),
-                        }
-                        self.current_position = mm.tell()
-                        count += 1
-                        if count % 1000 == 0:
-                            logging.info(
-                                f"Processed {count} abstracts. Current position: {self.current_position}"
-                            )
-                        yield result
-                    except Exception as e:
-                        logging.error(
-                            f"Error processing abstract at position {mm.tell()}: {str(e)}"
-                        )
-            mm.close()
-        logging.info(
-            f"Finished processing {count} abstracts. Final position: {self.current_position}"
-        )
+        count = 0
+        for i in range(start, end):
+            if i in self.cache:
+                yield self.cache[i]
+                count += 1
+                continue
 
-    def __getitem__(self, index: int) -> Dict[str, torch.Tensor]:
-        """
-        Implement __getitem__ to make the dataset work with DataLoader.
-        This is not efficient for large datasets, but helps with debugging.
-        """
-        with open(self.file_path, "r") as f:
-            for i, line in enumerate(f):
-                if i == index:
+            if line := linecache.getline(self.file_path, i).strip():
+                try:
                     encoded = self.tokenizer.encode_plus(
-                        line.strip(),
+                        line,
                         max_length=self.max_length,
                         padding="max_length",
                         truncation=True,
                         return_tensors="pt",
                     )
-                    return {
+                    result = {
                         "input_ids": encoded["input_ids"].squeeze(0),
                         "attention_mask": encoded["attention_mask"].squeeze(0),
                     }
-        raise IndexError("Index out of range")
+                    self.cache[i] = result
+                    count += 1
+                    if count % 1000 == 0:
+                        logging.info(
+                            f"Processed {count} abstracts. Current position: {i}"
+                        )
+                    yield result
+                except Exception as e:
+                    logging.error(f"Error processing abstract at line {i}: {str(e)}")
+        logging.info(f"Finished processing {count} abstracts. Final position: {end-1}")
 
 
 class FinetuneStreamingCorpus(IterableDataset):

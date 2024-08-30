@@ -3,7 +3,9 @@
 
 
 """Code to fine-tune a transformer model on scientific abstracts. We use a
-masked language modeling object as the fine-tuning task.
+masked language modeling object as the fine-tuning task. We fine-tune on DeBERTa
+V3, a bi-directional transformer model designed for natural language
+understanding (NLU). We choose the base model size for a mix of performance and speed.
 
 To ensure we can extract embeddings for genes present in our texts, we use a
 custom tokenizer that adds gene names to the vocabulary."""
@@ -15,6 +17,7 @@ import os
 import pickle
 from typing import Set, Union
 
+import deepspeed  # type: ignore
 import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -23,7 +26,7 @@ from tqdm import tqdm  # type: ignore
 from transformers import AdamW  # type: ignore
 from transformers import DataCollatorForLanguageModeling  # type: ignore
 from transformers import DebertaV2ForMaskedLM  # type: ignore
-from transformers import DebertaV2Tokenizer  # type: ignore
+from transformers import DebertaV2TokenizerFast  # type: ignore
 from transformers import get_linear_schedule_with_warmup  # type: ignore
 
 from streaming_corpus import StreamingCorpus
@@ -50,10 +53,10 @@ def _get_total_steps(
 
 def custom_gene_tokenizer(
     genes: Set[str], base_model_name: str = "microsoft/deberta-v3-base"
-) -> DebertaV2Tokenizer:
+) -> DebertaV2TokenizerFast:
     """Create a custom tokenizer and add gene tokens"""
     # load base tokenizer
-    tokenizer = DebertaV2Tokenizer.from_pretrained(base_model_name)
+    tokenizer = DebertaV2TokenizerFast.from_pretrained(base_model_name)
 
     # add gene names to the vocabulary
     new_tokens = list(genes)
@@ -64,7 +67,7 @@ def custom_gene_tokenizer(
         "/ocean/projects/bio210019p/stevesho/genomic_nlp/models/deberta/gene_tokenizer"
     )
     tokenizer.save_pretrained(save_dir)
-    return DebertaV2Tokenizer.from_pretrained(save_dir)
+    return DebertaV2TokenizerFast.from_pretrained(save_dir)
 
 
 def _write_abstracts_to_text(abstracts_dir: str, prefix: str) -> None:
@@ -87,6 +90,7 @@ def main() -> None:
     # set some params
     model_name = "microsoft/deberta-v3-base"
     token_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_tokens_nosyn.txt"
+    ds_config_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/genomic_nlp/deepspeed_config.json"
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--root_dir",
@@ -94,31 +98,24 @@ def main() -> None:
         default="/ocean/projects/bio210019p/stevesho/genomic_nlp",
     )
     parser.add_argument(
-        "--batch_size",
+        "--local_rank",
         type=int,
-        default=8,
+        default=-1,
+        help="Local rank for distributed training on GPUs",
     )
     parser.add_argument(
-        "--gradient_accumulation_steps",
-        type=int,
-        default=4,
-    )
-    parser.add_argument(
-        "--num_workers",
-        type=int,
-        default=4,
+        "--deepspeed_config",
+        type=str,
+        default="ds_config.json",
+        help="DeepSpeed configuration file",
     )
     args = parser.parse_args()
     abstracts_dir = f"{args.root_dir}/data"
     abstracts = f"{abstracts_dir}/combined/tokens_cleaned_abstracts_casefold_finetune_combined.txt"
     model_out = f"{args.root_dir}/models/deberta"
 
-    # set up distributed training environment
-    args.local_rank = int(os.environ.get("LOCAL_RANK", -1))
-    if args.local_rank != -1:
-        torch.cuda.set_device(args.local_rank)
-        dist.init_process_group(backend="nccl")
-        logging.info(f"Process {args.local_rank} initialized")
+    # initialize deepspeed
+    deepspeed.init_distributed(dist_backend="nccl")
 
     # load gene tokens and make custom tokenizer
     genes = load_tokens(token_file)
@@ -127,24 +124,15 @@ def main() -> None:
     # load DeBERTa model
     model = DebertaV2ForMaskedLM.from_pretrained(model_name)
     model.resize_token_embeddings(len(tokenizer))
+    model.gradient_checkpointing_enable()
     logging.info(
         f"Loaded DeBERTa model and resized token embeddings to {len(tokenizer)}"
     )
-    device = torch.device(f"cuda:{args.local_rank}" if args.local_rank != -1 else "cpu")
-    model.to(device)
 
-    # wrap model in ddp
-    if args.local_rank != -1:
-        model.to(torch.device(f"cuda:{args.local_rank}"))
-        model = torch.nn.parallel.DistributedDataParallel(
-            model, device_ids=[args.local_rank], output_device=args.local_rank
-        )
-    print(
-        f"Process {args.local_rank} is using "
-        f"{torch.cuda.get_device_name(args.local_rank)}"
-    )
-    world_size = (
-        torch.distributed.get_world_size() if torch.distributed.is_initialized() else 1
+    # set up DeepSpeed
+    model_engine, optimizer, _, _ = deepspeed.initialize(
+        model=model,
+        config=ds_config_file,
     )
 
     # set up collator for MLM
@@ -162,74 +150,60 @@ def main() -> None:
 
     dataloader = DataLoader(
         streaming_dataset,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
+        batch_size=model_engine.train_micro_batch_size_per_gpu(),
+        num_workers=4,
         collate_fn=data_collator,
         pin_memory=True,
-        prefetch_factor=2,
+        prefetch_factor=4,
+        persistent_workers=True,
+        shuffle=False,
     )
-
     # optimizer and scheduler w/ warmup
-    total_steps = (len(dataloader) // world_size) * 3  # 3 epochs
-    optimizer = AdamW(model.parameters(), lr=2e-5, weight_decay=0.01)
-    scheduler = get_linear_schedule_with_warmup(
-        optimizer,
-        num_warmup_steps=int(0.1 * total_steps),
-        num_training_steps=total_steps,
+    total_steps = len(streaming_dataset) // (
+        model_engine.train_micro_batch_size_per_gpu()
+        * torch.distributed.get_world_size()
     )
-
-    # mixed precision training
-    scaler = torch.cuda.amp.GradScaler()
-
     # training loop
+    total_steps = len(streaming_dataset) // (
+        model_engine.train_micro_batch_size_per_gpu()
+        * torch.distributed.get_world_size()
+    )
     for epoch in range(3):
-        model.train()
+        model_engine.train()
         if args.local_rank in {0, -1}:
             epoch_iterator = tqdm(
-                total=len(dataloader) // world_size,
+                total=total_steps,
                 desc=f"Epoch {epoch+1}",
                 position=0,
                 leave=True,
             )
         for step, batch in enumerate(dataloader):
-            batch = {
-                k: v.to(f"cuda:{args.local_rank}", non_blocking=True)
-                for k, v in batch.items()
-            }
+            # move batch to device
+            batch = {k: v.to(model_engine.local_rank) for k, v in batch.items()}
 
-            with torch.autocast(device_type="cuda"):
-                outputs = model(**batch)
-                loss = (
-                    outputs.loss / args.gradient_accumulation_steps
-                )  # normalize loss for gradient accumulation
+            # forward pass
+            outputs = model_engine(**batch)
+            loss = outputs.loss
 
-            scaler.scale(loss).backward()
+            # backward pass
+            model_engine.backward(loss)
+            model_engine.step()
 
-            if (step + 1) % args.gradient_accumulation_steps == 0:
-                scaler.unscale_(optimizer)
-                # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-                scaler.step(optimizer)
-                scaler.update()
-                scheduler.step()
-                optimizer.zero_grad()
+            # update progress bar on main process
+            if args.local_rank in {0, -1}:
+                epoch_iterator.update(1)
+                epoch_iterator.set_postfix({"loss": f"{loss.item():.4f}"})
 
-                # update progress bar on main process
-                if args.local_rank in {0, -1}:
-                    epoch_iterator.update(1)
-                    epoch_iterator.set_postfix(
-                        {
-                            "loss": f"{loss.item() * args.gradient_accumulation_steps:.4f}"
-                        }
-                    )
+                if step % 100 == 0:
+                    logging.info(f"Epoch {epoch}, Step {step}, Loss: {loss.item():.4f}")
 
-                    if step % (100 * args.gradient_accumulation_steps) == 0:
-                        logging.info(
-                            f"Epoch {epoch}, Step {step // world_size}, "
-                            f"Loss: {loss.item() * args.gradient_accumulation_steps:.4f}"
-                        )
+            # break if we've processed all steps
+            if step >= total_steps:
+                break
 
+    # save the model
     if args.local_rank in {0, -1}:
-        model.save_pretrained(model_out)
+        model_engine.save_checkpoint(model_out)
 
 
 if __name__ == "__main__":
