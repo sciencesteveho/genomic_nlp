@@ -131,9 +131,15 @@ def main() -> None:
         f"Loaded DeBERTa model and resized token embeddings to {len(tokenizer)}"
     )
 
+    # optimizer
+    optimizer = torch.optim.AdamW(
+        model.parameters(), lr=2e-5, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01
+    )
+
     # set up DeepSpeed
     model_engine, optimizer, _, _ = deepspeed.initialize(
         model=model,
+        optimizer=optimizer,
         config=ds_config_file,
     )
 
