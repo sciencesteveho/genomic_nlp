@@ -7,6 +7,8 @@ embedding extraction."""
 
 
 import math
+import mmap
+import os
 import pickle
 from typing import Any, Dict, Iterator, List, Tuple
 
@@ -14,6 +16,40 @@ import numpy as np
 import torch
 from torch.utils.data import IterableDataset
 from transformers import PreTrainedTokenizer  # type: ignore
+
+
+class StreamingCorpus(IterableDataset):
+    def __init__(self, file_path, tokenizer, max_length=512):
+        self.file_path = file_path
+        self.tokenizer = tokenizer
+        self.max_length = max_length
+        self.file_size = os.path.getsize(file_path)
+
+    def __iter__(self):
+        worker_info = torch.utils.data.get_worker_info()
+        if worker_info is None:
+            return self.read_abstracts(0, self.file_size)
+        per_worker = int(self.file_size / worker_info.num_workers)
+        start = worker_info.id * per_worker
+        end = (
+            start + per_worker
+            if worker_info.id < worker_info.num_workers - 1
+            else self.file_size
+        )
+        return self.read_abstracts(start, end)
+
+    def read_abstracts(self, start, end):
+        with open(self.file_path, "r") as f:
+            mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+            mm.seek(start)
+            while mm.tell() < end:
+                if line := mm.readline().decode().strip():
+                    yield self.tokenizer.encode(
+                        line,
+                        max_length=self.max_length,
+                        truncation=True,
+                    )
+            mm.close()
 
 
 class FinetuneStreamingCorpus(IterableDataset):

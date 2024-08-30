@@ -3,16 +3,28 @@
 
 
 """Code to fine-tune a transformer model on scientific abstracts. We use a
-masked language modeling object as the fine-tuning task."""
+masked language modeling object as the fine-tuning task.
+
+To ensure we can extract embeddings for genes present in our texts, we use a
+custom tokenizer.
+"""
 
 
 import argparse
 import os
 import pickle
+from typing import Set, Union
 
+from tokenizers import models  # type: ignore
+from tokenizers import normalizers  # type: ignore
+from tokenizers import pre_tokenizers  # type: ignore
+from tokenizers import processors  # type: ignore
+from tokenizers import Tokenizer  # type: ignore
 import torch
 import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
+from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm  # type: ignore
 from transformers import DataCollatorForLanguageModeling  # type: ignore
 from transformers import DebertaV2ForMaskedLM  # type: ignore
@@ -21,7 +33,44 @@ from transformers import Trainer  # type: ignore
 from transformers import TrainingArguments  # type: ignore
 
 from streaming_corpus import FinetuneStreamingCorpus
+from streaming_corpus import StreamingCorpus
 from utils import _chunk_locator
+
+
+def load_tokens(filename: str) -> Set[str]:
+    """Load gene tokens from a file."""
+    with open(filename, "r") as f:
+        return {line.strip().lower() for line in f}
+
+
+def custom_gene_tokenizer(genes: Set[str]) -> DebertaV2Tokenizer:
+    """Add gene tokens to the tokenizer."""
+    savefile = "/ocean/projects/bio210019p/stevesho/genomic_nlp/models/deberta/gene_tokenizer.json"
+
+    # base tokenizer
+    base_tokenizer = DebertaV2Tokenizer.from_pretrained("microsoft/deberta-v3-base")
+
+    # new tokenizer
+    tokenizer = Tokenizer(models.WordPiece(unk_token="[UNK]"))
+
+    # add genes
+    vocab = list(base_tokenizer.get_vocab().keys()) + list(genes)
+    tokenizer.add_tokens(vocab)
+
+    # prepare tokenizer components
+    tokenizer.normalizer = normalizers.BertNormalizer(lowercase=True)
+    tokenizer.pre_tokenizer = pre_tokenizers.BertPreTokenizer()
+    tokenizer.post_processor = processors.TemplateProcessing(
+        single="[CLS] $A [SEP]",
+        pair="[CLS] $A [SEP] $B:1 [SEP]:1",
+        special_tokens=[
+            ("[CLS]", 1),
+            ("[SEP]", 2),
+        ],
+    )
+
+    tokenizer.save(savefile)
+    return DebertaV2Tokenizer.from_pretrained(savefile)
 
 
 def _write_abstracts_to_text(abstracts_dir: str, prefix: str) -> None:
@@ -57,16 +106,16 @@ def main() -> None:
         torch.cuda.set_device(args.local_rank)  # Set the device
         dist.init_process_group(backend="nccl")  # Initialize process group
 
-    # write abstracts to text
-    # _write_abstracts_to_text(
-    #     abstracts_dir=abstracts_dir, prefix="tokens_cleaned_abstracts_casefold_finetune"
-    # )
-
-    # load DeBERTa model and tokenizer
-    # model_name = "microsoft/deberta-base"
+    # load DeBERTa model
     model_name = "microsoft/deberta-v3-base"
     model = DebertaV2ForMaskedLM.from_pretrained(model_name)
-    tokenizer = DebertaV2Tokenizer.from_pretrained(model_name)
+
+    # load gene tokens
+    token_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_tokens_nosyn.txt"
+    genes = load_tokens(token_file)
+
+    # custom tokenizer
+    tokenizer = custom_gene_tokenizer(genes=genes)
 
     # wrap model in ddp
     if args.local_rank != -1:
@@ -75,7 +124,6 @@ def main() -> None:
             model, device_ids=[args.local_rank], output_device=args.local_rank
         )
 
-    # check ddp
     print(
         f"Process {args.local_rank} is using {torch.cuda.get_device_name(args.local_rank)}"
     )
@@ -88,18 +136,16 @@ def main() -> None:
 
     # load dataset generator
     abstracts = f"{abstracts_dir}/combined/tokens_cleaned_abstracts_casefold_finetune_combined.txt"
-
-    streaming_dataset = FinetuneStreamingCorpus(
-        dataset_file=abstracts,
+    streaming_dataset = StreamingCorpus(
+        file_path=abstracts,
         tokenizer=tokenizer,
-        data_collator=data_collator,
         max_length=512,
     )
 
     # set up total steps
-    num_gpus = 8  # num_gpus = torch.cuda.device_count()
+    num_gpus = 2
     num_epochs = 3
-    batch_size = 12
+    batch_size = 32
     total_abstracts = 3889578
     if num_gpus > 1:
         max_steps = ((total_abstracts * num_epochs) // batch_size) // num_gpus
@@ -107,11 +153,15 @@ def main() -> None:
         max_steps = (total_abstracts * num_epochs) // batch_size
 
     # set up dataloader
+    sampler: Union[DistributedSampler, None] = (
+        DistributedSampler(streaming_dataset) if args.local_rank != -1 else None
+    )
     data_loader = DataLoader(
         streaming_dataset,
         batch_size=batch_size,
         collate_fn=data_collator,
         num_workers=4,
+        sampler=sampler,
     )
 
     class StreamingTrainer(Trainer):
@@ -133,19 +183,28 @@ def main() -> None:
         logging_dir="/ocean/projects/bio210019p/stevesho/nlp/models/logs",
         logging_steps=500,
         max_steps=max_steps,
-        fp16=True,  # mixed precision training
+        # fp16=True,  # mixed precision training
         local_rank=args.local_rank,
     )
 
     # Initialize Trainer
-    trainer = StreamingTrainer(
+    # trainer = StreamingTrainer(
+    #     model=model,
+    #     args=training_args,
+    #     data_collator=data_collator,
+    # )
+    trainer = Trainer(
         model=model,
         args=training_args,
         data_collator=data_collator,
+        train_dataset=streaming_dataset,
     )
 
     trainer.train()
-    trainer.save_model(f"{args.root_dir}/models/deberta")
+
+    # save model on the main process
+    if args.local_rank in {0, -1}:
+        trainer.save_model(f"{args.root_dir}/models/deberta")
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 
 from gensim.models import Word2Vec  # type: ignore
+import h5py  # type: ignore
 import numpy as np
 from safetensors.torch import load_file  # type: ignore
 import torch
@@ -170,6 +171,7 @@ class DeBERTaEmbeddingExtractor:
         self,
         model_path: str,
         dataset: TokenizedDataset,
+        tokenizer: DebertaV2Tokenizer,
         batch_size: int = 16,
         chunk_size: int = 8,
     ):
@@ -202,82 +204,8 @@ class DeBERTaEmbeddingExtractor:
         self.model.gradient_checkpointing_enable()
         print("Model loaded successfully.")
 
+        self.vocab_size = len()
+
     def _rename_state_dict_keys(self, state_dict: Dict[str, Any]) -> Dict[str, Any]:
         """Rename state dict keys to remove the 'module.' prefix."""
         return {k.replace("module.", ""): v for k, v in state_dict.items()}
-
-    @torch.inference_mode()
-    def extract_embeddings(self) -> Dict[str, np.ndarray]:
-        """Extract gene embeddings from the model. We extract averaged
-        embeddings - because DeBERTa models create embeddings per context, we
-        average them to get one representation.
-        """
-        dataloader = DataLoader(
-            self.dataset,
-            batch_size=self.batch_size,
-            num_workers=4,
-            collate_fn=self.collate_abstracts,
-        )
-
-        gene_embeddings: Dict[str, Any] = {}
-        gene_counts: Dict[str, int] = {}
-
-        pbar = tqdm(total=self.dataset.total_abstracts, desc="Extracting embeddings")
-        for batch, gene_positions_batch in dataloader:
-            input_ids = batch["input_ids"].to(self.device)
-            attention_mask = batch["attention_mask"].to(self.device)
-
-            # ensure input tensors are 1D
-            if input_ids.dim() == 1:
-                input_ids = input_ids.unsqueeze(0)
-                attention_mask = attention_mask.unsqueeze(0)
-
-            # process chunks
-            chunk_size = self.chunk_size
-            for i in range(0, input_ids.size(0), chunk_size):
-                chunk_input_ids = input_ids[i : i + chunk_size]
-                chunk_attention_mask = attention_mask[i : i + chunk_size]
-                chunk_gene_positions = gene_positions_batch[i : i + chunk_size]
-
-                outputs = self.model(
-                    chunk_input_ids, attention_mask=chunk_attention_mask
-                )
-                hidden_states = outputs.last_hidden_state
-
-                for j, gene_positions in enumerate(chunk_gene_positions):
-                    for gene, position in gene_positions:
-                        if gene not in gene_embeddings:
-                            gene_embeddings[gene] = torch.zeros(
-                                hidden_states.size(-1), device=self.device
-                            )
-                            gene_counts[gene] = 0
-
-                        gene_embeddings[gene] += hidden_states[j, position]
-                        gene_counts[gene] += 1
-
-                torch.cuda.empty_cache()
-            pbar.update(input_ids.size(0))
-        pbar.close()
-
-        # average the embeddings
-        return {
-            gene: (embedding / gene_counts[gene]).cpu().numpy()
-            for gene, embedding in gene_embeddings.items()
-        }
-
-    @staticmethod
-    def collate_abstracts(
-        batch: List[Tuple[Dict[str, torch.Tensor], List[Tuple[str, int]]]]
-    ) -> Tuple[Dict[str, torch.Tensor], List[List[Tuple[str, int]]]]:
-        """Custom collate function to handle batching of tokenized inputs and gene
-        positions.
-        """
-        encodings = [item[0] for item in batch]
-        gene_positions_batch = [item[1] for item in batch]
-
-        tokenized_batch = {
-            key: torch.cat([encoded[key].squeeze(0) for encoded in encodings])
-            for key in encodings[0].keys()
-        }
-
-        return tokenized_batch, gene_positions_batch
