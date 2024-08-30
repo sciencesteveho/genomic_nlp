@@ -166,6 +166,7 @@ def main() -> None:
         num_workers=args.num_workers,
         collate_fn=data_collator,
         pin_memory=True,
+        prefetch_factor=2,
     )
 
     # optimizer and scheduler w/ warmup
@@ -191,7 +192,10 @@ def main() -> None:
                 leave=True,
             )
         for step, batch in enumerate(dataloader):
-            batch = {k: v.to(f"cuda:{args.local_rank}") for k, v in batch.items()}
+            batch = {
+                k: v.to(f"cuda:{args.local_rank}", non_blocking=True)
+                for k, v in batch.items()
+            }
 
             with torch.autocast(device_type="cuda"):
                 outputs = model(**batch)
