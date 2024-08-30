@@ -6,8 +6,7 @@
 masked language modeling object as the fine-tuning task.
 
 To ensure we can extract embeddings for genes present in our texts, we use a
-custom tokenizer.
-"""
+custom tokenizer that adds gene names to the vocabulary."""
 
 
 import argparse
@@ -15,11 +14,6 @@ import os
 import pickle
 from typing import Set, Union
 
-from tokenizers import models  # type: ignore
-from tokenizers import normalizers  # type: ignore
-from tokenizers import pre_tokenizers  # type: ignore
-from tokenizers import processors  # type: ignore
-from tokenizers import Tokenizer  # type: ignore
 import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -43,34 +37,23 @@ def load_tokens(filename: str) -> Set[str]:
         return {line.strip().lower() for line in f}
 
 
-def custom_gene_tokenizer(genes: Set[str]) -> DebertaV2Tokenizer:
-    """Add gene tokens to the tokenizer."""
-    savefile = "/ocean/projects/bio210019p/stevesho/genomic_nlp/models/deberta/gene_tokenizer.json"
+def custom_gene_tokenizer(
+    genes: Set[str], base_model_name: str = "microsoft/deberta-v3-base"
+) -> DebertaV2Tokenizer:
+    """Create a custom tokenizer and add gene tokens"""
+    # load base tokenizer
+    tokenizer = DebertaV2Tokenizer.from_pretrained(base_model_name)
 
-    # base tokenizer
-    base_tokenizer = DebertaV2Tokenizer.from_pretrained("microsoft/deberta-v3-base")
+    # add gene names to the vocabulary
+    new_tokens = list(genes)
+    tokenizer.add_tokens(new_tokens)
 
-    # new tokenizer
-    tokenizer = Tokenizer(models.WordPiece(unk_token="[UNK]"))
-
-    # add genes
-    vocab = list(base_tokenizer.get_vocab().keys()) + list(genes)
-    tokenizer.add_tokens(vocab)
-
-    # prepare tokenizer components
-    tokenizer.normalizer = normalizers.BertNormalizer(lowercase=True)
-    tokenizer.pre_tokenizer = pre_tokenizers.BertPreTokenizer()
-    tokenizer.post_processor = processors.TemplateProcessing(
-        single="[CLS] $A [SEP]",
-        pair="[CLS] $A [SEP] $B:1 [SEP]:1",
-        special_tokens=[
-            ("[CLS]", 1),
-            ("[SEP]", 2),
-        ],
+    # save the tokenizer
+    save_dir = (
+        "/ocean/projects/bio210019p/stevesho/genomic_nlp/models/deberta/gene_tokenizer"
     )
-
-    tokenizer.save(savefile)
-    return DebertaV2Tokenizer.from_pretrained(savefile)
+    tokenizer.save_pretrained(save_dir)
+    return DebertaV2Tokenizer.from_pretrained(save_dir)
 
 
 def _write_abstracts_to_text(abstracts_dir: str, prefix: str) -> None:
@@ -106,16 +89,17 @@ def main() -> None:
         torch.cuda.set_device(args.local_rank)  # Set the device
         dist.init_process_group(backend="nccl")  # Initialize process group
 
-    # load DeBERTa model
-    model_name = "microsoft/deberta-v3-base"
-    model = DebertaV2ForMaskedLM.from_pretrained(model_name)
-
     # load gene tokens
     token_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_tokens_nosyn.txt"
     genes = load_tokens(token_file)
 
     # custom tokenizer
     tokenizer = custom_gene_tokenizer(genes=genes)
+
+    # load DeBERTa model
+    model_name = "microsoft/deberta-v3-base"
+    model = DebertaV2ForMaskedLM.from_pretrained(model_name)
+    model.resize_token_embeddings(len(tokenizer))
 
     # wrap model in ddp
     if args.local_rank != -1:
