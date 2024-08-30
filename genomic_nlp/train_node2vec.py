@@ -7,15 +7,31 @@ relationships."""
 
 
 import gc
+import gzip
 from pathlib import Path
+import pickle
+from typing import Any
 
 from gensim.models import Word2Vec  # type: ignore
 from gensim.models.callbacks import CallbackAny2Vec  # type: ignore
 import networkx as nx  # type: ignore
 from node2vec import Node2Vec  # type: ignore
+import numpy as np
 import pandas as pd
 
-from utils import EpochSaver
+
+class EpochSaver(CallbackAny2Vec):
+    """Callback to save model after every epoch."""
+
+    def __init__(self, savedir: str):
+        self.epoch = 0
+        self.savedir = savedir
+
+    def on_epoch_end(self, model: Any) -> None:
+        """Save model after every epoch."""
+        print(f"Save model number {self.epoch}.")
+        model.save(f"{self.savedir}/model_epoch{self.epoch}.pkl")
+        self.epoch += 1
 
 
 def main() -> None:
@@ -37,7 +53,7 @@ def main() -> None:
         dimensions=128,
         walk_length=80,
         num_walks=10,
-        workers=32,
+        workers=64,
     )
 
     # train node2vec
