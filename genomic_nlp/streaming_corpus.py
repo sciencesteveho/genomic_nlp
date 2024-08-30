@@ -38,7 +38,7 @@ class StreamingCorpus(IterableDataset):
         """Return the number of lines in the file."""
         return self.num_lines
 
-    def __iter__(self) -> Iterator[Dict[str, List[int]]]:
+    def __iter__(self) -> Iterator[Dict[str, torch.Tensor]]:
         """Create an iterator over the corpus."""
         worker_info = torch.utils.data.get_worker_info()
         num_workers = worker_info.num_workers if worker_info else 1
@@ -65,7 +65,7 @@ class StreamingCorpus(IterableDataset):
             f"Worker {worker_id} (rank {rank}) processing range: {start} - {end}"
         )
 
-        return self.read_abstracts(start, end)
+        yield from self.read_abstracts(start, end)
 
     def _get_start_end(
         self,
@@ -83,7 +83,7 @@ class StreamingCorpus(IterableDataset):
         )
         return start, end
 
-    def read_abstracts(self, start: int, end: int) -> Iterator[Dict[str, List[int]]]:
+    def read_abstracts(self, start: int, end: int) -> Iterator[Dict[str, torch.Tensor]]:
         """Read and tokenize abstracts from the file."""
         with open(self.file_path, "r") as f:
             mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
@@ -102,6 +102,8 @@ class StreamingCorpus(IterableDataset):
                         count += 1
                         if count % 1000 == 0:
                             logging.info(f"Processed {count} abstracts")
+
+                        # Ensure we always yield a dictionary with the expected keys
                         yield {
                             "input_ids": encoded["input_ids"].squeeze(0),
                             "attention_mask": encoded["attention_mask"].squeeze(0),
@@ -157,20 +159,7 @@ class RobustDataCollator:
             return {}
 
         try:
-            # Check if the features are already tokenized
-            if isinstance(features[0], dict) and "input_ids" in features[0]:
-                batch = self.data_collator(features)
-            else:
-                # If not tokenized, tokenize the features
-                batch_encoding = self.tokenizer(
-                    features,
-                    truncation=True,
-                    padding="max_length",
-                    max_length=512,
-                    return_tensors="pt",
-                )
-                batch = self.data_collator(batch_encoding["input_ids"])
-
+            batch = self.data_collator(features)
             logging.info(f"Successfully collated batch with keys: {batch.keys()}")
             return batch
         except Exception as e:
