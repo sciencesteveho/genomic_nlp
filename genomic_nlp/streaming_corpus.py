@@ -30,6 +30,7 @@ class StreamingCorpus(IterableDataset):
         self.max_length = max_length
         self.file_size = os.path.getsize(file_path)
         self.num_lines = 3889578
+        self.current_position = 0
         logging.info(
             f"Initialized StreamingCorpus with file: {file_path}, size: {self.file_size}"
         )
@@ -61,36 +62,20 @@ class StreamingCorpus(IterableDataset):
             else self.file_size
         )
 
+        # Ensure we start from where we left off
+        start = max(start, self.current_position)
+
         logging.info(
             f"Worker {worker_id} (rank {rank}) processing range: {start} - {end}"
         )
 
         yield from self.read_abstracts(start, end)
 
-    def _get_start_end(
-        self,
-        worker_info,
-    ) -> Tuple[int, int]:
-        """Determine the start and end positions for the current worker."""
-        if worker_info is None:
-            return 0, self.file_size
-        per_worker = int(self.file_size / worker_info.num_workers)
-        start = worker_info.id * per_worker
-        end = (
-            start + per_worker
-            if worker_info.id < worker_info.num_workers - 1
-            else self.file_size
-        )
-        return start, end
-
     def read_abstracts(self, start: int, end: int) -> Iterator[Dict[str, torch.Tensor]]:
         """Read and tokenize abstracts from the file."""
         with open(self.file_path, "r") as f:
             mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
             mm.seek(start)
-            count = 0
-            empty_count = 0
-            yield_count = 0
             while mm.tell() < end:
                 if line := mm.readline().decode().strip():
                     try:
@@ -101,51 +86,16 @@ class StreamingCorpus(IterableDataset):
                             truncation=True,
                             return_tensors="pt",
                         )
-                        count += 1
-                        if count % 1000 == 0:
-                            logging.info(f"Processed {count} abstracts")
-
-                        # additional logging and safeguards
-                        if (
-                            "input_ids" not in encoded
-                            or "attention_mask" not in encoded
-                        ):
-                            logging.warning(
-                                f"Skipping abstract {count}: Missing expected keys"
-                            )
-                            empty_count += 1
-                            continue
-
                         result = {
                             "input_ids": encoded["input_ids"].squeeze(0),
                             "attention_mask": encoded["attention_mask"].squeeze(0),
                         }
-
-                        # ensure we're not yielding empty tensors
-                        if (
-                            result["input_ids"].numel() == 0
-                            or result["attention_mask"].numel() == 0
-                        ):
-                            logging.warning(f"Skipping abstract {count}: Empty tensor")
-                            empty_count += 1
-                            continue
-
-                        yield_count += 1
-                        logging.info(
-                            f"Yielding abstract {count} (yield count: {yield_count})"
-                        )
+                        self.current_position = mm.tell()
                         yield result
-
                     except Exception as e:
-                        logging.error(f"Error processing abstract {count}: {str(e)}")
-                        empty_count += 1
+                        logging.error(f"Error processing abstract: {str(e)}")
                         continue
-                else:
-                    empty_count += 1
             mm.close()
-        logging.info(
-            f"Finished processing {count} abstracts. Yielded {yield_count} abstracts. Skipped {empty_count} empty or errored abstracts."
-        )
 
     def __getitem__(self, index: int) -> Dict[str, torch.Tensor]:
         """
