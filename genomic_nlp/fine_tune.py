@@ -149,14 +149,19 @@ def main() -> None:
     # test data loading
     try:
         test_iter = iter(streaming_dataset)
-        test_batch = next(test_iter)
-        logging.info(f"Successfully loaded a sample. Sample keys: {test_batch.keys()}")
-        logging.info(f"Sample input_ids shape: {len(test_batch['input_ids'])}")
+        test_batch = [next(test_iter) for _ in range(batch_size)]
+        collated_batch = data_collator(test_batch)
         logging.info(
-            f"Sample attention_mask shape: {len(test_batch['attention_mask'])}"
+            f"Successfully collated a batch. Batch keys: {collated_batch.keys()}"
+        )
+        logging.info(
+            f"Collated batch input_ids shape: {collated_batch['input_ids'].shape}"
+        )
+        logging.info(
+            f"Collated batch attention_mask shape: {collated_batch['attention_mask'].shape}"
         )
     except Exception as e:
-        logging.error(f"Error loading a sample from StreamingCorpus: {str(e)}")
+        logging.error(f"Error in data loading or collation: {str(e)}")
         raise
 
     # get max steps fro trainer

@@ -95,13 +95,14 @@ class StreamingCorpus(IterableDataset):
                         max_length=self.max_length,
                         padding="max_length",
                         truncation=True,
+                        return_tensors="pt",
                     )
                     count += 1
                     if count % 1000 == 0:
                         logging.info(f"Processed {count} abstracts")
                     yield {
-                        "input_ids": encoded["input_ids"],
-                        "attention_mask": encoded["attention_mask"],
+                        "input_ids": encoded["input_ids"].squeeze(0).tolist(),
+                        "attention_mask": encoded["attention_mask"].squeeze(0).tolist(),
                     }
             mm.close()
         logging.info(f"Finished processing {count} abstracts")
