@@ -155,40 +155,6 @@ def main() -> None:
     max_steps = _get_total_steps(num_gpus, num_epochs, batch_size, total_abstracts)
     logging.info(f"Calculated max_steps: {max_steps}")
 
-    # Test individual sample loading
-    try:
-        sample = streaming_dataset[0]  # Get the first item
-        logging.info(f"Successfully loaded a sample. Sample keys: {sample.keys()}")
-        logging.info(f"Sample input_ids shape: {sample['input_ids'].shape}")
-        logging.info(f"Sample attention_mask shape: {sample['attention_mask'].shape}")
-    except Exception as e:
-        logging.error(f"Error loading individual sample: {str(e)}")
-
-    # Test iteration
-    try:
-        iterator = iter(streaming_dataset)
-        first_batch = [next(iterator) for _ in range(batch_size)]
-        logging.info(
-            f"Successfully loaded {len(first_batch)} samples through iteration"
-        )
-    except Exception as e:
-        logging.error(f"Error during iteration: {str(e)}")
-
-    # Test data collation
-    try:
-        collated_batch = data_collator(first_batch)
-        logging.info(
-            f"Successfully collated a batch. Batch keys: {collated_batch.keys()}"
-        )
-        logging.info(
-            f"Collated batch input_ids shape: {collated_batch['input_ids'].shape}"
-        )
-        logging.info(
-            f"Collated batch attention_mask shape: {collated_batch['attention_mask'].shape}"
-        )
-    except Exception as e:
-        logging.error(f"Error in data collation: {str(e)}")
-
     # test actual training loop behavior
     logging.info("Testing training loop behavior")
     train_dataloader = DataLoader(
@@ -199,6 +165,10 @@ def main() -> None:
 
     for i, batch in enumerate(train_dataloader):
         logging.info(f"Batch {i} keys: {batch.keys()}")
+        if "input_ids" in batch:
+            logging.info(f"Batch {i} input_ids shape: {batch['input_ids'].shape}")
+        else:
+            logging.warning(f"Batch {i} is missing input_ids")
         if i >= 5:  # test first 5 batches
             break
 
@@ -225,8 +195,12 @@ def main() -> None:
         data_collator=data_collator,
         train_dataset=streaming_dataset,
     )
-    logging.info("Initialized Trainer. Starting training...")
-    trainer.train()
+    logging.info("Starting training...")
+    try:
+        trainer.train()
+    except Exception as e:
+        logging.error(f"Error during training: {str(e)}")
+        raise
 
     # save model on the main process
     if args.local_rank in {0, -1}:

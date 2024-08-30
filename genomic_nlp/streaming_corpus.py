@@ -24,7 +24,9 @@ from transformers import PreTrainedTokenizer  # type: ignore
 class StreamingCorpus(IterableDataset):
     """Custom streaming dataset for abstracts."""
 
-    def __init__(self, file_path, tokenizer, max_length=512):
+    def __init__(
+        self, file_path: str, tokenizer: PreTrainedTokenizer, max_length: int = 512
+    ):
         """Initialize the streaming corpus class."""
         self.file_path = file_path
         self.tokenizer = tokenizer
@@ -32,17 +34,18 @@ class StreamingCorpus(IterableDataset):
         self.file_size = os.path.getsize(file_path)
         self.num_lines = 3889578
         self.current_position = 0
-        self.lock = threading.Lock()
+        self.iteration_count = 0
         logging.info(
             f"Initialized StreamingCorpus with file: {file_path}, size: {self.file_size}"
         )
 
-    def __len__(self):
+    def __len__(self) -> int:
         """Return the number of lines in the file."""
         return self.num_lines
 
     def __iter__(self) -> Iterator[Dict[str, torch.Tensor]]:
         """Create an iterator over the corpus."""
+        self.iteration_count += 1
         worker_info = torch.utils.data.get_worker_info()
         num_workers = worker_info.num_workers if worker_info else 1
         worker_id = worker_info.id if worker_info else 0
@@ -64,26 +67,22 @@ class StreamingCorpus(IterableDataset):
             else self.file_size
         )
 
-        with self.lock:
-            # ensure we start from where we left off
-            if self.current_position >= end:
-                self.current_position = start
-            else:
-                start = max(start, self.current_position)
+        if self.current_position >= end:
+            self.current_position = start
 
         logging.info(
-            f"Worker {worker_id} (rank {rank}) processing range: {start} - {end}"
+            f"Iteration {self.iteration_count}: Worker {worker_id} (rank {rank}) processing range: {self.current_position} - {end}"
         )
 
-        return self.read_abstracts(start, end)
+        return self.read_abstracts(self.current_position, end)
 
     def read_abstracts(self, start: int, end: int) -> Iterator[Dict[str, torch.Tensor]]:
         """Read and tokenize abstracts from the file."""
         with open(self.file_path, "r") as f:
             mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
             mm.seek(start)
+            count = 0
             while mm.tell() < end:
-                current_pos = mm.tell()
                 if line := mm.readline().decode().strip():
                     try:
                         encoded = self.tokenizer.encode_plus(
@@ -97,19 +96,21 @@ class StreamingCorpus(IterableDataset):
                             "input_ids": encoded["input_ids"].squeeze(0),
                             "attention_mask": encoded["attention_mask"].squeeze(0),
                         }
-                        with self.lock:
-                            self.current_position = mm.tell()
+                        self.current_position = mm.tell()
+                        count += 1
+                        if count % 1000 == 0:
+                            logging.info(
+                                f"Processed {count} abstracts. Current position: {self.current_position}"
+                            )
                         yield result
                     except Exception as e:
                         logging.error(
-                            f"Error processing abstract at position {current_pos}: {str(e)}"
+                            f"Error processing abstract at position {mm.tell()}: {str(e)}"
                         )
-                        continue
             mm.close()
-
-        # if we've reached the end, reset to the beginning
-        if self.current_position >= self.file_size:
-            self.current_position = 0
+        logging.info(
+            f"Finished processing {count} abstracts. Final position: {self.current_position}"
+        )
 
     def __getitem__(self, index: int) -> Dict[str, torch.Tensor]:
         """
