@@ -17,7 +17,7 @@ from typing import Set, Union
 
 import torch
 from torch import autocast  # type: ignore
-from torch.cuda import GradScaler  # type: ignore
+from torch import GradScaler  # type: ignore
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
