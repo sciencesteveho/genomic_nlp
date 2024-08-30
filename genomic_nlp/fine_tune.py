@@ -16,7 +16,7 @@ import pickle
 from typing import Set, Union
 
 import torch
-from torch.cuda import autocast  # type: ignore
+from torch import autocast  # type: ignore
 from torch.cuda import GradScaler  # type: ignore
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -184,7 +184,7 @@ def main() -> None:
         for step, batch in enumerate(dataloader):
             batch = {k: v.to(device) for k, v in batch.items()}
 
-            with autocast():
+            with autocast(device_type="cuda"):
                 outputs = model(**batch)
                 loss = outputs.loss / accumulation_steps  # normalize loss
 
