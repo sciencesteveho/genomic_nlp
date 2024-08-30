@@ -237,15 +237,14 @@ class DeBERTaEmbeddingExtractor:
             for i in range(0, input_ids.size(0), chunk_size):
                 chunk_input_ids = input_ids[i : i + chunk_size]
                 chunk_attention_mask = attention_mask[i : i + chunk_size]
+                chunk_gene_positions = gene_positions_batch[i : i + chunk_size]
 
                 outputs = self.model(
                     chunk_input_ids, attention_mask=chunk_attention_mask
                 )
                 hidden_states = outputs.last_hidden_state
 
-                for j, gene_positions in enumerate(
-                    gene_positions_batch[i : i + chunk_size]
-                ):
+                for j, gene_positions in enumerate(chunk_gene_positions):
                     for gene, position in gene_positions:
                         if gene not in gene_embeddings:
                             gene_embeddings[gene] = torch.zeros(
