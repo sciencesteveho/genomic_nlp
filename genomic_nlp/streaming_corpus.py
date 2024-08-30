@@ -33,7 +33,7 @@ class StreamingCorpus(IterableDataset):
         """Return the number of lines in the file."""
         return self.num_lines
 
-    def __iter__(self) -> Iterator[Dict[str, torch.Tensor]]:
+    def __iter__(self) -> Iterator[Dict[str, List[int]]]:
         """Create an iterator over the corpus."""
         worker_info = torch.utils.data.get_worker_info()
         num_workers = worker_info.num_workers if worker_info else 1
@@ -74,7 +74,7 @@ class StreamingCorpus(IterableDataset):
         )
         return start, end
 
-    def read_abstracts(self, start: int, end: int) -> Iterator[Dict[str, torch.Tensor]]:
+    def read_abstracts(self, start: int, end: int) -> Iterator[Dict[str, List[int]]]:
         """Read and tokenize abstracts from the file."""
         with open(self.file_path, "r") as f:
             mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
@@ -86,11 +86,10 @@ class StreamingCorpus(IterableDataset):
                         max_length=self.max_length,
                         padding="max_length",
                         truncation=True,
-                        return_tensors="pt",
                     )
                     yield {
-                        "input_ids": encoded["input_ids"].squeeze(0),
-                        "attention_mask": encoded["attention_mask"].squeeze(0),
+                        "input_ids": encoded["input_ids"],
+                        "attention_mask": encoded["attention_mask"],
                     }
             mm.close()
 

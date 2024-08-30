@@ -128,7 +128,6 @@ def main() -> None:
         tokenizer=tokenizer,
         mlm=True,
         mlm_probability=0.15,
-        return_tensors="pt",
     )
 
     # load dataset generator
@@ -146,18 +145,6 @@ def main() -> None:
     total_abstracts = 3889578
     max_steps = _get_total_steps(num_gpus, num_epochs, batch_size, total_abstracts)
 
-    # set up dataloader
-    # sampler: Union[DistributedSampler, None] = (
-    #     DistributedSampler(streaming_dataset) if args.local_rank != -1 else None
-    # )
-    data_loader = DataLoader(
-        streaming_dataset,
-        batch_size=batch_size,
-        collate_fn=data_collator,
-        num_workers=4,
-        # sampler=sampler,
-    )
-
     # define training arguments
     training_args = TrainingArguments(
         output_dir=f"{args.root_dir}/models/deberta",
@@ -174,12 +161,7 @@ def main() -> None:
         local_rank=args.local_rank,
     )
 
-    # initialize Trainer
-    # trainer = StreamingTrainer(
-    #     model=model,
-    #     args=training_args,
-    #     data_collator=data_collator,
-    # )
+    # initialize trainer
     trainer = Trainer(
         model=model,
         args=training_args,
@@ -204,3 +186,21 @@ if __name__ == "__main__":
 #     def get_train_dataloader(self) -> DataLoader:
 #         """Return the training dataloader"""
 #         return data_loader
+
+# set up dataloader
+# sampler: Union[DistributedSampler, None] = (
+#     DistributedSampler(streaming_dataset) if args.local_rank != -1 else None
+# )
+# data_loader = DataLoader(
+#     streaming_dataset,
+#     batch_size=batch_size,
+#     collate_fn=data_collator,
+#     num_workers=4,
+#     # sampler=sampler,
+# )
+
+# trainer = StreamingTrainer(
+#     model=model,
+#     args=training_args,
+#     data_collator=data_collator,
+# )
