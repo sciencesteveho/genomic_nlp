@@ -21,14 +21,17 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm  # type: ignore
+from transformers import AdamW  # type: ignore
 from transformers import DataCollatorForLanguageModeling  # type: ignore
 from transformers import DebertaV2ForMaskedLM  # type: ignore
 from transformers import DebertaV2Tokenizer  # type: ignore
+from transformers import get_linear_schedule_with_warmup  # type: ignore
 from transformers import Trainer  # type: ignore
 from transformers import TrainingArguments  # type: ignore
 
 from streaming_corpus import FinetuneStreamingCorpus
 from streaming_corpus import RobustDataCollator
+from streaming_corpus import SimpleStreamingCorpus
 from streaming_corpus import StreamingCorpus
 from utils import _chunk_locator
 
@@ -147,64 +150,90 @@ def main() -> None:
     )
     logging.info(f"Created StreamingCorpus with {len(streaming_dataset)} abstracts")
 
+    dataloader = DataLoader(streaming_dataset, batch_size=16, num_workers=4)
+
+    optimizer = AdamW(model.parameters(), lr=5e-5)
+    total_steps = len(dataloader) * 3  # 3 epochs
+    scheduler = get_linear_schedule_with_warmup(
+        optimizer, num_warmup_steps=0, num_training_steps=total_steps
+    )
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+
+    for epoch in range(3):
+        model.train()
+        for batch in dataloader:
+            batch = {k: v.to(device) for k, v in batch.items()}
+            outputs = model(**batch)
+            loss = outputs.loss
+            loss.backward()
+            optimizer.step()
+            scheduler.step()
+            optimizer.zero_grad()
+            print(f"Epoch {epoch}, Loss: {loss.item()}")
+
+    if args.local_rank in {0, -1}:
+        model.save_pretrained(f"{args.root_dir}/models/deberta")
+
     # get max steps fro trainer
-    num_gpus = 2
-    num_epochs = 3
-    batch_size = 16
-    total_abstracts = 3889578
-    max_steps = _get_total_steps(num_gpus, num_epochs, batch_size, total_abstracts)
-    logging.info(f"Calculated max_steps: {max_steps}")
+    # num_gpus = 2
+    # num_epochs = 3
+    # batch_size = 16
+    # total_abstracts = 3889578
+    # max_steps = _get_total_steps(num_gpus, num_epochs, batch_size, total_abstracts)
+    # logging.info(f"Calculated max_steps: {max_steps}")
 
-    # test actual training loop behavior
-    logging.info("Testing training loop behavior")
-    train_dataloader = DataLoader(
-        streaming_dataset,
-        batch_size=16,
-        collate_fn=data_collator,
-    )
+    # # test actual training loop behavior
+    # logging.info("Testing training loop behavior")
+    # train_dataloader = DataLoader(
+    #     streaming_dataset,
+    #     batch_size=16,
+    #     collate_fn=data_collator,
+    # )
 
-    for i, batch in enumerate(train_dataloader):
-        logging.info(f"Batch {i} keys: {batch.keys()}")
-        if "input_ids" in batch:
-            logging.info(f"Batch {i} input_ids shape: {batch['input_ids'].shape}")
-        else:
-            logging.warning(f"Batch {i} is missing input_ids")
-        if i >= 5:  # test first 5 batches
-            break
+    # for i, batch in enumerate(train_dataloader):
+    #     logging.info(f"Batch {i} keys: {batch.keys()}")
+    #     if "input_ids" in batch:
+    #         logging.info(f"Batch {i} input_ids shape: {batch['input_ids'].shape}")
+    #     else:
+    #         logging.warning(f"Batch {i} is missing input_ids")
+    #     if i >= 5:  # test first 5 batches
+    #         break
 
-    # define training arguments
-    training_args = TrainingArguments(
-        output_dir=f"{args.root_dir}/models/deberta",
-        overwrite_output_dir=True,
-        num_train_epochs=num_epochs,
-        per_device_train_batch_size=batch_size,
-        save_steps=10_000,
-        save_total_limit=2,
-        prediction_loss_only=True,
-        logging_dir=f"{args.root_dir}p/models/logs",
-        logging_steps=500,
-        max_steps=max_steps,
-        # fp16=True,  # mixed precision training
-        local_rank=args.local_rank,
-    )
+    # # define training arguments
+    # training_args = TrainingArguments(
+    #     output_dir=f"{args.root_dir}/models/deberta",
+    #     overwrite_output_dir=True,
+    #     num_train_epochs=num_epochs,
+    #     per_device_train_batch_size=batch_size,
+    #     save_steps=10_000,
+    #     save_total_limit=2,
+    #     prediction_loss_only=True,
+    #     logging_dir=f"{args.root_dir}p/models/logs",
+    #     logging_steps=500,
+    #     max_steps=max_steps,
+    #     # fp16=True,  # mixed precision training
+    #     local_rank=args.local_rank,
+    # )
 
-    # initialize trainer
-    trainer = Trainer(
-        model=model,
-        args=training_args,
-        data_collator=data_collator,
-        train_dataset=streaming_dataset,
-    )
-    logging.info("Starting training...")
-    try:
-        trainer.train()
-    except Exception as e:
-        logging.error(f"Error during training: {str(e)}")
-        raise
+    # # initialize trainer
+    # trainer = Trainer(
+    #     model=model,
+    #     args=training_args,
+    #     data_collator=data_collator,
+    #     train_dataset=streaming_dataset,
+    # )
+    # logging.info("Starting training...")
+    # try:
+    #     trainer.train()
+    # except Exception as e:
+    #     logging.error(f"Error during training: {str(e)}")
+    #     raise
 
     # save model on the main process
-    if args.local_rank in {0, -1}:
-        trainer.save_model(f"{args.root_dir}/models/deberta")
+    # if args.local_rank in {0, -1}:
+    #     trainer.save_model(f"{args.root_dir}/models/deberta")
 
 
 if __name__ == "__main__":

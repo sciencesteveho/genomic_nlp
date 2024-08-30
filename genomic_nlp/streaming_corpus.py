@@ -21,6 +21,32 @@ from transformers import DataCollatorForLanguageModeling  # type: ignore
 from transformers import PreTrainedTokenizer  # type: ignore
 
 
+class SimpleStreamingCorpus(IterableDataset):
+    def __init__(
+        self, file_path: str, tokenizer: PreTrainedTokenizer, max_length: int = 512
+    ):
+        self.file_path = file_path
+        self.tokenizer = tokenizer
+        self.max_length = max_length
+        logging.info(f"Initialized StreamingCorpus with file: {file_path}")
+
+    def __iter__(self) -> Iterator[Dict[str, torch.Tensor]]:
+        with open(self.file_path, "r") as f:
+            for line in f:
+                if line.strip():
+                    encoded = self.tokenizer.encode_plus(
+                        line.strip(),
+                        max_length=self.max_length,
+                        padding="max_length",
+                        truncation=True,
+                        return_tensors="pt",
+                    )
+                    yield {
+                        "input_ids": encoded["input_ids"].squeeze(0),
+                        "attention_mask": encoded["attention_mask"].squeeze(0),
+                    }
+
+
 class StreamingCorpus(IterableDataset):
     """Custom streaming dataset for abstracts."""
 
