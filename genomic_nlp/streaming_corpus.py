@@ -90,22 +90,47 @@ class StreamingCorpus(IterableDataset):
             count = 0
             while mm.tell() < end:
                 if line := mm.readline().decode().strip():
+                    try:
+                        encoded = self.tokenizer.encode_plus(
+                            line,
+                            max_length=self.max_length,
+                            padding="max_length",
+                            truncation=True,
+                            return_tensors="pt",
+                        )
+                        count += 1
+                        if count % 1000 == 0:
+                            logging.info(f"Processed {count} abstracts")
+                        yield {
+                            "input_ids": encoded["input_ids"].squeeze(0),
+                            "attention_mask": encoded["attention_mask"].squeeze(0),
+                        }
+                    except Exception as e:
+                        logging.error(f"Error processing abstract {count}: {str(e)}")
+                        continue
+            mm.close()
+        logging.info(f"Finished processing {count} abstracts")
+
+    def __getitem__(self, index: int) -> Dict[str, torch.Tensor]:
+        """
+        Implement __getitem__ to make the dataset work with DataLoader.
+        This is not efficient for large datasets, but helps with debugging.
+        """
+        with open(self.file_path, "r") as f:
+            for i, line in enumerate(f):
+                if i == index:
                     encoded = self.tokenizer.encode_plus(
-                        line,
+                        line.strip(),
                         max_length=self.max_length,
                         padding="max_length",
                         truncation=True,
                         return_tensors="pt",
                     )
-                    count += 1
-                    if count % 1000 == 0:
-                        logging.info(f"Processed {count} abstracts")
-                    yield {
-                        "input_ids": encoded["input_ids"].squeeze(0).tolist(),
-                        "attention_mask": encoded["attention_mask"].squeeze(0).tolist(),
+                    return {
+                        "input_ids": encoded["input_ids"].squeeze(0),
+                        "attention_mask": encoded["attention_mask"].squeeze(0),
                     }
-            mm.close()
-        logging.info(f"Finished processing {count} abstracts")
+        raise IndexError("Index out of range")
 
 
 class FinetuneStreamingCorpus(IterableDataset):

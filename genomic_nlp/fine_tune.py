@@ -146,11 +146,36 @@ def main() -> None:
     )
     logging.info(f"Created StreamingCorpus with {len(streaming_dataset)} abstracts")
 
-    # test data loading
+    # get max steps fro trainer
+    num_gpus = 2
+    num_epochs = 3
+    batch_size = 16
+    total_abstracts = 3889578
+    max_steps = _get_total_steps(num_gpus, num_epochs, batch_size, total_abstracts)
+    logging.info(f"Calculated max_steps: {max_steps}")
+
+    # Test individual sample loading
     try:
-        test_iter = iter(streaming_dataset)
-        test_batch = [next(test_iter) for _ in range(batch_size)]
-        collated_batch = data_collator(test_batch)
+        sample = streaming_dataset[0]  # Get the first item
+        logging.info(f"Successfully loaded a sample. Sample keys: {sample.keys()}")
+        logging.info(f"Sample input_ids shape: {sample['input_ids'].shape}")
+        logging.info(f"Sample attention_mask shape: {sample['attention_mask'].shape}")
+    except Exception as e:
+        logging.error(f"Error loading individual sample: {str(e)}")
+
+    # Test iteration
+    try:
+        iterator = iter(streaming_dataset)
+        first_batch = [next(iterator) for _ in range(batch_size)]
+        logging.info(
+            f"Successfully loaded {len(first_batch)} samples through iteration"
+        )
+    except Exception as e:
+        logging.error(f"Error during iteration: {str(e)}")
+
+    # Test data collation
+    try:
+        collated_batch = data_collator(first_batch)
         logging.info(
             f"Successfully collated a batch. Batch keys: {collated_batch.keys()}"
         )
@@ -161,16 +186,7 @@ def main() -> None:
             f"Collated batch attention_mask shape: {collated_batch['attention_mask'].shape}"
         )
     except Exception as e:
-        logging.error(f"Error in data loading or collation: {str(e)}")
-        raise
-
-    # get max steps fro trainer
-    num_gpus = 2
-    num_epochs = 3
-    batch_size = 16
-    total_abstracts = 3889578
-    max_steps = _get_total_steps(num_gpus, num_epochs, batch_size, total_abstracts)
-    logging.info(f"Calculated max_steps: {max_steps}")
+        logging.error(f"Error in data collation: {str(e)}")
 
     # define training arguments
     training_args = TrainingArguments(
