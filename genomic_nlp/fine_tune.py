@@ -16,6 +16,8 @@ import pickle
 from typing import Set, Union
 
 import torch
+from torch.cuda import autocast  # type: ignore
+from torch.cuda import GradScaler  # type: ignore
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
@@ -154,28 +156,50 @@ def main() -> None:
     logging.info(f"Created StreamingCorpus with {len(streaming_dataset)} abstracts")
 
     dataloader = DataLoader(
-        streaming_dataset, batch_size=16, num_workers=4, collate_fn=data_collator
+        streaming_dataset, batch_size=8, num_workers=4, collate_fn=data_collator
     )
 
+    # optimizer
     optimizer = AdamW(model.parameters(), lr=5e-5)
+
+    # gradient accumulation
+    accumulation_steps = 4  # Effective batch size will be 4 * 4 = 16
+
+    # mixed precision training
+    scaler = GradScaler()
+
+    # get steps and scheduler
     total_steps = len(dataloader) * 3  # 3 epochs
     scheduler = get_linear_schedule_with_warmup(
         optimizer, num_warmup_steps=0, num_training_steps=total_steps
     )
 
+    # set device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
-    model.train()
+    # training loop
     for epoch in range(3):
-        for batch in dataloader:
+        model.train()
+        for step, batch in enumerate(dataloader):
             batch = {k: v.to(device) for k, v in batch.items()}
-            outputs = model(**batch)
-            loss = outputs.loss
-            loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
-            print(f"Epoch {epoch}, Loss: {loss.item()}")
+
+            with autocast():
+                outputs = model(**batch)
+                loss = outputs.loss / accumulation_steps  # normalize loss
+
+            scaler.scale(loss).backward()
+
+            if (step + 1) % accumulation_steps == 0:
+                scaler.step(optimizer)
+                scaler.update()
+                scheduler.step()
+                optimizer.zero_grad()
+
+            if step % 100 == 0:
+                print(
+                    f"Epoch {epoch}, Step {step}, Loss: {loss.item() * accumulation_steps}"
+                )
 
     if args.local_rank in {0, -1}:
         model.save_pretrained(f"{args.root_dir}/models/deberta")
