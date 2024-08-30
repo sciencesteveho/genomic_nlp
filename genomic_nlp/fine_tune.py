@@ -16,8 +16,6 @@ import pickle
 from typing import Set, Union
 
 import torch
-from torch import autocast  # type: ignore
-from torch import GradScaler  # type: ignore
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
@@ -166,7 +164,7 @@ def main() -> None:
     accumulation_steps = 4  # Effective batch size will be 4 * 4 = 16
 
     # mixed precision training
-    scaler = GradScaler()
+    scaler = torch.GradScaler(device="cuda")
 
     # get steps and scheduler
     total_steps = len(dataloader) * 3  # 3 epochs
@@ -184,7 +182,7 @@ def main() -> None:
         for step, batch in enumerate(dataloader):
             batch = {k: v.to(device) for k, v in batch.items()}
 
-            with autocast(device_type="cuda"):
+            with torch.autocast(device_type="cuda"):
                 outputs = model(**batch)
                 loss = outputs.loss / accumulation_steps  # normalize loss
 
