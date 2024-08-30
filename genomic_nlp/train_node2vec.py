@@ -6,6 +6,7 @@
 relationships."""
 
 
+import gc
 from pathlib import Path
 
 from gensim.models import Word2Vec  # type: ignore
@@ -46,6 +47,9 @@ def main() -> None:
         batch_words=4,
         callbacks=[EpochSaver(model_dir)],
     )
+
+    # try and clear memory before saving
+    gc.collect()
 
     model.save(output_dir / "node2vec.model")
 
