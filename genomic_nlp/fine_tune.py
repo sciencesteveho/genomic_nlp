@@ -12,6 +12,7 @@ custom tokenizer that adds gene names to the vocabulary."""
 
 
 import argparse
+import json
 import logging
 import os
 import pickle
@@ -39,6 +40,12 @@ def load_tokens(filename: str) -> Set[str]:
     """Load gene tokens from a file."""
     with open(filename, "r") as f:
         return {line.strip().lower() for line in f}
+
+
+def parse_deepspeed_config(config_file: str) -> dict:
+    """Parse the DeepSpeed configuration file."""
+    with open(config_file, "r") as f:
+        return json.load(f)
 
 
 def _get_total_steps(
@@ -116,6 +123,10 @@ def main() -> None:
     abstracts = f"{abstracts_dir}/combined/tokens_cleaned_abstracts_casefold_finetune_combined.txt"
     model_out = f"{args.root_dir}/models/deberta"
 
+    # get val needed for total steps calculation
+    parsed_config = parse_deepspeed_config(ds_config_file)
+    train_micro_batch_size_per_gpu = parsed_config["train_micro_batch_size_per_gpu"]
+
     # initialize deepspeed
     deepspeed.init_distributed(dist_backend="nccl")
 
@@ -136,18 +147,6 @@ def main() -> None:
         model.parameters(), lr=2e-5, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01
     )
 
-    # set up DeepSpeed
-    model_engine, optimizer, _, _ = deepspeed.initialize(
-        model=model,
-        optimizer=optimizer,
-        config=ds_config_file,
-    )
-
-    # set up collator for MLM
-    data_collator = DataCollatorForLanguageModeling(
-        tokenizer=tokenizer, mlm=True, mlm_probability=0.15
-    )
-
     # load dataset generator
     streaming_dataset = StreamingCorpus(
         file_path=abstracts,
@@ -155,6 +154,31 @@ def main() -> None:
         max_length=512,
     )
     logging.info(f"Created StreamingCorpus with {len(streaming_dataset)} abstracts")
+
+    # scheduler with warmup
+    total_steps = len(streaming_dataset) // (
+        torch.distributed.get_world_size() * train_micro_batch_size_per_gpu
+    )
+    warmup_steps = int(0.1 * total_steps)
+
+    scheduler = get_linear_schedule_with_warmup(
+        optimizer=optimizer,
+        num_warmup_steps=warmup_steps,
+        num_training_steps=total_steps,
+    )
+
+    # set up DeepSpeed
+    model_engine, optimizer, _, _ = deepspeed.initialize(
+        model=model,
+        optimizer=optimizer,
+        config=ds_config_file,
+        lr_scheduler=scheduler,
+    )
+
+    # set up collator for MLM
+    data_collator = DataCollatorForLanguageModeling(
+        tokenizer=tokenizer, mlm=True, mlm_probability=0.15
+    )
 
     dataloader = DataLoader(
         streaming_dataset,
@@ -166,16 +190,7 @@ def main() -> None:
         persistent_workers=True,
         shuffle=False,
     )
-    # optimizer and scheduler w/ warmup
-    total_steps = len(streaming_dataset) // (
-        model_engine.train_micro_batch_size_per_gpu()
-        * torch.distributed.get_world_size()
-    )
-    # training loop
-    total_steps = len(streaming_dataset) // (
-        model_engine.train_micro_batch_size_per_gpu()
-        * torch.distributed.get_world_size()
-    )
+
     for epoch in range(3):
         model_engine.train()
         if args.local_rank in {0, -1}:

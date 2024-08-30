@@ -20,14 +20,6 @@
     "hysteresis": 2,
     "min_loss_scale": 1
  },
- "scheduler": {
-    "type": "WarmupLR",
-    "params": {
-      "warmup_min_lr": 0,
-      "warmup_max_lr": 2e-5,
-      "warmup_num_steps": "auto"
-    }
- },
  "zero_allow_untested_optimizer": true,
  "train_batch_size": 32,
  "train_micro_batch_size_per_gpu": 4,
