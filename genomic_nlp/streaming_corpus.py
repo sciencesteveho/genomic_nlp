@@ -10,7 +10,7 @@ import math
 import mmap
 import os
 import pickle
-from typing import Any, Dict, Iterator, List, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -19,16 +19,33 @@ from transformers import PreTrainedTokenizer  # type: ignore
 
 
 class StreamingCorpus(IterableDataset):
+    """Custom streaming dataset for abstracts."""
+
     def __init__(self, file_path, tokenizer, max_length=512):
+        """Initialize the streaming corpus class."""
         self.file_path = file_path
         self.tokenizer = tokenizer
         self.max_length = max_length
         self.file_size = os.path.getsize(file_path)
+        self.num_lines = 3889578
 
-    def __iter__(self):
+    def __len__(self):
+        """Return the number of lines in the file."""
+        return self.num_lines
+
+    def __iter__(self) -> Iterator[torch.Tensor]:
+        """Create an iterator over the corpus."""
         worker_info = torch.utils.data.get_worker_info()
+        start, end = self._get_start_end(worker_info)
+        return self.read_abstracts(start, end)
+
+    def _get_start_end(
+        self,
+        worker_info,
+    ) -> Tuple[int, int]:
+        """Determine the start and end positions for the current worker."""
         if worker_info is None:
-            return self.read_abstracts(0, self.file_size)
+            return 0, self.file_size
         per_worker = int(self.file_size / worker_info.num_workers)
         start = worker_info.id * per_worker
         end = (
@@ -36,18 +53,21 @@ class StreamingCorpus(IterableDataset):
             if worker_info.id < worker_info.num_workers - 1
             else self.file_size
         )
-        return self.read_abstracts(start, end)
+        return start, end
 
-    def read_abstracts(self, start, end):
+    def read_abstracts(self, start: int, end: int) -> Iterator[torch.Tensor]:
+        """Read and tokenize abstracts from the file."""
         with open(self.file_path, "r") as f:
             mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
             mm.seek(start)
             while mm.tell() < end:
                 if line := mm.readline().decode().strip():
-                    yield self.tokenizer.encode(
-                        line,
-                        max_length=self.max_length,
-                        truncation=True,
+                    yield torch.tensor(
+                        self.tokenizer.encode(
+                            line,
+                            max_length=self.max_length,
+                            truncation=True,
+                        )
                     )
             mm.close()
 

@@ -37,6 +37,16 @@ def load_tokens(filename: str) -> Set[str]:
         return {line.strip().lower() for line in f}
 
 
+def _get_total_steps(
+    num_gpus: int, num_epochs: int, batch_size: int, total_abstracts: int
+) -> int:
+    """Get total steps for the trainer."""
+    if num_gpus > 1:
+        return ((total_abstracts * num_epochs) // batch_size) // num_gpus
+    else:
+        return (total_abstracts * num_epochs) // batch_size
+
+
 def custom_gene_tokenizer(
     genes: Set[str], base_model_name: str = "microsoft/deberta-v3-base"
 ) -> DebertaV2Tokenizer:
@@ -128,15 +138,12 @@ def main() -> None:
         max_length=512,
     )
 
-    # set up total steps
+    # get max steps fro trainer
     num_gpus = 2
     num_epochs = 3
     batch_size = 32
     total_abstracts = 3889578
-    if num_gpus > 1:
-        max_steps = ((total_abstracts * num_epochs) // batch_size) // num_gpus
-    else:
-        max_steps = (total_abstracts * num_epochs) // batch_size
+    max_steps = _get_total_steps(num_gpus, num_epochs, batch_size, total_abstracts)
 
     # set up dataloader
     sampler: Union[DistributedSampler, None] = (
@@ -150,14 +157,7 @@ def main() -> None:
         sampler=sampler,
     )
 
-    class StreamingTrainer(Trainer):
-        """Helper class to override get_train_dataloader method"""
-
-        def get_train_dataloader(self) -> DataLoader:
-            """Return the training dataloader"""
-            return data_loader
-
-    # Define training arguments
+    # define training arguments
     training_args = TrainingArguments(
         output_dir=f"{args.root_dir}/models/deberta",
         overwrite_output_dir=True,
@@ -173,7 +173,7 @@ def main() -> None:
         local_rank=args.local_rank,
     )
 
-    # Initialize Trainer
+    # initialize Trainer
     # trainer = StreamingTrainer(
     #     model=model,
     #     args=training_args,
@@ -195,3 +195,11 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# class StreamingTrainer(Trainer):
+#     """Helper class to override get_train_dataloader method"""
+
+#     def get_train_dataloader(self) -> DataLoader:
+#         """Return the training dataloader"""
+#         return data_loader
