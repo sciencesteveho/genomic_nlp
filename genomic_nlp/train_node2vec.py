@@ -47,7 +47,7 @@ def main() -> None:
         callbacks=[EpochSaver(model_dir)],
     )
 
-    model.wv.save_word2vec_format(output_dir / "node2vec_embeddings.txt")
+    model.save(output_dir / "node2vec.model")
 
 
 if __name__ == "__main__":
