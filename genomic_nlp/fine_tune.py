@@ -164,7 +164,7 @@ def main() -> None:
     accumulation_steps = 4  # Effective batch size will be 4 * 4 = 16
 
     # mixed precision training
-    scaler = torch.amp.GradScaler(device="cuda")
+    scaler = torch.cuda.amp.GradScaler()
 
     # get steps and scheduler
     total_steps = len(dataloader) * 3  # 3 epochs
