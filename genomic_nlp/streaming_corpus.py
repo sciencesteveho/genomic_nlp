@@ -28,7 +28,6 @@ class SimpleStreamingCorpus(IterableDataset):
         self.file_path = file_path
         self.tokenizer = tokenizer
         self.max_length = max_length
-        logging.info(f"Initialized StreamingCorpus with file: {file_path}")
 
     def __iter__(self) -> Iterator[Dict[str, torch.Tensor]]:
         with open(self.file_path, "r") as f:

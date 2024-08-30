@@ -134,12 +134,15 @@ def main() -> None:
         f"Process {args.local_rank} is using {torch.cuda.get_device_name(args.local_rank)}"
     )
 
-    data_collator = RobustDataCollator(
-        tokenizer=tokenizer,
-        mlm=True,
-        mlm_probability=0.15,
+    # data_collator = RobustDataCollator(
+    #     tokenizer=tokenizer,
+    #     mlm=True,
+    #     mlm_probability=0.15,
+    # )
+    # logging.info("Created data collator.")
+    data_collator = DataCollatorForLanguageModeling(
+        tokenizer=tokenizer, mlm=True, mlm_probability=0.15
     )
-    logging.info("Created data collator.")
 
     # load dataset generator
     abstracts = f"{abstracts_dir}/combined/tokens_cleaned_abstracts_casefold_finetune_combined.txt"
@@ -150,7 +153,9 @@ def main() -> None:
     )
     logging.info(f"Created StreamingCorpus with {len(streaming_dataset)} abstracts")
 
-    dataloader = DataLoader(streaming_dataset, batch_size=16, num_workers=4)
+    dataloader = DataLoader(
+        streaming_dataset, batch_size=16, num_workers=4, collate_fn=data_collator
+    )
 
     optimizer = AdamW(model.parameters(), lr=5e-5)
     total_steps = len(dataloader) * 3  # 3 epochs
@@ -161,15 +166,14 @@ def main() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
+    model.train()
     for epoch in range(3):
-        model.train()
         for batch in dataloader:
             batch = {k: v.to(device) for k, v in batch.items()}
             outputs = model(**batch)
             loss = outputs.loss
             loss.backward()
             optimizer.step()
-            scheduler.step()
             optimizer.zero_grad()
             print(f"Epoch {epoch}, Loss: {loss.item()}")
 
