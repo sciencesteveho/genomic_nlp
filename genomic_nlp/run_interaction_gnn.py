@@ -4,9 +4,9 @@
 
 
 """Train a link-prediction GNN on a base graph initialized with node embedding
-data trained from a language model (word2vec or an LLM). Testing is done on a
-separate graph of experimentally derived gene-gene (or protein-protein)
-interactions for which the training portion never sees.
+data trained from a language model. Testing is done on a separate graph of
+experimentally derived gene-gene (or protein-protein) interactions for which the
+training portion never sees.
 
 All of our derived graphs only represent positive data. To ameliorate this, we
 use a negative sampling strategy to create negative samples for training (i.e.,
@@ -24,7 +24,7 @@ from torch_geometric.data import Data  # type: ignore
 from torch_geometric.utils import negative_sampling  # type: ignore
 from torch_geometric.utils import train_test_split_edges  # type: ignore
 
-from nn_models import LinkPredictionGNN
+from interaction_gnn import LinkPredictionGNN
 
 
 def initialize_graph(node_features: torch.Tensor, edge_index: torch.Tensor) -> Data:
@@ -88,24 +88,24 @@ def evaluate_and_rank_validated_predictions(
     with torch.no_grad():
         z = model(data.x, data.edge_index)
 
-        # Predict scores for validated edges
+        # predict scores for validated edges
         scores = model.decode(z, validated_edges).sigmoid()
 
-        # Sort edges by predicted scores
+        # sort edges by predicted scores
         sorted_indices = torch.argsort(scores, descending=True)
 
-        # Get ranked edges and their scores
+        # get ranked edges and their scores
         ranked_edges = validated_edges[:, sorted_indices].t().tolist()
         ranked_scores = scores[sorted_indices].tolist()
 
-        # Combine edges and scores
+        # combine edges and scores
         ranked_predictions = [
             (int(edge[0]), int(edge[1]), float(score))
             for edge, score in zip(ranked_edges, ranked_scores)
         ]
 
-        # Calculate metrics
-        y_true = np.ones(len(scores))  # All edges are true positives
+        # calculate metrics
+        y_true = np.ones(len(scores))  # all edges are true positives
         y_scores = scores.cpu().numpy()
 
         auc = roc_auc_score(y_true, y_scores)
@@ -117,10 +117,10 @@ def evaluate_and_rank_validated_predictions(
 def save_model_and_performance(
     model: nn.Module, performances: List[Tuple[str, float]], model_name: str
 ):
-    # Save model
+    # save model
     torch.save(model.state_dict(), f"{model_name}.pt")
 
-    # Save performances
+    # save performances
     with open(f"{model_name}_performance.json", "w") as f:
         json.dump(performances, f)
 
@@ -128,16 +128,16 @@ def save_model_and_performance(
 def main():
     """Train a link prediction GNN before evaluating on experimentally validated
     links."""
-    # Load data
+    # load data
     node_features, edge_index = load_data("path_to_your_data_file")
 
-    # Initialize graph
+    # initialize graph
     data = initialize_graph(node_features, edge_index)
 
-    # Split edges for training and testing
+    # split edges for training and testing
     data = train_test_split_edges(data)
 
-    # Generate negative edges for training and testing
+    # generate negative edges for training and testing
     num_neg_samples = data.train_pos_edge_index.size(1)
     data.train_neg_edge_index = generate_negative_edges(
         data.train_pos_edge_index, data.num_nodes, num_neg_samples
@@ -164,11 +164,11 @@ def main():
 
     print(f"Best AUC: {best_auc:.4f}")
 
-    # Load the trained model
+    # load the trained model
     model.load_state_dict(torch.load("best_model.pth"))
     model.eval()
 
-    # Evaluate on external gene-gene graphs
+    # evaluate on external gene-gene graphs
     external_graphs = load_external_graphs()
     for i, external_graph in enumerate(external_graphs):
         external_data = initialize_graph(node_features, external_graph["edge_index"])

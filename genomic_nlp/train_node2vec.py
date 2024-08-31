@@ -51,7 +51,7 @@ def main() -> None:
     node2vec = Node2Vec(
         graph,
         dimensions=128,
-        walk_length=80,
+        walk_length=40,
         num_walks=10,
         workers=32,
     )
