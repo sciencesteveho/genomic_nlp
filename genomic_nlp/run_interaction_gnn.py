@@ -213,7 +213,12 @@ def save_model_and_performance(
         json.dump(performances, f)
 
 
-def create_loaders(data: Data, batch_size: int) -> Tuple[
+def create_loaders(
+    data: Data,
+    positive_test_edges: torch.Tensor,
+    negative_test_edges: torch.Tensor,
+    batch_size: int,
+) -> Tuple[
     torch_geometric.data.DataLoader,
     torch_geometric.data.DataLoader,
     torch_geometric.data.DataLoader,
@@ -230,12 +235,8 @@ def create_loaders(data: Data, batch_size: int) -> Tuple[
     )
     val_pos_loader = create_edge_loader(data.val_pos_edge_index, batch_size=batch_size)
     val_neg_loader = create_edge_loader(data.val_neg_edge_index, batch_size=batch_size)
-    test_pos_loader = create_edge_loader(
-        data.test_pos_edge_index, batch_size=batch_size
-    )
-    test_neg_loader = create_edge_loader(
-        data.test_neg_edge_index, batch_size=batch_size
-    )
+    test_pos_loader = create_edge_loader(positive_test_edges, batch_size=batch_size)
+    test_neg_loader = create_edge_loader(negative_test_edges, batch_size=batch_size)
 
     return (
         train_pos_loader,
@@ -277,7 +278,12 @@ def main() -> None:
         val_neg_loader,
         test_pos_loader,
         test_neg_loader,
-    ) = create_loaders(data=data, batch_size=args.batch_size)
+    ) = create_loaders(
+        data=data,
+        positive_test_edges=positive_test_edges,
+        negative_test_edges=negative_test_edges,
+        batch_size=args.batch_size,
+    )
 
     # initialize model, optimizer, and scheduler
     model = LinkPredictionGNN(
