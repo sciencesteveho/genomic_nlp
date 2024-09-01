@@ -182,15 +182,21 @@ class InteractionDataPreprocessor:
         negative_pairs: List[Tuple[str, str]],
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Create feature data and target labels from gene pairs."""
-        data = []
-        targets = []
-        for pair in positive_pairs + negative_pairs:
-            gene1, gene2 = pair
-            vec1 = self.gene_embeddings[gene1]
-            vec2 = self.gene_embeddings[gene2]
-            data.append(np.concatenate([vec1, vec2]))
-            targets.append(1 if pair in positive_pairs else 0)
-        return np.array(data), np.array(targets)
+        all_pairs = positive_pairs + negative_pairs
+        genes1, genes2 = zip(*all_pairs)
+
+        # get embeddings for all genes at once
+        vecs1 = np.array([self.gene_embeddings[gene] for gene in genes1])
+        vecs2 = np.array([self.gene_embeddings[gene] for gene in genes2])
+
+        # concatenate
+        data = np.hstack((vecs1, vecs2))
+
+        # create targets array
+        targets = np.zeros(len(all_pairs))
+        targets[: len(positive_pairs)] = 1
+
+        return data, targets
 
     @staticmethod
     def balance_filtered_pairs(

@@ -157,8 +157,8 @@ def main() -> None:
     # define models
     models = {
         "logistic_regression": LogisticRegressionModel,
-        "svm": SVM,
         "xgboost": XGBoost,
+        "svm": SVM,
         "mlp": MLP,
     }
 
