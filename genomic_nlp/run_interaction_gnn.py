@@ -19,8 +19,10 @@ import json
 from pathlib import Path
 from typing import List, Tuple
 
+import numpy as np
 from sklearn.metrics import average_precision_score  # type: ignore
 from sklearn.metrics import roc_auc_score  # type: ignore
+from sklearn.metrics import roc_curve  # type: ignore
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -245,6 +247,17 @@ def create_loaders(
     )
 
 
+def save_roc_data(y_true: np.ndarray, y_scores: np.ndarray, save_dir: Path) -> None:
+    """Save ROC curve data."""
+    fpr, tpr, thresholds = roc_curve(y_true, y_scores)
+    np.savez(save_dir / "roc_data.npz", fpr=fpr, tpr=tpr, thresholds=thresholds)
+
+
+def save_loss_data(losses: List[float], save_dir: Path) -> None:
+    """Save loss curve data."""
+    np.savetxt(save_dir / "loss_data.txt", losses)
+
+
 def main() -> None:
     """Main function."""
     parser = argparse.ArgumentParser(
@@ -294,6 +307,8 @@ def main() -> None:
     # training loop
     best_auc = float("-inf")
     patience_counter = 0
+    losses = []
+
     for epoch in range(EPOCHS):
         loss = train_model(
             model=model,
@@ -304,6 +319,7 @@ def main() -> None:
             device=device,
             epoch=epoch,
         )
+        losses.append(loss)
         auc = evaluate_model(
             model=model,
             data=data,
@@ -326,6 +342,7 @@ def main() -> None:
             break
 
     print(f"Best AUC: {best_auc:.4f}")
+    save_loss_data(losses, save_dir)  # save loss data
 
     # load the best model for final evaluation
     model.load_state_dict(torch.load("best_model.pth"))
@@ -350,6 +367,11 @@ def main() -> None:
     with open(save_dir / "ranked_validated_predictions.txt", "w") as f:
         for node1, node2, score in ranked_predictions:
             f.write(f"{node1}\t{node2}\t{score:.4f}\n")
+
+    # save ROC curve data
+    y_true = [1] * len(test_pos_loader.dataset) + [0] * len(test_neg_loader.dataset)
+    y_scores = [score for _, _, score in ranked_predictions]
+    save_roc_data(np.array(y_true), np.array(y_scores), save_dir)
 
     # save model and performance
     save_model_and_performance(
