@@ -14,7 +14,7 @@ import numpy as np
 from sklearn.metrics import roc_auc_score  # type: ignore
 from sklearn.metrics import roc_curve
 
-from baseline_models import BaselineModel
+from interaction_models import BaselineModel
 
 
 class BaselineModelVisualizer:

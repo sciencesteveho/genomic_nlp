@@ -165,7 +165,9 @@ class InteractionDataPreprocessor:
     def split_negative_pairs(
         self, n_train: int, n_test: int
     ) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
-        """Split negative pairs into train and test sets without overlap."""
+        """Split negative pairs into train and test sets without overlap, based
+        on the length of the positive pairs.
+        """
         if len(self.negative_pairs) < n_train + n_test:
             raise ValueError(
                 "Not enough negative pairs to split into train and test sets"
