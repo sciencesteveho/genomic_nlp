@@ -1,3 +1,4 @@
+# sourcery skip: avoid-single-character-names-variables
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
@@ -8,12 +9,15 @@
 import argparse
 from collections import defaultdict
 import csv
+from pathlib import Path
 import pickle
 import random
 from typing import Any, Dict, List, Set, Tuple
 
 import numpy as np
 import torch
+from torch_geometric.data import Data  # type: ignore
+from torch_geometric.utils import train_test_split_edges  # type: ignore
 
 
 class InteractionDataPreprocessor:
@@ -23,21 +27,21 @@ class InteractionDataPreprocessor:
 
     def __init__(
         self,
-        args,
+        args: argparse.Namespace,
         data_dir: str = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings",
     ) -> None:
         """Instantiate a BaselineDataPreprocessor object. Load data and
         embeddings.
         """
         self.data_dir = data_dir
-        self.gene_embeddings = _unpickle_dict(args.embeddings)
-        self.pos_pairs_with_source = _unpickle_dict(args.positive_pairs_file)
+        self.gene_embeddings = _load_pickle(args.embeddings)
+        self.pos_pairs_with_source = _load_pickle(args.positive_pairs_file)
         self.pair_to_source = {
             (pair[0].lower(), pair[1].lower()): pair[2]
             for pair in self.pos_pairs_with_source
         }
         self.positive_pairs = casefold_pairs(self.pos_pairs_with_source)
-        self.negative_pairs = casefold_pairs(_unpickle_dict(args.negative_pairs_file))
+        self.negative_pairs = casefold_pairs(_load_pickle(args.negative_pairs_file))
         text_edges = casefold_pairs(
             [
                 tuple(row)
@@ -204,29 +208,24 @@ class InteractionDataPreprocessor:
 class GNNDataPreprocessor:
     """Preprocess data for GNN link prediction model. Load edge list, filter
     edges for those with embeddings.
-
-    Create negative samples, but ensure negative samples don't exist in STRING or GO.
-    Initialize a PyG Data object with node features and edge index.
-    Prepare test edges for evaluation.
     """
 
     def __init__(
         self,
-        args,
+        args: argparse.Namespace,
         data_dir: str = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings",
     ) -> None:
         """Initialize a GNNDataPreprocessor object. Load data and
         embeddings.
         """
         self.data_dir = data_dir
-        self.gene_embeddings = _unpickle_dict(args.embeddings)
-        self.pos_pairs_with_source = _unpickle_dict(args.positive_pairs_file)
+        self.gene_embeddings = _load_pickle(args.embeddings)
+        self.pos_pairs_with_source = _load_pickle(args.positive_pairs_file)
         self.pair_to_source = {
             (pair[0].lower(), pair[1].lower()): pair[2]
             for pair in self.pos_pairs_with_source
         }
         self.positive_pairs = casefold_pairs(self.pos_pairs_with_source)
-        self.negative_pairs = casefold_pairs(_unpickle_dict(args.negative_pairs_file))
         text_edges = casefold_pairs(
             [
                 tuple(row)
@@ -236,6 +235,91 @@ class GNNDataPreprocessor:
         self.edges = set(text_edges)
         print("Data and embeddings loaded!")
 
+        # hardcoded, cause to be honest, I'm lazy right now
+        edge_dir = Path("/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data")
+        go_edges = _load_pickle(edge_dir / "go_graph.pkl")
+        string_edges = _load_pickle(edge_dir / "string_graph.pkl")
+        self.avoid_edges = go_edges.union(string_edges)
+
+    def preprocess_data(self) -> Tuple[Data, torch.Tensor, torch.Tensor]:
+        """Preprocess data for GNN link prediction model."""
+        # filter edges to keep only those with embeddings
+        filtered_edges = self._filter_edges_for_embeddings()
+        unique_genes = self._uniq_filtered_genes(filtered_edges)
+
+        # get test edges
+        filtered_test_edges = self._filter_test_edges_for_embeddings(unique_genes)
+
+        # generate negative samples
+        negative_samples = self._negative_sampling(
+            unique_genes=unique_genes,
+            positive_edges=filtered_edges,
+            num_samples=len(filtered_edges) + len(filtered_test_edges),
+        )
+
+        # assign negative samples to training and test sets
+        negative_train_samples = set(
+            random.sample(negative_samples, len(filtered_edges))
+        )
+        negative_test_samples = negative_samples - negative_train_samples
+
+        # map genes to indices
+        node_mapping = self._map_genes_to_indices(filtered_edges)
+
+        # get node features
+        x = self._get_node_features(node_mapping)
+
+        # convert (str) edges to tensor of indices
+        edge_index = self._get_edge_index_tensor(
+            edges=filtered_edges, node_mapping=node_mapping
+        )
+        neg_edge_index = self._get_edge_index_tensor(
+            edges=negative_train_samples, node_mapping=node_mapping
+        )
+        positive_test_edges = self._get_edge_index_tensor(
+            edges=filtered_test_edges, node_mapping=node_mapping
+        )
+        negative_test_edges = self._get_edge_index_tensor(
+            edges=negative_test_samples, node_mapping=node_mapping
+        )
+
+        # split into train and validation sets
+        train_pos_edge_index, val_pos_edge_index = self._split_edge_index(
+            edge_index=edge_index, percent=0.8
+        )
+        train_neg_edge_index, val_neg_edge_index = self._split_edge_index(
+            edge_index=neg_edge_index, percent=0.8
+        )
+
+        # create PyG Data object
+        data = Data(
+            x=x,
+            edge_index=edge_index,
+            train_pos_edge_index=train_pos_edge_index,
+            train_neg_edge_index=train_neg_edge_index,
+            val_pos_edge_index=val_pos_edge_index,
+            val_neg_edge_index=val_neg_edge_index,
+        )
+
+        return data, positive_test_edges, negative_test_edges
+
+    @staticmethod
+    def _split_edge_index(
+        edge_index: torch.Tensor, percent: float
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Split edge index into two tensors by ratio."""
+        num_edges = edge_index.shape[1]
+        num_train = int(num_edges * percent)
+
+        # shuffle indices
+        indices = torch.randperm(num_edges)
+
+        # split indices
+        train_indices = indices[:num_train]
+        val_indices = indices[num_train:]
+
+        return edge_index[:, train_indices], edge_index[:, val_indices]
+
     def _filter_edges_for_embeddings(self) -> Set[Tuple[str, str]]:
         """Filter edges to only keep those with embeddings."""
         return {
@@ -244,67 +328,72 @@ class GNNDataPreprocessor:
             if edge[0] in self.gene_embeddings and edge[1] in self.gene_embeddings
         }
 
-    def preprocess_data(self) -> Data:
-        """Preprocess data for GNN link prediction model."""
-        # Filter edges to keep only those with embeddings
-        filtered_edges = self._filter_edges_for_embeddings()
+    def _uniq_filtered_genes(self, edges: Set[Tuple[str, str]]) -> Set[str]:
+        """Get unique genes from filtered edges."""
+        return {gene for edge in edges for gene in edge}
 
-        # Create node mapping and feature matrix
-        unique_genes = set([gene for edge in filtered_edges for gene in edge])
-        node_mapping = {gene: i for i, gene in enumerate(unique_genes)}
-        x = torch.tensor(
+    def _negative_sampling(
+        self,
+        unique_genes: Set[str],
+        positive_edges: Set[Tuple[str, str]],
+        num_samples: int,
+    ) -> Set[Tuple[str, str]]:
+        """Generate negative samples for training. To avoid sampling edges that
+        seem negative but are actually positive, we avoid creating edges that
+        overlap with STRING, GO, or our test set.
+        """
+        negative_samples: Set[Tuple[str, str]] = set()
+        genes = list(unique_genes)
+
+        while len(negative_samples) < num_samples:
+            gene1, gene2 = random.sample(genes, 2)
+            edge = (
+                (gene1, gene2) if gene1 < gene2 else (gene2, gene1)
+            )  # avoid duplicates
+
+            if (
+                edge not in positive_edges
+                and edge not in self.avoid_edges
+                and edge not in negative_samples
+            ):
+                negative_samples.add(edge)
+
+        return negative_samples
+
+    def _get_node_features(self, node_mapping: Dict[str, int]) -> torch.Tensor:
+        """Fill out node feature matrix via retrieving embeddings."""
+        return torch.tensor(
             [self.gene_embeddings[gene] for gene in node_mapping], dtype=torch.float
         )
 
-        # Convert edge list to tensor
-        edge_index = torch.tensor(
-            [[node_mapping[e1], node_mapping[e2]] for e1, e2 in filtered_edges],
-            dtype=torch.long,
-        ).t()
-
-        # Create PyG Data object
-        data = Data(x=x, edge_index=edge_index)
-
-        # Add negative samples
-        data.neg_edge_index = self.negative_sampling(edge_index, num_nodes=x.size(0))
-
-        return data
-
-    def prepare_test_edges(self, data: Data) -> torch.Tensor:
-        node_mapping = {gene: i for i, gene in enumerate(data.x)}
-        test_edge_index = torch.tensor(
-            [
-                [node_mapping[e1], node_mapping[e2]]
-                for e1, e2 in self.test_edges
-                if e1 in node_mapping and e2 in node_mapping
-            ],
-            dtype=torch.long,
-        ).t()
-        return test_edge_index
+    def _filter_test_edges_for_embeddings(
+        self, unique_genes: Set[str]
+    ) -> Set[Tuple[str, str]]:
+        """Filter edges to only keep those with embeddings."""
+        return {
+            (edge[0], edge[1])
+            for edge in self.positive_pairs
+            if edge[0] in unique_genes and edge[1] in unique_genes
+        }
 
     @staticmethod
-    def negative_sampling(edge_index: torch.Tensor, num_nodes: int) -> torch.Tensor:
-        # Simple negative sampling implementation
-        num_neg_samples = edge_index.size(1)
-        neg_edge_index = torch.randint(
-            0, num_nodes, (2, num_neg_samples), dtype=torch.long
-        )
+    def _map_genes_to_indices(edges: Set[Tuple[str, str]]) -> Dict[str, int]:
+        """Map genes to indices."""
+        unique_genes = {gene for edge in edges for gene in edge}
+        return {gene: idx for idx, gene in enumerate(unique_genes)}
 
-        # Remove self-loops and duplicates
-        mask = neg_edge_index[0] != neg_edge_index[1]
-        neg_edge_index = neg_edge_index[:, mask]
-        neg_edge_index = torch.unique(neg_edge_index, dim=1)
-
-        # Ensure no overlap with positive edges
-        pos_edge_set = set(map(tuple, edge_index.t().tolist()))
-        neg_edge_index = neg_edge_index[
-            :, [tuple(e) not in pos_edge_set for e in neg_edge_index.t().tolist()]
-        ]
-
-        return neg_edge_index
+    @staticmethod
+    def _get_edge_index_tensor(
+        edges: Set[Tuple[str, str]],
+        node_mapping: Dict[str, int],
+    ) -> torch.Tensor:
+        """Convert (str) edges to tensor of indices."""
+        return torch.tensor(
+            [[node_mapping[e1], node_mapping[e2]] for e1, e2 in edges], dtype=torch.long
+        ).t()
 
 
-def _unpickle_dict(pickle_file: str) -> Any:
+def _load_pickle(pickle_file: Any) -> Any:
     """Simple wrapper to unpickle embedding or pair pkls."""
     with open(pickle_file, "rb") as file:
         return pickle.load(file)

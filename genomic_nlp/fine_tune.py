@@ -142,11 +142,6 @@ def main() -> None:
         f"Loaded DeBERTa model and resized token embeddings to {len(tokenizer)}"
     )
 
-    # optimizer
-    optimizer = torch.optim.AdamW(
-        model.parameters(), lr=2e-5, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01
-    )
-
     # load dataset generator
     streaming_dataset = StreamingCorpus(
         file_path=abstracts,
@@ -161,18 +156,16 @@ def main() -> None:
     )
     warmup_steps = int(0.1 * total_steps)
 
+    # set up DeepSpeed
+    model_engine, optimizer, _, _ = deepspeed.initialize(
+        model=model,
+        config=ds_config_file,
+    )
+
     scheduler = get_linear_schedule_with_warmup(
         optimizer=optimizer,
         num_warmup_steps=warmup_steps,
         num_training_steps=total_steps,
-    )
-
-    # set up DeepSpeed
-    model_engine, optimizer, _, _ = deepspeed.initialize(
-        model=model,
-        optimizer=optimizer,
-        config=ds_config_file,
-        lr_scheduler=scheduler,
     )
 
     # set up collator for MLM
@@ -211,6 +204,7 @@ def main() -> None:
             # backward pass
             model_engine.backward(loss)
             model_engine.step()
+            scheduler.step()
 
             # update progress bar on main process
             if args.local_rank in {0, -1}:
