@@ -1,4 +1,4 @@
-# sourcery skip: snake-case-arguments
+# sourcery skip: snake-case-arguments, upper-camel-case-classes
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
@@ -20,8 +20,8 @@ from typing import Optional
 import numpy as np
 from sklearn.base import BaseEstimator  # type: ignore
 from sklearn.base import ClassifierMixin  # type: ignore
-from sklearn.ensemble import RandomForestClassifier  # type: ignore
 from sklearn.linear_model import LogisticRegression  # type: ignore
+from sklearn.multiclass import OneVsRestClassifier  # type: ignore
 from sklearn.neural_network import MLPClassifier  # type: ignore
 from sklearn.svm import SVC  # type: ignore
 from xgboost import XGBClassifier
@@ -29,31 +29,32 @@ from xgboost import XGBClassifier
 from constants import RANDOM_STATE
 
 
-class OncogenicityBaseModel(BaseEstimator, ClassifierMixin):
+class CancerBaseModel(BaseEstimator, ClassifierMixin):
     """Base class for oncogenicity prediction models."""
 
-    def __init__(self, model: BaseEstimator, binary_threshold: float = 0.5):
+    def __init__(self, model: BaseEstimator, threshold: float = 0.5) -> None:
+        """Initialize a cancer gene prediction model."""
         self.model = model
-        self.binary_threshold = binary_threshold
+        self.threshold = threshold
         self.input_dim: Optional[int] = None
 
     def train(
         self, feature_data: np.ndarray, target_labels: np.ndarray
-    ) -> "OncogenicityBaseModel":
+    ) -> "CancerBaseModel":
         """Train the model."""
         self.input_dim = feature_data.shape[1]
         self.model.fit(feature_data, target_labels)
         return self
 
     def predict_probability(self, input_features: np.ndarray) -> np.ndarray:
-        """Predict the probability of a gene being oncogenic."""
+        """Predict the probability of a gene being cancer-related."""
         processed_features = self._process_input(input_features)
         return self.model.predict_proba(processed_features)[:, 1]
 
-    def predict_binary(self, input_features: np.ndarray) -> np.ndarray:
-        """Predict binary oncogenicity based on threshold."""
+    def predict(self, input_features: np.ndarray) -> np.ndarray:
+        """Predict whether a gene is cancer-related (1) or not (0)."""
         probabilities = self.predict_probability(input_features)
-        return (probabilities >= self.binary_threshold).astype(int)
+        return (probabilities >= self.threshold).astype(int)
 
     def _process_input(self, input_features: np.ndarray) -> np.ndarray:
         """Process input features to match the model's input dimension."""
@@ -66,15 +67,15 @@ class OncogenicityBaseModel(BaseEstimator, ClassifierMixin):
         return input_features
 
 
-class OncogenicityLogisticRegression(OncogenicityBaseModel):
-    """Logistic regression for oncogenicity prediction."""
+class LogisticRegressionModel(CancerBaseModel):
+    """Logistic regression for cancer prediction."""
 
     def __init__(self, **kwargs):
         model = LogisticRegression(**kwargs)
         super().__init__(model)
 
 
-class OncogenicitySVM(OncogenicityBaseModel):
+class SVM(CancerBaseModel):
     """Support vector machine - non-linear margin-based classification model."""
 
     def __init__(
@@ -90,28 +91,16 @@ class OncogenicitySVM(OncogenicityBaseModel):
         super().__init__(model)
 
 
-class OncogenicityRandomForest(OncogenicityBaseModel):
-    """Random forest for oncogenicity prediction."""
-
-    def __init__(
-        self, n_estimators: int = 100, random_state: int = RANDOM_STATE, **kwargs
-    ):
-        model = RandomForestClassifier(
-            n_estimators=n_estimators, random_state=random_state, **kwargs
-        )
-        super().__init__(model)
-
-
-class OncogenicityXGBoost(OncogenicityBaseModel):
-    """XGBoost for oncogenicity prediction."""
+class XGBoost(CancerBaseModel):
+    """XGBoost for cancer prediction."""
 
     def __init__(self, **kwargs):
         model = XGBClassifier(eval_metric="logloss", **kwargs)
         super().__init__(model)
 
 
-class OncogenicityMLP(OncogenicityBaseModel):
-    """Multi-layer perceptron for oncogenicity prediction."""
+class MLP(CancerBaseModel):
+    """Multi-layer perceptron for cancer prediction."""
 
     def __init__(
         self, hidden_layer_sizes=(256, 256), max_iter=1000, random_state=42, **kwargs

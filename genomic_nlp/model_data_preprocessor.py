@@ -15,6 +15,7 @@ import random
 from typing import Any, Dict, List, Set, Tuple
 
 import numpy as np
+import pandas as pd
 import torch
 from torch_geometric.data import Data  # type: ignore
 from torch_geometric.utils import train_test_split_edges  # type: ignore
@@ -241,6 +242,29 @@ class GNNDataPreprocessor:
         string_edges = _load_pickle(edge_dir / "string_graph.pkl")
         self.avoid_edges = go_edges.union(string_edges)
 
+    def filter_pairs_for_prior_knowledge(
+        self,
+        positive_pairs: Set[Tuple[str, str]],
+    ) -> Set[Tuple[str, str]]:
+        """Filter the gene pairs into two sets: those with prior knowledge, and
+        those without. Gene pairs with prior knowledge are those that exist in the
+        text_edges set, which contains edges extracted from the literature.
+        """
+        pos_train = []
+        pos_test = []
+
+        print(f"Total positive pairs: {len(positive_pairs)}")
+
+        for pair in positive_pairs:
+            if pair in self.edges or (pair[1], pair[0]) in self.edges:
+                pos_train.append(pair)
+            else:
+                pos_test.append(pair)
+
+        print(f"Positive pairs with prior knowledge: {len(pos_train)}")
+        print(f"Positive pairs without prior knowledge: {len(pos_test)}")
+        return set(pos_test)
+
     def preprocess_data(self) -> Tuple[Data, torch.Tensor, torch.Tensor]:
         """Preprocess data for GNN link prediction model."""
         # filter edges to keep only those with embeddings
@@ -250,11 +274,16 @@ class GNNDataPreprocessor:
         # get test edges
         filtered_test_edges = self._filter_test_edges_for_embeddings(unique_genes)
 
+        # filter edges for prior knowledge
+        final_test_edges = self.filter_pairs_for_prior_knowledge(
+            positive_pairs=filtered_test_edges
+        )
+
         # generate negative samples
         negative_samples = self._negative_sampling(
             unique_genes=unique_genes,
             positive_edges=filtered_edges,
-            num_samples=len(filtered_edges) + len(filtered_test_edges),
+            num_samples=len(filtered_edges) + len(final_test_edges),
         )
 
         # assign negative samples to training and test sets
@@ -277,7 +306,7 @@ class GNNDataPreprocessor:
             edges=negative_train_samples, node_mapping=node_mapping
         )
         positive_test_edges = self._get_edge_index_tensor(
-            edges=filtered_test_edges, node_mapping=node_mapping
+            edges=final_test_edges, node_mapping=node_mapping
         )
         negative_test_edges = self._get_edge_index_tensor(
             edges=negative_test_samples, node_mapping=node_mapping
@@ -402,3 +431,73 @@ def _load_pickle(pickle_file: Any) -> Any:
 def casefold_pairs(pairs: Any) -> List[Tuple[str, str]]:
     """Casefold gene pairs."""
     return [(pair[0].casefold(), pair[1].casefold()) for pair in pairs]
+
+
+class OncogenicDataPreprocessor:
+    """Preprocess data for oncogenicity prediction models."""
+
+    def __init__(
+        self,
+        args: argparse.Namespace,
+        data_dir: str = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings",
+    ) -> None:
+        """Instantiate an OncogenicDataPreprocessor object. Load data and embeddings."""
+        self.data_dir = Path(data_dir)
+        self.gene_embeddings = _load_pickle(args.embeddings)
+        self.cancer_genes = self.get_positive_test_set()
+        print("Embeddings loaded.")
+
+    def get_positive_test_set(self) -> Set[str]:
+        """Get the positive test set of cancer related genes."""
+        cosmic_genes = self._load_cosmic()
+        ncg_genes = self._load_ncg()
+        return cosmic_genes.union(ncg_genes)
+
+    def _load_cosmic(self) -> Set[str]:
+        """Load COSMIC gene_symbols."""
+        data = pd.read_csv(
+            self.data_dir / "Cosmic_CancerGeneCensus_v100_GRCh38.tsv",
+            delimiter="\t",
+            header=[0],
+        )
+        return set(data["GENE_SYMBOL"].str.lower())
+
+    def _load_ncg(self) -> Set[str]:
+        """Load NCG gene_symbols."""
+        data = pd.read_csv(
+            self.data_dir / "NCG_cancerdrivers_annotation_supporting_evidence.tsv",
+            delimiter="\t",
+            header=[0],
+        )
+        return set(data["symbol"].str.lower())
+
+    def format_data_and_targets(
+        self,
+        cancer_genes: Set[str],
+        negative_samples: Set[str],
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Create feature data and target labels for cancer related genes."""
+        data = []
+        targets = []
+        for pair in positive_pairs + negative_pairs:
+            gene1, gene2 = pair
+            vec1 = self.gene_embeddings[gene1]
+            vec2 = self.gene_embeddings[gene2]
+            data.append(np.concatenate([vec1, vec2]))
+            targets.append(1 if pair in positive_pairs else 0)
+        return np.array(data), np.array(targets)
+
+    def preprocess_data(self) -> None:
+        """Preprocess data for oncogenicity prediction models."""
+        # filter cancer genes for those with embeddings
+        cancer_genes = {
+            gene for gene in self.cancer_genes if gene in self.gene_embeddings
+        }
+
+        # create negative samples, same size as cancer genes
+        # any gene not in cancer_genes is considered a negative sample
+        total_samples = len(cancer_genes)
+        negative_samples = [
+            gene for gene in self.gene_embeddings if gene not in cancer_genes
+        ]
+        matched_negative_samples = {random.sample(negative_samples, total_samples)}

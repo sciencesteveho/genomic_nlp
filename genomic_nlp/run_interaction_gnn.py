@@ -37,7 +37,7 @@ from model_data_preprocessor import GNNDataPreprocessor
 
 # helpers
 EPOCHS = 100
-PATIENCE = 15
+PATIENCE = 10
 
 
 def create_edge_loader(
