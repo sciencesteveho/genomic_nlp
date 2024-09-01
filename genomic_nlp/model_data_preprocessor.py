@@ -32,7 +32,15 @@ class InteractionDataPreprocessor:
         embeddings.
         """
         self.data_dir = data_dir
+
+        # get first element to see if it's casefolded
         self.gene_embeddings = _load_pickle(args.embeddings)
+        first_key = list(self.gene_embeddings.keys())[0]
+        if not first_key.islower():
+            self.gene_embeddings = {
+                key.casefold(): value for key, value in self.gene_embeddings.items()
+            }
+
         self.pos_pairs_with_source = _load_pickle(args.positive_pairs_file)
         self.pair_to_source = {
             (pair[0].lower(), pair[1].lower()): pair[2]
@@ -227,13 +235,14 @@ class CancerGeneDataPreprocessor:
         """Instantiate an OncogenicDataPreprocessor object. Load data and embeddings."""
         self.data_dir = Path(data_dir)
         self.gene_embeddings = _load_pickle(args.embeddings)
-        self.cancer_genes = self.get_positive_test_set()
-        print("Embeddings loaded.")
 
         # hardcoded, to fix later
         self.resource_dir = Path(
             "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/cancer"
         )
+
+        self.cancer_genes = self.get_positive_test_set()
+        print("Embeddings loaded.")
 
     def get_positive_test_set(self) -> Set[str]:
         """Get the positive test set of cancer related genes."""
