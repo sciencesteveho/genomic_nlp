@@ -255,7 +255,7 @@ def main() -> None:
     parser.add_argument(
         "--positive_pairs_file", type=str, help="Path to positive pairs file"
     )
-    parser.add_argument("--batch_size", type=int, default=64, help="Batch size")
+    parser.add_argument("--batch_size", type=int, default=128, help="Batch size")
     args = parser.parse_args()
 
     save_dir = Path("/ocean/projects/bio210019p/stevesho/genomic_nlp/models/gnn")

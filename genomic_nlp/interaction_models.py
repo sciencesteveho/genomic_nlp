@@ -33,8 +33,8 @@ from sklearn.svm import SVC  # type: ignore
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GCNConv  # type: ignore
-from torch_geometric.nn import GraphNorm
+from torch_geometric.nn import GraphNorm  # type: ignore
+from torch_geometric.nn import SAGEConv  # type: ignore
 from xgboost import XGBClassifier
 
 from constants import RANDOM_STATE
@@ -45,9 +45,9 @@ class LinkPredictionGNN(nn.Module):
     trained embeddings and evaluated on a separate graph of experimentally
     derived gene-gene interactions.
 
-    The model defaults to two convolutional layers with graph normalization and
-    ReLU for its activation function. Additionally, we implement dropouut and a
-    dense skip connection.
+    The model defaults to two GraphSAGE convolutional layers with graph
+    normalization and ReLU for its activation function. Additionally, we
+    implement dropouut and a dense skip connection.
     """
 
     def __init__(
@@ -63,8 +63,8 @@ class LinkPredictionGNN(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
         # convolutional layers
-        self.conv1 = GCNConv(in_channels, embedding_size)
-        self.conv2 = GCNConv(embedding_size, embedding_size)
+        self.conv1 = SAGEConv(in_channels, embedding_size)
+        self.conv2 = SAGEConv(embedding_size, embedding_size)
 
         # normalization layers
         self.norm1 = GraphNorm(embedding_size)
