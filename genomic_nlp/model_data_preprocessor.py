@@ -33,13 +33,9 @@ class InteractionDataPreprocessor:
         """
         self.data_dir = data_dir
 
-        # get first element to see if it's casefolded
+        # load embeddings
         self.gene_embeddings = _load_pickle(args.embeddings)
-        first_key = list(self.gene_embeddings.keys())[0]
-        if not first_key.islower():
-            self.gene_embeddings = {
-                key.casefold(): value for key, value in self.gene_embeddings.items()
-            }
+        self.gene_embeddings = casefold_embeddings(self.gene_embeddings)
 
         self.pos_pairs_with_source = _load_pickle(args.positive_pairs_file)
         self.pair_to_source = {
@@ -234,7 +230,10 @@ class CancerGeneDataPreprocessor:
     ) -> None:
         """Instantiate an OncogenicDataPreprocessor object. Load data and embeddings."""
         self.data_dir = Path(data_dir)
+
+        # load embeddings
         self.gene_embeddings = _load_pickle(args.embeddings)
+        self.gene_embeddings = casefold_embeddings(self.gene_embeddings)
 
         # hardcoded, to fix later
         self.resource_dir = Path(
@@ -301,3 +300,11 @@ class CancerGeneDataPreprocessor:
 
         # format data and targets for models
         return self.format_data_and_targets(cancer_genes, matched_negative_samples)
+
+
+def casefold_embeddings(embeddings: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+    """Casefold gene embeddings if not already casefolded."""
+    first_key = list(embeddings.keys())[0]
+    if not first_key.islower():
+        return {gene.casefold(): vec for gene, vec in embeddings.items()}
+    return embeddings
