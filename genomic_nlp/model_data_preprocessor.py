@@ -433,7 +433,7 @@ def casefold_pairs(pairs: Any) -> List[Tuple[str, str]]:
     return [(pair[0].casefold(), pair[1].casefold()) for pair in pairs]
 
 
-class OncogenicDataPreprocessor:
+class CancerGeneDataPreprocessor:
     """Preprocess data for oncogenicity prediction models."""
 
     def __init__(
@@ -477,17 +477,14 @@ class OncogenicDataPreprocessor:
         negative_samples: Set[str],
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Create feature data and target labels for cancer related genes."""
-        data = []
-        targets = []
-        for pair in positive_pairs + negative_pairs:
-            gene1, gene2 = pair
-            vec1 = self.gene_embeddings[gene1]
-            vec2 = self.gene_embeddings[gene2]
-            data.append(np.concatenate([vec1, vec2]))
-            targets.append(1 if pair in positive_pairs else 0)
+        data, targets = [], []
+        for gene in cancer_genes.union(negative_samples):
+            vec = self.gene_embeddings[gene]
+            data.append(vec)
+            targets.append(1 if gene in cancer_genes else 0)
         return np.array(data), np.array(targets)
 
-    def preprocess_data(self) -> None:
+    def preprocess_data(self) -> Tuple[np.ndarray, np.ndarray]:
         """Preprocess data for oncogenicity prediction models."""
         # filter cancer genes for those with embeddings
         cancer_genes = {
@@ -500,4 +497,10 @@ class OncogenicDataPreprocessor:
         negative_samples = [
             gene for gene in self.gene_embeddings if gene not in cancer_genes
         ]
-        matched_negative_samples = {random.sample(negative_samples, total_samples)}
+        matched_negative_samples = set(random.sample(negative_samples, total_samples))
+
+        print(f"Number of cancer genes: {len(cancer_genes)}")
+        print(f"Number of negative samples: {len(matched_negative_samples)}")
+
+        # format data and targets for models
+        return self.format_data_and_targets(cancer_genes, matched_negative_samples)

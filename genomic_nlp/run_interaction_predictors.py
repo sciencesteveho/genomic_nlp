@@ -22,22 +22,15 @@ from sklearn.metrics import roc_auc_score  # type: ignore
 from sklearn.model_selection import StratifiedKFold  # type: ignore
 
 # from baseline_models import CosineSimilarity
+from constants import RANDOM_STATE
 from interaction_models import BaselineModel
 from interaction_models import LogisticRegressionModel
 from interaction_models import MLP
 from interaction_models import SVM
 from interaction_models import XGBoost
 from model_data_preprocessor import InteractionDataPreprocessor
+from utils import get_physical_cores
 from visualizers import BaselineModelVisualizer
-
-RANDOM_SEED = 42
-
-
-def get_physical_cores() -> int:
-    """Return physical core count, subtracted by one to account for the main
-    process / overhead.
-    """
-    return psutil.cpu_count(logical=False) - 1
 
 
 class GeneInterationPredictions:
@@ -72,7 +65,7 @@ class GeneInterationPredictions:
     ) -> List[float]:
         """Perform stratified k-fold cross-validation and return AUC scores."""
         folds = StratifiedKFold(
-            n_splits=n_splits, shuffle=True, random_state=RANDOM_SEED
+            n_splits=n_splits, shuffle=True, random_state=RANDOM_STATE
         )
         return [
             self.evaluate_model(

@@ -21,6 +21,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Union
 from gensim.models.callbacks import CallbackAny2Vec  # type: ignore
 import numpy as np
 import pandas as pd
+import psutil  # type: ignore
 import pybedtools  # type: ignore
 from tqdm import tqdm  # type: ignore
 
@@ -39,6 +40,13 @@ class EpochSaver(CallbackAny2Vec):
         print(f"Save model number {self.epoch}.")
         model.save(f"{self.savedir}/model_epoch{self.epoch}.pkl")
         self.epoch += 1
+
+
+def get_physical_cores() -> int:
+    """Return physical core count, subtracted by one to account for the main
+    process / overhead.
+    """
+    return psutil.cpu_count(logical=False) - 1
 
 
 def casefold_genes(genes: Set[str]) -> Set[str]:
