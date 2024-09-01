@@ -74,7 +74,7 @@ def custom_gene_tokenizer(
         "/ocean/projects/bio210019p/stevesho/genomic_nlp/models/deberta/gene_tokenizer"
     )
     tokenizer.save_pretrained(save_dir)
-    return DebertaV2TokenizerFast.from_pretrained(save_dir)
+    return tokenizer
 
 
 def _write_abstracts_to_text(abstracts_dir: str, prefix: str) -> None:

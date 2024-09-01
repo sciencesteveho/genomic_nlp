@@ -56,10 +56,13 @@ class LinkPredictionGNN(nn.Module):
         x2 = self.dropout(self.activation(self.norm2(self.conv2(x1, edge_index))))
         return self.residual(x1 + x2)
 
-    def decode(self, z: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
+    def decode(self, z: torch.Tensor, edge_label_index: torch.Tensor) -> torch.Tensor:
         """Decode the input graph."""
-        return (z[edge_index[0]] * z[edge_index[1]]).sum(dim=-1)
+        return (z[edge_label_index[0]] * z[edge_label_index[1]]).sum(dim=-1)
 
-    def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
-        """Forward pass of the network."""
-        return self.encode(x, edge_index)
+    def forward(
+        self, x: torch.Tensor, edge_index: torch.Tensor, edge_label_index: torch.Tensor
+    ) -> torch.Tensor:
+        """Forward pass of the network to predict links."""
+        z = self.encode(x=x, edge_index=edge_index)
+        return self.decode(z=z, edge_label_index=edge_label_index)

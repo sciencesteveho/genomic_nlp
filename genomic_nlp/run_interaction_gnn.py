@@ -27,6 +27,32 @@ from torch_geometric.utils import train_test_split_edges  # type: ignore
 from interaction_gnn import LinkPredictionGNN
 
 
+def train_gnn(model: LinkPredictionGNN, data: Data, optimizer, criterion):
+    model.train()
+    optimizer.zero_grad()
+
+    # Combine positive and negative edges for training
+    edge_label_index = torch.cat([data.edge_index, data.neg_edge_index], dim=-1)
+    edge_label = torch.cat(
+        [torch.ones(data.edge_index.size(1)), torch.zeros(data.neg_edge_index.size(1))],
+        dim=0,
+    )
+
+    out = model(data.x, data.edge_index, edge_label_index)
+    loss = criterion(out, edge_label)
+    loss.backward()
+    optimizer.step()
+    return loss.item()
+
+
+def test_gnn(model: LinkPredictionGNN, data: Data, test_edge_index: torch.Tensor):
+    model.eval()
+    with torch.no_grad():
+        z = model.encode(data.x, data.edge_index)
+        out = model.decode(z, test_edge_index)
+    return out.cpu().numpy()
+
+
 def initialize_graph(node_features: torch.Tensor, edge_index: torch.Tensor) -> Data:
     """Create a PyG Data object from node features and edge index."""
     return Data(x=node_features, edge_index=edge_index)
