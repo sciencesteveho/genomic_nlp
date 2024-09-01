@@ -282,6 +282,10 @@ class CancerGeneDataPreprocessor:
 
     def preprocess_data(self) -> Tuple[np.ndarray, np.ndarray]:
         """Preprocess data for oncogenicity prediction models."""
+        # first 5 cancer genes and first 5 embeddings
+        print("Cancer genes: ", list(self.cancer_genes)[:5])
+        print("Embeddings: ", list(self.gene_embeddings.keys())[:5])
+
         # filter cancer genes for those with embeddings
         cancer_genes = {
             gene for gene in self.cancer_genes if gene in self.gene_embeddings
