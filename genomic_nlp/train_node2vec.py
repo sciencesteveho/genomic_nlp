@@ -67,7 +67,7 @@ def main() -> None:
     # try and clear memory before saving
     gc.collect()
 
-    model.save(output_dir / "node2vec.model")
+    model.save(str(output_dir / "node2vec.model"))
 
 
 if __name__ == "__main__":

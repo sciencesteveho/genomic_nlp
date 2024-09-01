@@ -204,7 +204,7 @@ class DeBERTaEmbeddingExtractor:
         self.model.gradient_checkpointing_enable()
         print("Model loaded successfully.")
 
-        self.vocab_size = len()
+        # self.vocab_size = len()
 
     def _rename_state_dict_keys(self, state_dict: Dict[str, Any]) -> Dict[str, Any]:
         """Rename state dict keys to remove the 'module.' prefix."""

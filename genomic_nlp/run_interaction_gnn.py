@@ -253,7 +253,7 @@ def main() -> None:
         description="Train and evaluate a GNN for link prediction."
     )
     parser.add_argument("--embeddings", type=str, help="Path to embeddings file")
-    parser.add_argument("--edge_file", type=str, help="Path to edge list file")
+    parser.add_argument("--text_edges_file", type=str, help="Path to edge list file")
     parser.add_argument(
         "--positive_pairs_file", type=str, help="Path to positive pairs file"
     )
