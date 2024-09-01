@@ -83,12 +83,9 @@ class LinkPredictionGNN(nn.Module):
         """Decode the input graph via dot product of node embeddings."""
         return (z[edge_label_index[0]] * z[edge_label_index[1]]).sum(dim=-1)
 
-    def forward(
-        self, x: torch.Tensor, edge_index: torch.Tensor, edge_label_index: torch.Tensor
-    ) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
         """Forward pass of the network to predict links."""
-        z = self.encode(x=x, edge_index=edge_index)
-        return self.decode(z=z, edge_label_index=edge_label_index)
+        return self.encode(x=x, edge_index=edge_index)
 
 
 class BaselineModel(BaseEstimator, ClassifierMixin):

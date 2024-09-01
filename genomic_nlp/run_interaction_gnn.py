@@ -10,7 +10,8 @@ training portion never sees.
 
 All of our derived graphs only represent positive data. To ameliorate this, we
 use a negative sampling strategy to create negative samples for training (i.e.,
-pairs of nodes that are not connected in the graph)."""
+pairs of nodes that are not connected in the graph). See the GNNDataPreprocessor
+class for more details."""
 
 
 import argparse
@@ -18,7 +19,6 @@ import json
 from pathlib import Path
 from typing import List, Tuple
 
-import numpy as np
 from sklearn.metrics import average_precision_score  # type: ignore
 from sklearn.metrics import roc_auc_score  # type: ignore
 import torch
@@ -27,10 +27,7 @@ import torch.nn.functional as F
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import torch_geometric  # type: ignore
 from torch_geometric.data import Data  # type: ignore
-from torch_geometric.data import DataLoader  # type: ignore
-from torch_geometric.data import Dataset
-from torch_geometric.nn import GCNConv  # type: ignore
-from torch_geometric.nn import GraphNorm
+from torch_geometric.loader import DataLoader  # type: ignore
 from tqdm import tqdm  # type: ignore
 
 from interaction_models import LinkPredictionGNN
