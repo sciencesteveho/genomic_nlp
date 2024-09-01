@@ -53,7 +53,7 @@ def main() -> None:
         dimensions=128,
         walk_length=40,
         num_walks=10,
-        workers=32,
+        workers=24,
     )
 
     # train node2vec
