@@ -12,12 +12,7 @@ The following are implemented:
     (2) Random forest
     (3) XGBoost
     (4) Multi-layer perceptron (MLP)
-    
-Also included is GNN model architectures for link prediction. We train
-link-prediction GNNs to compare the rich semantic capture capabilites of
-different language models. Because the goal of the GNN is to evaluate the
-quality of the embeddings, we default to a simpler GNN architecture to avoid
-overfitting and complexity that may hinder the evaluation of the embeddings."""
+"""
 
 
 from typing import Optional, Tuple, Union
@@ -30,62 +25,9 @@ from sklearn.linear_model import LogisticRegression  # type: ignore
 from sklearn.metrics.pairwise import cosine_similarity  # type: ignore
 from sklearn.neural_network import MLPClassifier  # type: ignore
 from sklearn.svm import SVC  # type: ignore
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch_geometric.nn import GraphNorm  # type: ignore
-from torch_geometric.nn import SAGEConv  # type: ignore
 from xgboost import XGBClassifier
 
 from constants import RANDOM_STATE
-
-
-class LinkPredictionGNN(nn.Module):
-    """Simple GNN for link prediction, trained on a base graph initialized with
-    trained embeddings and evaluated on a separate graph of experimentally
-    derived gene-gene interactions.
-
-    The model defaults to two GraphSAGE convolutional layers with graph
-    normalization and ReLU for its activation function. Additionally, we
-    implement dropouut and a dense skip connection.
-    """
-
-    def __init__(
-        self,
-        in_channels: int,
-        embedding_size: int,
-        out_channels: int,
-        dropout: float = 0.2,
-    ) -> None:
-        """Instantiate the model."""
-        super(LinkPredictionGNN, self).__init__()
-        self.activation = F.relu
-        self.dropout = nn.Dropout(dropout)
-
-        # convolutional layers
-        self.conv1 = SAGEConv(in_channels, embedding_size)
-        self.conv2 = SAGEConv(embedding_size, embedding_size)
-
-        # normalization layers
-        self.norm1 = GraphNorm(embedding_size)
-        self.norm2 = GraphNorm(embedding_size)
-
-        # skip connection
-        self.residual = nn.Linear(in_channels, out_channels)
-
-    def encode(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
-        """Encode the input graph."""
-        x1 = self.dropout(self.activation(self.norm1(self.conv1(x, edge_index))))
-        x2 = self.dropout(self.activation(self.norm2(self.conv2(x1, edge_index))))
-        return self.residual(x) + x2
-
-    def decode(self, z: torch.Tensor, edge_label_index: torch.Tensor) -> torch.Tensor:
-        """Decode the input graph via dot product of node embeddings."""
-        return (z[edge_label_index[0]] * z[edge_label_index[1]]).sum(dim=-1)
-
-    def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
-        """Forward pass of the network to predict links."""
-        return self.encode(x=x, edge_index=edge_index)
 
 
 class BaselineModel(BaseEstimator, ClassifierMixin):

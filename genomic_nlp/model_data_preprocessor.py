@@ -230,6 +230,11 @@ class CancerGeneDataPreprocessor:
         self.cancer_genes = self.get_positive_test_set()
         print("Embeddings loaded.")
 
+        # hardcoded, to fix later
+        self.resource_dir = Path(
+            "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/cancer"
+        )
+
     def get_positive_test_set(self) -> Set[str]:
         """Get the positive test set of cancer related genes."""
         cosmic_genes = self._load_cosmic()
@@ -239,7 +244,7 @@ class CancerGeneDataPreprocessor:
     def _load_cosmic(self) -> Set[str]:
         """Load COSMIC gene_symbols."""
         data = pd.read_csv(
-            self.data_dir / "Cosmic_CancerGeneCensus_v100_GRCh38.tsv",
+            self.resource_dir / "Cosmic_CancerGeneCensus_v100_GRCh38.tsv",
             delimiter="\t",
             header=[0],
         )
@@ -248,7 +253,7 @@ class CancerGeneDataPreprocessor:
     def _load_ncg(self) -> Set[str]:
         """Load NCG gene_symbols."""
         data = pd.read_csv(
-            self.data_dir / "NCG_cancerdrivers_annotation_supporting_evidence.tsv",
+            self.resource_dir / "NCG_cancerdrivers_annotation_supporting_evidence.tsv",
             delimiter="\t",
             header=[0],
         )

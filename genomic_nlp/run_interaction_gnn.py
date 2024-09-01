@@ -32,7 +32,7 @@ from torch_geometric.data import Data  # type: ignore
 from torch_geometric.loader import DataLoader  # type: ignore
 from tqdm import tqdm  # type: ignore
 
-from interaction_models import LinkPredictionGNN
+from interaction_models_gnn import LinkPredictionGNN
 from model_data_preprocessor_gnn import GNNDataPreprocessor
 
 # helpers
