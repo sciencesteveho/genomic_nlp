@@ -30,7 +30,7 @@ def get_gene_embeddings(
     tokenizer: AutoTokenizer,
     abstracts: List[str],
     max_length: int = 512,
-    batch_size: int = 32,
+    batch_size: int = 8,
 ) -> Dict[str, List[np.ndarray]]:
     """Tokenize abstracts and extract embeddings for anything NER tags as a
     gene.
@@ -136,7 +136,7 @@ def main() -> None:
     abstracts = load_abstracts(abstracts_file)
 
     # set batch size
-    batch_size_per_gpu = 32
+    batch_size_per_gpu = 8
     total_batch_size = batch_size_per_gpu * num_gpus
 
     gene_embeddings = process_abstracts(
