@@ -10,6 +10,7 @@ predict cancer relatedness for all gene embeddings in the dataset."""
 
 
 import argparse
+import os
 from pathlib import Path
 import pickle
 from typing import Any, Callable, Dict, List, Tuple
@@ -43,7 +44,7 @@ class CancerGenePrediction:
         targets: np.ndarray,
         gene_embeddings: Dict[str, np.ndarray],
         model_name: str,
-        model_dir: str,
+        model_dir: Path,
     ) -> None:
         """Initialize an OncogenicityPredictionTrainer object."""
         self.model_class = model_class
@@ -51,7 +52,7 @@ class CancerGenePrediction:
         self.targets = targets
         self.gene_embeddings = gene_embeddings
         self.model_name = model_name
-        self.model_dir = Path(model_dir)
+        self.model_dir = model_dir
 
     def perform_cross_validation(self, n_splits: int = 5, **kwargs) -> List[float]:
         """Perform stratified 5-fold cross-validation and return F1 scores and thresholds."""
@@ -81,6 +82,7 @@ class CancerGenePrediction:
             probabilities = model.predict_probability(val_features)
             cv_scores.append(roc_auc_score(val_targets, probabilities))
             cv_data.append((val_targets, probabilities))
+            print(f"Fold ROC AUC: {cv_scores[-1]:.4f}")
 
         self.save_data(cv_data, "cv")
         return cv_scores
@@ -149,10 +151,13 @@ def main() -> None:
     parser.add_argument(
         "--embeddings", type=str, help="Path to gene embeddings pickle file."
     )
+    parser.add_argument("--save_str", type=str, help="String to save the model with.")
     args = parser.parse_args()
     preprocessor = CancerGeneDataPreprocessor(args)
     features, targets = preprocessor.preprocess_data()
-    save_dir = "/ocean/projects/bio210019p/stevesho/genomic_nlp/models/cancer"
+    save_dir = Path("/ocean/projects/bio210019p/stevesho/genomic_nlp/models/cancer")
+    save_dir = save_dir / args.save_str
+    os.makedirs(save_dir, exist_ok=True)
 
     # define models
     models = {
