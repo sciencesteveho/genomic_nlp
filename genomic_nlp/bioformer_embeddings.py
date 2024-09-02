@@ -14,9 +14,37 @@ from typing import Dict, List, Set, Tuple, Union
 import numpy as np
 import torch
 from torch.nn import DataParallel
+from torch.utils.data import DataLoader
+from torch.utils.data import Dataset
 from tqdm import tqdm  # type: ignore
 from transformers import AutoModelForTokenClassification  # type: ignore
 from transformers import AutoTokenizer  # type: ignore
+
+
+class AbstractDataset(Dataset):
+    """Dataset for efficient loading and tokenization of abstracts."""
+
+    def __init__(
+        self, abstracts: List[str], tokenizer: AutoTokenizer, max_length: int = 512
+    ):
+        """Initialize dataset."""
+        self.abstracts = abstracts
+        self.tokenizer = tokenizer
+        self.max_length = max_length
+
+    def __len__(self):
+        """Return number of abstracts."""
+        return len(self.abstracts)
+
+    def __getitem__(self, idx):
+        """Return tokenized abstract."""
+        return self.tokenizer(
+            self.abstracts[idx],
+            return_tensors="pt",
+            max_length=self.max_length,
+            truncation=True,
+            padding="max_length",
+        )
 
 
 def load_abstracts(file_path: str) -> List[str]:
@@ -28,62 +56,46 @@ def load_abstracts(file_path: str) -> List[str]:
 def get_gene_embeddings(
     model: AutoModelForTokenClassification,
     tokenizer: AutoTokenizer,
-    abstracts: List[str],
-    max_length: int = 512,
-    batch_size: int = 8,
+    batch: Dict[str, torch.Tensor],
+    device: torch.device,
 ) -> Dict[str, List[np.ndarray]]:
     """Tokenize abstracts and extract embeddings for anything NER tags as a
     gene.
     """
     gene_embeddings: Dict[str, List[np.ndarray]] = defaultdict(list)
+    inputs = {k: v.squeeze(1).to(device) for k, v in batch.items()}
 
-    for i in range(0, len(abstracts), batch_size):
-        batch = abstracts[i : i + batch_size]
+    with torch.no_grad():
+        outputs = model(**inputs, output_hidden_states=True)
 
-        # tokenize the batch of abstracts
-        inputs = tokenizer(
-            batch,
-            return_tensors="pt",
-            max_length=max_length,
-            truncation=True,
-            padding=True,
-        )
-        device = next(model.module.parameters()).device
-        inputs = {k: v.to(device) for k, v in inputs.items()}
+    # full hidden states
+    hidden_states = outputs.hidden_states[-1]
 
-        with torch.no_grad():
-            outputs = model(**inputs, output_hidden_states=True)
+    # predicted labels
+    predictions = torch.argmax(outputs.logits, dim=2)
 
-        # full hidden states
-        hidden_states = outputs.hidden_states[-1]
-
-        # predicted labels
-        predictions = torch.argmax(outputs.logits, dim=2)
-
-        # process each abstracts
-        for abstract_inputs, abstract_predictions, abstract_hidden_states in zip(
-            inputs["input_ids"], predictions, hidden_states
-        ):
-            current_gene = []
-            current_embeddings = []
-            for k, (token, pred) in enumerate(
-                zip(abstract_inputs, abstract_predictions)
-            ):
-                if pred in [0, 1]:  # 0 for "B-bio", 1 for "I-bio"
-                    current_gene.append(token.item())
-                    current_embeddings.append(abstract_hidden_states[k])
-                elif current_gene:
-                    gene_name = tokenizer.decode(current_gene).strip()
-                    gene_embedding = torch.mean(torch.stack(current_embeddings), dim=0)
-                    gene_embeddings[gene_name].append(gene_embedding.cpu().numpy())
-                    current_gene = []
-                    current_embeddings = []
-
-            # handle case where gene mention is at the end of the sequence
-            if current_gene:
+    # process each abstract
+    for abstract_inputs, abstract_predictions, abstract_hidden_states in zip(
+        inputs["input_ids"], predictions, hidden_states
+    ):
+        current_gene = []
+        current_embeddings = []
+        for k, (token, pred) in enumerate(zip(abstract_inputs, abstract_predictions)):
+            if pred in [0, 1]:  # 0 for "B-bio", 1 for "I-bio"
+                current_gene.append(token.item())
+                current_embeddings.append(abstract_hidden_states[k])
+            elif current_gene:
                 gene_name = tokenizer.decode(current_gene).strip()
                 gene_embedding = torch.mean(torch.stack(current_embeddings), dim=0)
                 gene_embeddings[gene_name].append(gene_embedding.cpu().numpy())
+                current_gene = []
+                current_embeddings = []
+
+        # handle case where gene mention is at the end of the sequence
+        if current_gene:
+            gene_name = tokenizer.decode(current_gene).strip()
+            gene_embedding = torch.mean(torch.stack(current_embeddings), dim=0)
+            gene_embeddings[gene_name].append(gene_embedding.cpu().numpy())
 
     return gene_embeddings
 
@@ -97,17 +109,21 @@ def process_abstracts(
     """Process abstracts in batches and return average embeddings for each gene."""
     all_gene_embeddings: Dict[str, List[np.ndarray]] = defaultdict(list)
 
+    dataset = AbstractDataset(abstracts, tokenizer)
+    dataloader = DataLoader(
+        dataset, batch_size=batch_size, num_workers=4, pin_memory=True
+    )
+
+    device = next(model.parameters()).device
+
     with tqdm(
         total=len(abstracts), desc="Processing abstracts", unit="abstract"
     ) as pbar:
-        for i in range(0, len(abstracts), batch_size):
-            batch = abstracts[i : i + batch_size]
-            embeddings = get_gene_embeddings(
-                model, tokenizer, batch, batch_size=batch_size
-            )
+        for batch in dataloader:
+            embeddings = get_gene_embeddings(model, tokenizer, batch, device)
             for gene, embs in embeddings.items():
                 all_gene_embeddings[gene].extend(embs)
-            pbar.update(len(batch))
+            pbar.update(batch["input_ids"].size(0))
 
     return {gene: np.mean(embs, axis=0) for gene, embs in all_gene_embeddings.items()}
 
@@ -136,7 +152,7 @@ def main() -> None:
     abstracts = load_abstracts(abstracts_file)
 
     # set batch size
-    batch_size_per_gpu = 8
+    batch_size_per_gpu = 16
     total_batch_size = batch_size_per_gpu * num_gpus
 
     gene_embeddings = process_abstracts(
