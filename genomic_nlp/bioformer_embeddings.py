@@ -44,6 +44,9 @@ def get_gene_embeddings(
         padding="max_length",
     )
 
+    device = next(model.parameters()).device
+    inputs = {k: v.to(device) for k, v in inputs.items()}
+
     with torch.no_grad():
         outputs = model(**inputs, output_hidden_states=True)
 
@@ -58,7 +61,7 @@ def get_gene_embeddings(
     current_embeddings = []
     for i, (token, pred) in enumerate(zip(inputs["input_ids"][0], predictions)):
         if pred in [0, 1]:  # 0 for "B-bio", 1 for "I-bio"
-            current_gene.append(token)
+            current_gene.append(token.item())
             current_embeddings.append(hidden_states[i])
         elif current_gene:
             gene_name = tokenizer.decode(current_gene).strip()
