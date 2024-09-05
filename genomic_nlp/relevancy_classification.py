@@ -89,6 +89,7 @@ def perform_grid_search(
     cores: int,
     savepath: Path,
     classifier_name: str,
+    k: int,
 ) -> None:
     """Perform grid search to find optimal hyperparameters."""
     grid_search = GridSearchCV(
@@ -102,6 +103,7 @@ def perform_grid_search(
     grid_search.fit(features, labels)
     print(f"Best parameters: {grid_search.best_params_}")
     print(f"Best cross-validation score: {grid_search.best_score_:.2f}")
+    print(f"Run with {k} features")
 
     # save grid search results
     results = pd.DataFrame(grid_search.cv_results_)
@@ -165,6 +167,7 @@ def vectorize_and_train_classifier(
             cores=get_physical_cores(),
             savepath=savepath,
             classifier_name=type(classifier).__name__,
+            k=k,
         )
         return vectorizer, selector, None
     else:
