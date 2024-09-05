@@ -215,7 +215,7 @@ def _classify_test_corpus(
     get_roc_auc(
         true_labels=y_test,
         predicted_labels=label_probabilities,
-        classifier_name=f"{type(classifier).__name__,}_tfidf_{k}",
+        classifier_name=f"str({type(classifier).__name__,})_tfidf_{k}",
         savepath=savepath,
     )
 
