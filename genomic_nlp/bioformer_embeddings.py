@@ -152,7 +152,7 @@ def main() -> None:
     abstracts = load_abstracts(abstracts_file)
 
     # set batch size
-    batch_size_per_gpu = 12
+    batch_size_per_gpu = 10
     total_batch_size = batch_size_per_gpu * num_gpus
 
     gene_embeddings = process_abstracts(

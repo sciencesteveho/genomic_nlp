@@ -35,7 +35,7 @@ from sklearn.metrics import roc_auc_score  # type: ignore
 from sklearn.metrics import roc_curve  # type: ignore
 from sklearn.model_selection import cross_val_score  # type: ignore
 from sklearn.model_selection import GridSearchCV  # type: ignore
-from xgboost import XGBClassifier
+from sklearn.neural_network import MLPClassifier  # type: ignore
 
 from abstract_cleaner import AbstractCleaner
 from utils import _abstract_retrieval_concat
@@ -84,7 +84,7 @@ def _prepare_annotated_classification_set(
 def perform_grid_search(
     features: Any,
     labels: Any,
-    classifier: Union[LogisticRegression, XGBClassifier],
+    classifier: Union[LogisticRegression, MLPClassifier],
     param_grid: Dict[str, List[Any]],
     cores: int,
     savepath: Path,
@@ -115,12 +115,12 @@ def perform_grid_search(
 
 def vectorize_and_train_classifier(
     trainset: pd.DataFrame,
-    classifier: Union[LogisticRegression, XGBClassifier],
+    classifier: Union[LogisticRegression, MLPClassifier],
     k: int,
     savepath: Path,
     grid_search: bool = False,
 ) -> Tuple[
-    TfidfVectorizer, SelectKBest, Union[LogisticRegression, XGBClassifier, None]
+    TfidfVectorizer, SelectKBest, Union[LogisticRegression, MLPClassifier, None]
 ]:
     """Vectorizes abstracts and trains a logistic classifier with k features
 
@@ -153,11 +153,10 @@ def vectorize_and_train_classifier(
     if grid_search:
         if isinstance(classifier, LogisticRegression):
             param_grid = {"C": [0.1, 1, 10, 20, 50], "max_iter": [100, 200, 500, 1000]}
-        elif isinstance(classifier, XGBClassifier):
+        elif isinstance(classifier, MLPClassifier):
             param_grid = {
-                "max_depth": [3, 5, 7],
-                "learning_rate": [0.01, 0.1, 0.3],
-                "n_estimators": [100, 200, 300],
+                "hidden_layer_sizes": [(128,), (256,), (512,)],
+                "max_iter": [1000, 2000, 3000],
             }
         perform_grid_search(
             features=x_train,
@@ -191,7 +190,7 @@ def _classify_test_corpus(
     corpus: pd.DataFrame,
     vectorizer: TfidfVectorizer,
     selector: SelectKBest,
-    classifier: Union[LogisticRegression, XGBClassifier],
+    classifier: Union[LogisticRegression, MLPClassifier],
     savepath: Path,
     k: int,
 ) -> Tuple[zip, float]:
@@ -248,7 +247,7 @@ def _classify_full_corpus(
     vectorizer: TfidfVectorizer,
     corpora: Any,
     selector: SelectKBest,
-    classifier: Union[LogisticRegression, XGBClassifier],
+    classifier: Union[LogisticRegression, MLPClassifier],
 ):
     """Classify a full corpus using the provided vectorizer, selector, and classifier.
 
@@ -367,7 +366,7 @@ def _parse_args() -> argparse.Namespace:
         "--classifier",
         help="Classifier to use",
         default="logistic",
-        choices=["logistic", "xgboost"],
+        choices=["logistic", "mlp"],
     )
     parser.add_argument(
         "--classify_only",
@@ -422,10 +421,6 @@ def main() -> None:
     # train logistic classifier
     if args.classifier == "logistic":
         classifier = LogisticRegression(C=20, max_iter=100, random_state=RANDOM_SEED)
-    elif args.classifier == "xgboost":
-        classifier = XGBClassifier(
-            learning_rate=0.1, max_depth=3, n_estimators=300, random_state=RANDOM_SEED
-        )
     (
         vectorizer,
         selector,

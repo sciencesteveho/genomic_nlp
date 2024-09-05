@@ -15,6 +15,7 @@ from typing import Any, List, Set, Union
 from progressbar import ProgressBar  # type: ignore
 import pybedtools  # type: ignore
 import spacy  # type: ignore
+from spacy.tokens import Token  # type: ignore
 from tqdm import tqdm  # type: ignore
 
 from utils import COPY_GENES
@@ -193,19 +194,25 @@ class ChunkedDocumentProcessor:
         Returns:
             list: Tokens extracted from the cleaned abstracts.
         """
-        nlp = spacy.load("en_core_sci_scibert" if use_gpu else "en_core_sci_md")
-        nlp.add_pipe("sentencizer")
-
         if use_gpu:
+            spacy_model = "en_core_sci_scibert"
+            n_process = 1
+            batch_size = 16
             spacy.require_gpu()
+        else:
+            spacy_model = "en_core_sci_md"
+            n_process = 4
+            batch_size = 500
 
-        n_process = 1 if use_gpu else 4
-        batch_size = 32 if use_gpu else 500
+        # set up spaCy pipeline
+        nlp = spacy.load(spacy_model)
+        nlp.add_pipe("sentencizer")
+        disable_pipes = ["parser"]
 
-        word_attr = "lemma_" if self.lemmatizer else "text"
-        disable_pipes = ["parser", "tagger", "ner"]
         if not self.lemmatizer:
             disable_pipes.append("lemmatizer")
+
+        word_attr = "lemma_" if self.lemmatizer else "text"
 
         dataset_tokens = []
         for doc in tqdm(
@@ -215,26 +222,21 @@ class ChunkedDocumentProcessor:
                 batch_size=batch_size,
                 disable=disable_pipes,
             ),
-            total=len(self.abstracts),
+            total=len(abstracts),
         ):
-            if self.finetune:
-                dataset_tokens.extend(
-                    [
-                        [
-                            [getattr(word, word_attr) for word in sentence]
-                            for sentence in doc.sents
-                        ]
-                    ]
-                )
-            else:
-                dataset_tokens.extend(
-                    [
-                        [getattr(word, word_attr) for word in sentence]
-                        for sentence in doc.sents
-                    ]
-                )
-
+            dataset_tokens.extend(
+                [
+                    [self.custom_lemmatize(token, word_attr) for token in sentence]
+                    for sentence in doc.sents
+                ]
+            )
         self.abstracts = dataset_tokens
+
+    def custom_lemmatize(self, token: Token, word_attr: str) -> str:
+        """Custom token processing. Only lemmatize tokens that are not
+        recognized as entities via NER.
+        """
+        return token.text if token.ent_type == "ENTITY" else getattr(token, word_attr)
 
     @time_decorator(print_args=False)
     def exclude_punctuation_tokens_replace_standalone_numbers(
