@@ -150,6 +150,15 @@ def get_selector(
     return SelectKBest(score_func=score_func, k=k)
 
 
+def fit_vectorizer_selector(
+    abstracts: pd.DataFrame, vectorizer: TfidfVectorizer, selector: SelectKBest, k: int
+) -> Tuple[TfidfVectorizer, SelectKBest]:
+    """Fit the vectorizer and selector on the given abstracts."""
+    x_vectorized = vectorizer.fit_transform(abstracts["abstracts"])
+    selector.fit(x_vectorized, abstracts["encoding"])
+    return vectorizer, selector
+
+
 def vectorize_abstracts(
     abstracts: pd.DataFrame,
     vectorizer: TfidfVectorizer,
@@ -206,15 +215,21 @@ def pretrain_model(
     k: int,
     savepath: Path,
     grid_search: bool = False,
-) -> Union[LogisticRegression, MLPClassifier, None]:
+) -> Tuple[
+    Union[LogisticRegression, MLPClassifier, None], TfidfVectorizer, SelectKBest
+]:
     """Pre-trains a classifier on abstracts stratified by journal type."""
+    vectorizer, selector = fit_vectorizer_selector(
+        abstracts=pretrain_abstracts, vectorizer=vectorizer, selector=selector, k=k
+    )
+
     x_pretrain, y_pretrain = vectorize_abstracts(
         abstracts=pretrain_abstracts, k=k, vectorizer=vectorizer, selector=selector
     )
 
     if grid_search:
         param_grid = get_param_grid(classifier)
-        return perform_grid_search(
+        best_model = perform_grid_search(
             features=x_pretrain,
             labels=y_pretrain,
             classifier=clone(classifier),
@@ -226,9 +241,10 @@ def pretrain_model(
             return_model=True,
         )
     else:
-        pretrain_model = clone(classifier)
-        pretrain_model.fit(x_pretrain, y_pretrain)
-        return pretrain_model
+        best_model = clone(classifier)
+        best_model.fit(x_pretrain, y_pretrain)
+
+    return best_model, vectorizer, selector
 
 
 def finetune_model(
@@ -279,11 +295,13 @@ def pretrain_and_finetune_classifier(
     k: int,
     savepath: Path,
     grid_search: bool = False,
-) -> Union[LogisticRegression, MLPClassifier, None]:
+) -> Tuple[
+    Union[LogisticRegression, MLPClassifier, None], TfidfVectorizer, SelectKBest
+]:
     """Pre-trains a classifier on abstracts stratified by journal type as a
     proxy for relevancy before fine-tuning on manually annotated abstracts.
     """
-    pretrained_model = pretrain_model(
+    pretrained_model, fitted_vectorizer, fitted_selector = pretrain_model(
         pretrain_abstracts=pretrain_abstracts,
         classifier=classifier,
         vectorizer=vectorizer,
@@ -294,17 +312,19 @@ def pretrain_and_finetune_classifier(
     )
 
     if pretrained_model is None:
-        return None
+        return None, fitted_vectorizer, fitted_selector
 
-    return finetune_model(
+    finetuned_model = finetune_model(
         finetune_abstracts=finetune_abstracts,
         pretrained_model=pretrained_model,
-        vectorizer=vectorizer,
-        selector=selector,
+        vectorizer=fitted_vectorizer,
+        selector=fitted_selector,
         k=k,
         savepath=savepath,
         grid_search=grid_search,
     )
+
+    return finetuned_model, fitted_vectorizer, fitted_selector
 
 
 def evaluate_model(
@@ -606,7 +626,7 @@ def main() -> None:
 
     # final model training
     print("Training final model...")
-    final_model = pretrain_and_finetune_classifier(
+    final_model, fitted_vectorizer, fitted_selector = pretrain_and_finetune_classifier(
         pretrain_abstracts=pretrain_abstracts,
         finetune_abstracts=finetune_abstracts,
         classifier=classifier,
@@ -622,8 +642,8 @@ def main() -> None:
         x_finetune, y_finetune = vectorize_abstracts(
             abstracts=finetune_abstracts,
             k=num,
-            vectorizer=vectorizer,
-            selector=selector,
+            vectorizer=fitted_vectorizer,
+            selector=fitted_selector,
         )
         evaluation_results = evaluate_model(final_model, x_finetune, y_finetune)
 
@@ -649,8 +669,8 @@ def main() -> None:
         # classify full corpus
         abstracts_classified = classify_corpus(
             corpus=abstract_corpus,
-            vectorizer=vectorizer,
-            selector=selector,
+            vectorizer=fitted_vectorizer,
+            selector=fitted_selector,
             classifier=final_model,
             savepath=savepath,
             k=num,
