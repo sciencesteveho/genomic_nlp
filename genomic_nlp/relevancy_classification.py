@@ -263,6 +263,7 @@ def finetune_model(
     x_finetune, y_finetune = vectorize_abstracts(
         abstracts=finetune_abstracts, vectorizer=vectorizer, selector=selector
     )
+    finetuned_model = LogisticRegression(C=50, max_iter=100, random_state=RANDOM_SEED)
 
     if grid_search:
         param_grid = get_param_grid(pretrained_model)
@@ -279,7 +280,7 @@ def finetune_model(
         )
     else:
         finetuned_model = share_model_params(
-            pretrained_model, clone(pretrained_model)
+            pretrained_classifier=pretrained_model, finetune_classifier=finetuned_model
         )  # share params from pre-trained model
 
         # fine-tune with smaller learning rate
@@ -292,7 +293,6 @@ def finetune_model(
 def pretrain_and_finetune_classifier(
     pretrain_abstracts: pd.DataFrame,
     finetune_abstracts: pd.DataFrame,
-    classifier: Union[LogisticRegression, MLPClassifier],
     vectorizer: TfidfVectorizer,
     selector: SelectKBest,
     k: int,
@@ -304,9 +304,12 @@ def pretrain_and_finetune_classifier(
     """Pre-trains a classifier on abstracts stratified by journal type as a
     proxy for relevancy before fine-tuning on manually annotated abstracts.
     """
+    pretrain_classifier = LogisticRegression(
+        C=0.1, max_iter=100, random_state=RANDOM_SEED
+    )
     pretrained_model, fitted_vectorizer, fitted_selector = pretrain_model(
         pretrain_abstracts=pretrain_abstracts,
-        classifier=classifier,
+        classifier=pretrain_classifier,
         vectorizer=vectorizer,
         selector=selector,
         k=k,
@@ -615,7 +618,7 @@ def main() -> None:
         pretrain_and_finetune_classifier(
             pretrain_abstracts=pretrain_abstracts,
             finetune_abstracts=finetune_abstracts,
-            classifier=classifier,
+            # classifier=classifier,
             vectorizer=vectorizer,
             selector=selector,
             k=num,
@@ -632,7 +635,6 @@ def main() -> None:
     final_model, fitted_vectorizer, fitted_selector = pretrain_and_finetune_classifier(
         pretrain_abstracts=pretrain_abstracts,
         finetune_abstracts=finetune_abstracts,
-        classifier=classifier,
         vectorizer=vectorizer,
         selector=selector,
         k=num,
