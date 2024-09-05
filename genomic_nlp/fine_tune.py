@@ -162,8 +162,11 @@ def main() -> None:
         config=ds_config_file,
     )
 
+    # try using base optimizer
+    base_optimizer = optimizer.optimizer
+
     scheduler = get_linear_schedule_with_warmup(
-        optimizer=optimizer,
+        optimizer=base_optimizer,
         num_warmup_steps=warmup_steps,
         num_training_steps=total_steps,
     )

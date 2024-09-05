@@ -151,7 +151,9 @@ def get_selector(
 
 
 def fit_vectorizer_selector(
-    abstracts: pd.DataFrame, vectorizer: TfidfVectorizer, selector: SelectKBest, k: int
+    abstracts: pd.DataFrame,
+    vectorizer: TfidfVectorizer,
+    selector: SelectKBest,
 ) -> Tuple[TfidfVectorizer, SelectKBest]:
     """Fit the vectorizer and selector on the given abstracts."""
     x_vectorized = vectorizer.fit_transform(abstracts["abstracts"])
@@ -163,12 +165,11 @@ def vectorize_abstracts(
     abstracts: pd.DataFrame,
     vectorizer: TfidfVectorizer,
     selector: SelectKBest,
-    k: int,
 ) -> Tuple[Any, Any]:
     """Vectorize abstracts using the provided vectorizer and feature
     selector.
     """
-    x_vectorized = vectorizer.transform(abstracts)
+    x_vectorized = vectorizer.transform(abstracts["abstracts"])
     x_train = selector.transform(x_vectorized)
     return x_train, abstracts["encoding"].astype(int).values
 
@@ -220,12 +221,14 @@ def pretrain_model(
 ]:
     """Pre-trains a classifier on abstracts stratified by journal type."""
     vectorizer, selector = fit_vectorizer_selector(
-        abstracts=pretrain_abstracts, vectorizer=vectorizer, selector=selector, k=k
+        abstracts=pretrain_abstracts, vectorizer=vectorizer, selector=selector
     )
 
     x_pretrain, y_pretrain = vectorize_abstracts(
-        abstracts=pretrain_abstracts, k=k, vectorizer=vectorizer, selector=selector
+        abstracts=pretrain_abstracts, vectorizer=vectorizer, selector=selector
     )
+    print(f"Pre-train x shape: {x_pretrain.shape}")
+    print(f"Pre-train y shape: {y_pretrain.shape}")
 
     if grid_search:
         param_grid = get_param_grid(classifier)
@@ -258,7 +261,7 @@ def finetune_model(
 ) -> Union[LogisticRegression, MLPClassifier, None]:
     """Fine-tunes a model on manually annotated abstracts."""
     x_finetune, y_finetune = vectorize_abstracts(
-        abstracts=finetune_abstracts, k=k, vectorizer=vectorizer, selector=selector
+        abstracts=finetune_abstracts, vectorizer=vectorizer, selector=selector
     )
 
     if grid_search:
@@ -641,7 +644,6 @@ def main() -> None:
         # evaluate final model
         x_finetune, y_finetune = vectorize_abstracts(
             abstracts=finetune_abstracts,
-            k=num,
             vectorizer=fitted_vectorizer,
             selector=fitted_selector,
         )
