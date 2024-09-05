@@ -178,7 +178,9 @@ def vectorize_and_train_classifier(
         cv=5,
         n_jobs=get_physical_cores(),
     )
-    print(f"Mean F1 for K = {k} features: {np.mean(cv_accuracy)}")
+    print(
+        f"Mean F1 for classifier {type(classifier).__name__} K = {k} features: {np.mean(cv_accuracy)}"
+    )
     return vectorizer, selector, classifier
 
 
