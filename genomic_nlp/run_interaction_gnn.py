@@ -197,6 +197,55 @@ def evaluate_and_rank_validated_predictions(
     return auc, ap, ranked_predictions
 
 
+@torch.no_grad()
+def predict_links(
+    model: nn.Module,
+    data: Data,
+    device: torch.device,
+) -> List[Tuple[int, int, float]]:
+    """Predict links in the graph."""
+    model.eval()
+    z = model(data.x.to(device), data.edge_index.to(device))
+
+    # predict all possible links
+    all_edges = torch_geometric.utils.to_undirected(data.edge_index)
+    all_scores = model.decode(z, all_edges).sigmoid().cpu()
+
+    # sort edges by predicted scores and rank
+    sorted_indices = torch.argsort(all_scores, descending=True)
+    ranked_edges = all_edges[:, sorted_indices].t().tolist()
+    ranked_scores = all_scores[sorted_indices].tolist()
+
+    return [
+        (int(edge[0]), int(edge[1]), float(score))
+        for edge, score in zip(ranked_edges, ranked_scores)
+    ]
+
+
+def evaluate_predictions(
+    predictions: List[Tuple[int, int, float]],
+    test_pos_edges: torch.Tensor,
+    k: int = 1000,
+) -> Tuple[float, float, float, float]:
+    """Evaluate predicted links by seeing how many test edges are in the top K."""
+    test_edges = set(map(tuple, test_pos_edges.t().tolist()))
+
+    # calculate precision@k and recall@k
+    true_positives = sum(
+        1 for edge in predictions[:k] if (edge[0], edge[1]) in test_edges
+    )
+    precision = true_positives / k
+    recall = true_positives / len(test_edges)
+
+    # calculate AUC and AP
+    y_true = [1 if (edge[0], edge[1]) in test_edges else 0 for edge in predictions]
+    y_scores = [score for _, _, score in predictions]
+    auc = roc_auc_score(y_true, y_scores)
+    ap = average_precision_score(y_true, y_scores)
+
+    return precision, recall, auc, ap
+
+
 def save_model_and_performance(
     model: nn.Module,
     performances: List[Tuple[str, float]],

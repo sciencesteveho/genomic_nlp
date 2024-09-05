@@ -133,10 +133,20 @@ class GNNDataPreprocessor:
             edge_index=neg_edge_index, percent=0.8
         )
 
+        # add an option to train on full dataset
+        all_pos_edge_index = torch.cat(
+            [train_pos_edge_index, val_pos_edge_index], dim=1
+        )
+        all_neg_edge_index = torch.cat(
+            [train_neg_edge_index, val_neg_edge_index], dim=1
+        )
+
         # create PyG Data object
         data = Data(
             x=x,
             edge_index=edge_index,
+            all_pos_edge_index=all_pos_edge_index,
+            all_neg_edge_index=all_neg_edge_index,
             train_pos_edge_index=train_pos_edge_index,
             train_neg_edge_index=train_neg_edge_index,
             val_pos_edge_index=val_pos_edge_index,

@@ -2,9 +2,17 @@
 # -*- coding: utf-8 -*-
 
 
-"""Classify relevancy of abstracts based on term frequency and inverse document
-frequency. Implements a logistic classifier validated by 5-fold cross
-validation."""
+"""Implements logistic regression or XGBoost to classify relevancy of abstracts
+based on term frequency and inverse document frequency. Optionally performs a
+grid search, but does not save the model and instead outputs the model params to
+a text file.
+
+Due to a difference in the size of the manually annotated train set, the testing
+set, and the corpus, we opt to use the entiety the annotated set for training,
+then apply the model to the testing set and full corpus. Five-fold
+cross-validation to used to evaluate the robustness of the model, but not as a
+means to model training.
+"""
 
 
 import argparse
@@ -12,21 +20,25 @@ import contextlib
 import os
 from pathlib import Path
 import pickle
-from typing import Set, Tuple, Union
+from typing import Any, Dict, List, Set, Tuple, Union
 
 import joblib  # type: ignore
 import numpy as np
 import pandas as pd
+from sklearn.base import BaseEstimator  # type: ignore
 from sklearn.feature_extraction.text import TfidfVectorizer  # type: ignore
 from sklearn.feature_selection import f_classif  # type: ignore
 from sklearn.feature_selection import SelectKBest  # type: ignore
 from sklearn.linear_model import LogisticRegression  # type: ignore
 from sklearn.metrics import accuracy_score  # type: ignore
 from sklearn.model_selection import cross_val_score  # type: ignore
+from sklearn.model_selection import GridSearchCV  # type: ignore
 from sklearn.neural_network import MLPClassifier  # type: ignore
+from xgboost import XGBClassifier
 
 from abstract_cleaner import AbstractCleaner
 from utils import _abstract_retrieval_concat
+from utils import get_physical_cores
 
 RANDOM_SEED = 42
 
@@ -68,14 +80,33 @@ def _prepare_annotated_classification_set(
     return df.sample(frac=1).reset_index(drop=True)
 
 
-def vectorize_and_train_logistic_classifier(
+def perform_grid_search(
+    features: np.typing.ArrayLike,
+    labels: Any,
+    classifier: Union[LogisticRegression, XGBClassifier],
+    param_grid: Dict[str, List[Any]],
+    cores: int,
+) -> None:
+    """Perform grid search to find optimal hyperparameters."""
+    grid_search = GridSearchCV(classifier, param_grid, cv=5, scoring="f1", n_jobs=cores)
+    grid_search.fit(features, labels)
+    print(f"Best parameters: {grid_search.best_params_}")
+    print(f"Best cross-validation score: {grid_search.best_score_:.2f}")
+
+
+def vectorize_and_train_classifier(
     trainset: pd.DataFrame,
+    classifier: Union[LogisticRegression, XGBClassifier],
     k: int,
-) -> Tuple[TfidfVectorizer, SelectKBest, LogisticRegression]:
+    grid_search: bool = False,
+) -> Tuple[
+    TfidfVectorizer, SelectKBest, Union[LogisticRegression, XGBClassifier, None]
+]:
     """Vectorizes abstracts and trains a logistic classifier with k features
 
     Args:
         df (pd.DataFrame): dataframe with abstracts and encodings
+        classifier: classification model
         k (int): number of features to use
 
     Returns:
@@ -93,26 +124,50 @@ def vectorize_and_train_logistic_classifier(
         score_func=f_classif,
         k=k,
     )
-    classifier = LogisticRegression(C=20.0, max_iter=500, random_state=RANDOM_SEED)
 
     y_train = trainset["encoding"].astype(int).values
     x_vectorized = vectorizer.fit_transform(trainset["abstracts"])
     x_train = selector.fit_transform(x_vectorized, y_train)
 
-    classifier.fit(x_train, y_train)
+    param_grid: Dict[str, List[Any]] = {}
+    if grid_search:
+        if isinstance(classifier, LogisticRegression):
+            param_grid = {"C": [0.1, 1, 10, 20, 50], "max_iter": [100, 200, 500, 1000]}
+        elif isinstance(classifier, XGBClassifier):
+            param_grid = {
+                "max_depth": [3, 5, 7],
+                "learning_rate": [0.01, 0.1, 0.3],
+                "n_estimators": [100, 200, 300],
+            }
+        perform_grid_search(
+            features=x_train,
+            labels=y_train,
+            classifier=classifier,
+            param_grid=param_grid,
+            cores=get_physical_cores(),
+        )
+        return vectorizer, selector, None
+    else:
+        classifier.fit(x_train, y_train)
+
     cv_accuracy = cross_val_score(
         classifier,
         x_train,
         y_train,
         scoring="f1",
         cv=5,
-        n_jobs=-1,
+        n_jobs=get_physical_cores(),
     )
     print(f"Mean F1 for K = {k} features: {np.mean(cv_accuracy)}")
     return vectorizer, selector, classifier
 
 
-def _classify_test_corpus(corpus, vectorizer, selector, classifier):
+def _classify_test_corpus(
+    corpus: pd.DataFrame,
+    vectorizer: TfidfVectorizer,
+    selector: SelectKBest,
+    classifier: Union[LogisticRegression, XGBClassifier],
+) -> Tuple[zip, float]:
     """Classify a test corpus using the provided vectorizer, selector, and classifier.
 
     Args:
@@ -131,7 +186,12 @@ def _classify_test_corpus(corpus, vectorizer, selector, classifier):
     return zip(corpora, predictions), accuracy
 
 
-def _classify_full_corpus(vectorizer, corpora, selector, classifier):
+def _classify_full_corpus(
+    vectorizer: TfidfVectorizer,
+    corpora: Any,
+    selector: SelectKBest,
+    classifier: Union[LogisticRegression, XGBClassifier],
+):
     """Classify a full corpus using the provided vectorizer, selector, and classifier.
 
     Args:
@@ -149,7 +209,7 @@ def _classify_full_corpus(vectorizer, corpora, selector, classifier):
 
 
 def classify_corpus(
-    corpus: Union[Set[str], pd.DataFrame],
+    corpus: Any,
     vectorizer: TfidfVectorizer,
     selector: SelectKBest,
     classifier: LogisticRegression,
@@ -172,12 +232,14 @@ def classify_corpus(
             corpus, vectorizer, selector, classifier
         )
         abstracts, predictions = zip(*results)
+        df = pd.DataFrame(
+            {"abstracts": abstracts, "predictions": predictions, "accuracy": accuracy}
+        )
     else:
         predictions = _classify_full_corpus(vectorizer, corpus, selector, classifier)
         accuracy = None
-        abstracts = list(corpus)
+        df = pd.DataFrame({"abstracts": list(corpus), "predictions": predictions})
 
-    df = pd.DataFrame({"abstracts": abstracts, "predictions": predictions})
     if accuracy is not None:
         df["accuracy"] = accuracy
 
@@ -223,6 +285,7 @@ def _parse_args() -> argparse.Namespace:
         "-k",
         "--k",
         help="number of features for tf-idf",
+        default=10000,
         type=int,
     )
     parser.add_argument("--corpus", help="Path to the corpus file")
@@ -236,8 +299,19 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--negative_set_file", help="Path to the negative set file")
     parser.add_argument("--model_save_dir", help="Directory to save the model")
     parser.add_argument(
+        "--classifier",
+        help="Classifier to use",
+        default="logistic",
+        choices=["logistic", "xgboost"],
+    )
+    parser.add_argument(
         "--classify_only",
         help="Run only classification without creating and cleaning abstract collection",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--grid_search",
+        help="Run grid search to find optimal hyperparameters",
         action="store_true",
     )
     return parser.parse_args()
@@ -248,6 +322,7 @@ def main() -> None:
     frequency"""
     args = _parse_args()
     savepath = Path(args.model_save_dir)
+    num = args.k
 
     # get training data and set-up annotated abstracts
     abstract_corpus = get_training_data(args.corpus)
@@ -280,32 +355,49 @@ def main() -> None:
     testset = pd.concat([positive_test_data, negative_test_data], ignore_index=True)
 
     # train logistic classifier
-    num = args.k
+    if args.classifier == "logistic":
+        classifier = LogisticRegression(C=20.0, max_iter=500, random_state=RANDOM_SEED)
+    elif args.classifier == "xgboost":
+        classifier = XGBClassifier(random_state=RANDOM_SEED)
     (
         vectorizer,
         selector,
         classifier,
-    ) = vectorize_and_train_logistic_classifier(trainset=classification_trainset, k=num)
-    joblib.dump(classifier, savepath / f"logistic_classifier_{num}.pkl")
-
-    testset_classified = classify_corpus(
-        corpus=testset,
-        vectorizer=vectorizer,
-        selector=selector,
+    ) = vectorize_and_train_classifier(
+        trainset=classification_trainset,
         classifier=classifier,
-        test=True,
+        k=num,
+        grid_search=args.grid_search,
     )
-    with open(savepath / f"testset_classified_tfidf_{num}.pkl", "wb") as f:
-        pickle.dump(testset_classified, f)
 
-    abstracts_classified = classify_corpus(
-        corpus=abstract_corpus,
-        vectorizer=vectorizer,
-        selector=selector,
-        classifier=classifier,
-    )
-    with open(savepath / f"abstracts_classified_tfidf_{num}.pkl", "wb") as f:
-        pickle.dump(abstracts_classified, f)
+    if not args.grid_search:
+        joblib.dump(
+            classifier,
+            savepath / f"{args.classifier}_relevancy_classifier_tfidf_{num}.pkl",
+        )  # save stuff
+
+        testset_classified = classify_corpus(
+            corpus=testset,
+            vectorizer=vectorizer,
+            selector=selector,
+            classifier=classifier,
+            test=True,
+        )
+        with open(
+            savepath / f"testset_{args.classifier}_classified_tfidf_{num}.pkl", "wb"
+        ) as f:
+            pickle.dump(testset_classified, f)
+
+        abstracts_classified = classify_corpus(
+            corpus=abstract_corpus,
+            vectorizer=vectorizer,
+            selector=selector,
+            classifier=classifier,
+        )
+        with open(
+            savepath / f"abstracts_{args.classifier}_classified_tfidf_{num}.pkl", "wb"
+        ) as f:
+            pickle.dump(abstracts_classified, f)
 
 
 if __name__ == "__main__":

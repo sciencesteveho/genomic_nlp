@@ -312,19 +312,22 @@ def main() -> None:
         root_dir=args.root_dir,
         abstract_dir=args.abstracts_dir,
         date=date.today(),
-        min_count=5,
+        min_count=10,
         vector_size=300,
-        window=8,
+        window=12,
         workers=24,
-        sample=0.001,
-        alpha=0.01,
+        sample=0.0001,
+        alpha=0.005,
         min_alpha=0.0001,
-        negative=10,
+        negative=15,
         sg=1,
         hs=0,
         epochs=30,
     )
     print("Model initialized. Generating grams...")
+
+    # tshitoyan
+    # 15 samples, 10-4 downsampling, window 8, initial lr 0.01, 30 epochs, min count 5
 
     # build gram models
     # modelprocessingObj._gram_generator(
