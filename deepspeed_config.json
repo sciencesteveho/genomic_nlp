@@ -45,5 +45,5 @@
   "steps_per_print": 100,
   "wall_clock_breakdown": false,
   "communication_data_type": "fp16",
-  "prescale_gradients": true
+  "prescale_gradients": false
 }
