@@ -31,6 +31,8 @@ from sklearn.feature_selection import f_classif  # type: ignore
 from sklearn.feature_selection import SelectKBest  # type: ignore
 from sklearn.linear_model import LogisticRegression  # type: ignore
 from sklearn.metrics import accuracy_score  # type: ignore
+from sklearn.metrics import roc_auc_score  # type: ignore
+from sklearn.metrics import roc_curve  # type: ignore
 from sklearn.model_selection import cross_val_score  # type: ignore
 from sklearn.model_selection import GridSearchCV  # type: ignore
 from xgboost import XGBClassifier
@@ -185,6 +187,8 @@ def _classify_test_corpus(
     vectorizer: TfidfVectorizer,
     selector: SelectKBest,
     classifier: Union[LogisticRegression, XGBClassifier],
+    savepath: Path,
+    k: int,
 ) -> Tuple[zip, float]:
     """Classify a test corpus using the provided vectorizer, selector, and classifier.
 
@@ -199,9 +203,40 @@ def _classify_test_corpus(
     """
     corpora = corpus["abstracts"].values
     y_test = corpus["encoding"].values
+
+    # get probabilities for ROC curve
+    tfidf_feats = vectorizer.transform(corpora)
+    selected_feats = selector.transform(tfidf_feats)
+    label_probabilities = classifier.predict_proba(selected_feats)[:, 1]
+
+    # save roc
+    get_roc_auc(
+        true_labels=y_test,
+        predicted_labels=label_probabilities,
+        classifier_name=f"{type(classifier).__name__,}_tfidf_{k}",
+        savepath=savepath,
+    )
+
     predictions = _classify_full_corpus(vectorizer, corpora, selector, classifier)
     accuracy = accuracy_score(y_test, predictions)
     return zip(corpora, predictions), accuracy
+
+
+def get_roc_auc(
+    true_labels: Any,
+    predicted_labels: Any,
+    classifier_name: str,
+    savepath: Path,
+) -> None:
+    """Calculate and save ROC curve and AUC score."""
+    fpr, tpr, thresholds = roc_curve(true_labels, predicted_labels)
+    auc = roc_auc_score(true_labels, predicted_labels)
+
+    roc_data = pd.DataFrame({"fpr": fpr, "tpr": tpr, "thresholds": thresholds})
+    roc_data.to_csv(savepath / f"{classifier_name}_roc_data.csv", index=False)
+
+    with open(savepath / f"{classifier_name}_auc_score.json", "w") as f:
+        json.dump({"auc": auc}, f)
 
 
 def _classify_full_corpus(
@@ -231,6 +266,8 @@ def classify_corpus(
     vectorizer: TfidfVectorizer,
     selector: SelectKBest,
     classifier: LogisticRegression,
+    savepath: Path,
+    k: int,
     test: bool = False,
 ) -> pd.DataFrame:
     """Classifies a corpus of abstracts using the provided vectorizer, feature selector, and classifier.
@@ -247,7 +284,12 @@ def classify_corpus(
     """
     if test:
         results, accuracy = _classify_test_corpus(
-            corpus, vectorizer, selector, classifier
+            corpus=corpus,
+            vectorizer=vectorizer,
+            selector=selector,
+            classifier=classifier,
+            savepath=savepath,
+            k=k,
         )
         abstracts, predictions = zip(*results)
         df = pd.DataFrame(
@@ -374,9 +416,11 @@ def main() -> None:
 
     # train logistic classifier
     if args.classifier == "logistic":
-        classifier = LogisticRegression(random_state=RANDOM_SEED)
+        classifier = LogisticRegression(C=50, max_iter=100, random_state=RANDOM_SEED)
     elif args.classifier == "xgboost":
-        classifier = XGBClassifier(random_state=RANDOM_SEED)
+        classifier = XGBClassifier(
+            learning_rate=0.3, max_depth=3, n_estimators=100, random_state=RANDOM_SEED
+        )
     (
         vectorizer,
         selector,
@@ -401,6 +445,8 @@ def main() -> None:
             selector=selector,
             classifier=classifier,
             test=True,
+            savepath=savepath,
+            k=num,
         )
         with open(
             savepath / f"testset_{args.classifier}_classified_tfidf_{num}.pkl", "wb"
@@ -412,6 +458,8 @@ def main() -> None:
             vectorizer=vectorizer,
             selector=selector,
             classifier=classifier,
+            savepath=savepath,
+            k=num,
         )
         with open(
             savepath / f"abstracts_{args.classifier}_classified_tfidf_{num}.pkl", "wb"
