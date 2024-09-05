@@ -374,7 +374,7 @@ def main() -> None:
 
     # train logistic classifier
     if args.classifier == "logistic":
-        classifier = LogisticRegression(C=20.0, max_iter=500, random_state=RANDOM_SEED)
+        classifier = LogisticRegression(random_state=RANDOM_SEED)
     elif args.classifier == "xgboost":
         classifier = XGBClassifier(random_state=RANDOM_SEED)
     (
