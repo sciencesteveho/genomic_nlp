@@ -182,9 +182,9 @@ def get_param_grid(
         return {"C": [0.1, 1, 10, 20, 50], "max_iter": [100, 200, 500, 1000]}
     elif isinstance(classifier, MLPClassifier):
         return {
-            "hidden_layer_sizes": [(128,), (256,), (512,)],
-            "max_iter": [500, 1000, 2000],
-            "alpha": [0.0001, 0.001, 0.01],
+            "hidden_layer_sizes": [(32,), (64,), (128,)],
+            "max_iter": [10, 50, 100],
+            "alpha": [0.001, 0.01],
         }
     else:
         raise ValueError(
@@ -304,9 +304,10 @@ def pretrain_and_finetune_classifier(
     """Pre-trains a classifier on abstracts stratified by journal type as a
     proxy for relevancy before fine-tuning on manually annotated abstracts.
     """
-    pretrain_classifier = LogisticRegression(
-        C=0.1, max_iter=100, random_state=RANDOM_SEED
-    )
+    # pretrain_classifier = LogisticRegression(
+    #     C=0.1, max_iter=100, random_state=RANDOM_SEED
+    # )
+    pretrain_classifier = MLPClassifier()
     pretrained_model, fitted_vectorizer, fitted_selector = pretrain_model(
         pretrain_abstracts=pretrain_abstracts,
         classifier=pretrain_classifier,
