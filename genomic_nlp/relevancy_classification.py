@@ -81,7 +81,7 @@ def _prepare_annotated_classification_set(
 
 
 def perform_grid_search(
-    features: np.typing.ArrayLike,
+    features: Any,
     labels: Any,
     classifier: Union[LogisticRegression, XGBClassifier],
     param_grid: Dict[str, List[Any]],
