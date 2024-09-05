@@ -17,15 +17,15 @@ means to model training.
 
 import argparse
 import contextlib
+import json
 import os
 from pathlib import Path
 import pickle
-from typing import Any, Dict, List, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import joblib  # type: ignore
 import numpy as np
 import pandas as pd
-from sklearn.base import BaseEstimator  # type: ignore
 from sklearn.feature_extraction.text import TfidfVectorizer  # type: ignore
 from sklearn.feature_selection import f_classif  # type: ignore
 from sklearn.feature_selection import SelectKBest  # type: ignore
@@ -33,7 +33,6 @@ from sklearn.linear_model import LogisticRegression  # type: ignore
 from sklearn.metrics import accuracy_score  # type: ignore
 from sklearn.model_selection import cross_val_score  # type: ignore
 from sklearn.model_selection import GridSearchCV  # type: ignore
-from sklearn.neural_network import MLPClassifier  # type: ignore
 from xgboost import XGBClassifier
 
 from abstract_cleaner import AbstractCleaner
@@ -86,18 +85,35 @@ def perform_grid_search(
     classifier: Union[LogisticRegression, XGBClassifier],
     param_grid: Dict[str, List[Any]],
     cores: int,
+    savepath: Path,
+    classifier_name: str,
 ) -> None:
     """Perform grid search to find optimal hyperparameters."""
-    grid_search = GridSearchCV(classifier, param_grid, cv=5, scoring="f1", n_jobs=cores)
+    grid_search = GridSearchCV(
+        classifier,
+        param_grid,
+        cv=5,
+        scoring="f1",
+        n_jobs=cores,
+        return_train_score=True,
+    )
     grid_search.fit(features, labels)
     print(f"Best parameters: {grid_search.best_params_}")
     print(f"Best cross-validation score: {grid_search.best_score_:.2f}")
+
+    # save grid search results
+    results = pd.DataFrame(grid_search.cv_results_)
+
+    # save best params
+    with open(savepath / f"{classifier_name}_best_params.json", "w") as f:
+        json.dump(grid_search.best_params_, f)
 
 
 def vectorize_and_train_classifier(
     trainset: pd.DataFrame,
     classifier: Union[LogisticRegression, XGBClassifier],
     k: int,
+    savepath: Path,
     grid_search: bool = False,
 ) -> Tuple[
     TfidfVectorizer, SelectKBest, Union[LogisticRegression, XGBClassifier, None]
@@ -145,6 +161,8 @@ def vectorize_and_train_classifier(
             classifier=classifier,
             param_grid=param_grid,
             cores=get_physical_cores(),
+            savepath=savepath,
+            classifier_name=type(classifier).__name__,
         )
         return vectorizer, selector, None
     else:
@@ -368,6 +386,7 @@ def main() -> None:
         classifier=classifier,
         k=num,
         grid_search=args.grid_search,
+        savepath=savepath,
     )
 
     if not args.grid_search:
