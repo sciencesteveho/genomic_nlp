@@ -265,7 +265,7 @@ def finetune_model(
     )
     # finetuned_model = LogisticRegression(C=50, max_iter=100, random_state=RANDOM_SEED)
     finetuned_model = MLPClassifier(
-        alpha=0.01, max_iter=50, hidden_layer_sizes=(64,), random_state=RANDOM_SEED
+        alpha=0.001, max_iter=50, hidden_layer_sizes=(32,), random_state=RANDOM_SEED
     )
 
     if grid_search:
