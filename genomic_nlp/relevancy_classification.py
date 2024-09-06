@@ -658,7 +658,9 @@ def main() -> None:
         evaluation_results = evaluate_model(final_model, x_finetune, y_finetune)
 
         # save evaluation results
-        with open(savepath / f"{args.classifier}_evaluation_results.json", "w") as f:
+        with open(
+            savepath / f"{args.classifier}_tfidf_{num}_evaluation_results.json", "w"
+        ) as f:
             json.dump(evaluation_results, f)
 
         # get and save ROC/AUC
@@ -666,7 +668,7 @@ def main() -> None:
         get_roc_auc(
             true_labels=y_finetune,
             predicted_labels=y_pred_proba,
-            classifier_name=f"{args.classifier}_final_model",
+            classifier_name=f"{args.classifier}_final_model_tfidf_{num}",
             savepath=savepath,
         )
 
