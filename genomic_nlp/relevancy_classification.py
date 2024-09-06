@@ -263,10 +263,10 @@ def finetune_model(
     x_finetune, y_finetune = vectorize_abstracts(
         abstracts=finetune_abstracts, vectorizer=vectorizer, selector=selector
     )
-    # finetuned_model = LogisticRegression(C=50, max_iter=100, random_state=RANDOM_SEED)
-    finetuned_model = MLPClassifier(
-        alpha=0.001, max_iter=50, hidden_layer_sizes=(32,), random_state=RANDOM_SEED
-    )
+    finetuned_model = LogisticRegression(C=50, max_iter=100, random_state=RANDOM_SEED)
+    # finetuned_model = MLPClassifier(
+    #     alpha=0.001, max_iter=50, hidden_layer_sizes=(32,), random_state=RANDOM_SEED
+    # )
 
     if grid_search:
         param_grid = get_param_grid(pretrained_model)
@@ -307,12 +307,12 @@ def pretrain_and_finetune_classifier(
     """Pre-trains a classifier on abstracts stratified by journal type as a
     proxy for relevancy before fine-tuning on manually annotated abstracts.
     """
-    # pretrain_classifier = LogisticRegression(
-    #     C=0.1, max_iter=100, random_state=RANDOM_SEED
-    # )
-    pretrain_classifier = MLPClassifier(
-        alpha=0.001, max_iter=50, hidden_layer_sizes=(32,), random_state=RANDOM_SEED
+    pretrain_classifier = LogisticRegression(
+        C=0.1, max_iter=100, random_state=RANDOM_SEED
     )
+    # pretrain_classifier = MLPClassifier(
+    #     alpha=0.001, max_iter=50, hidden_layer_sizes=(32,), random_state=RANDOM_SEED
+    # )
     pretrained_model, fitted_vectorizer, fitted_selector = pretrain_model(
         pretrain_abstracts=pretrain_abstracts,
         classifier=pretrain_classifier,
