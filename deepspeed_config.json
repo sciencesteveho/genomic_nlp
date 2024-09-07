@@ -9,7 +9,7 @@
     "stage3_param_persistence_threshold": "auto",
     "stage3_max_live_parameters": 1e9,
     "stage3_max_reuse_distance": 1e9,
-    "stage3_gather_fp16_weights_on_model_save": true,
+    "gather_16bit_weights_on_model_save": true,
     "offload_optimizer": {
       "device": "cpu",
       "pin_memory": true
@@ -38,7 +38,7 @@
     }
   },
   "zero_allow_untested_optimizer": true,
-  "train_batch_size": 256,
+  "train_batch_size": 64,
   "train_micro_batch_size_per_gpu": 4,
   "gradient_accumulation_steps": 8,
   "gradient_clipping": 1.0,
