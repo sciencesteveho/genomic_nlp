@@ -267,7 +267,7 @@ def finetune_model(
     finetuned_model = MLPClassifier(
         solver="adam",
         alpha=0.001,
-        max_iter=50,
+        max_iter=100,
         hidden_layer_sizes=(32,),
         random_state=RANDOM_SEED,
         early_stopping=True,
