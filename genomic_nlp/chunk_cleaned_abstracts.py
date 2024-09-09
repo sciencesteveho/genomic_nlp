@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 
-"""Chunk abstracts"""
+"""Chunk abstracts."""
 
 
 import argparse
@@ -31,8 +31,7 @@ def chunk_corpus(corpus: List[str], parts: int, output_base_path: str) -> None:
         parts (int): Number of parts to split the corpus into.
         output_base_path (str): Base output path for the chunks.
     """
-    # get size of each chunk
-    chunk_size = ceil(len(corpus) / parts)
+    chunk_size = ceil(len(corpus) / parts)  # get size of each chunk
 
     for idx, batch in enumerate(more_itertools.chunked(corpus, chunk_size)):
         output_path = f"{output_base_path}_part_{idx}.pkl"
@@ -44,19 +43,20 @@ def main() -> None:
     """Main function"""
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--relevant_abstracts", type=str, default="../data/relevant_abstracts.pkl"
+        "--classified_abstracts",
+        type=str,
+        default="/ocean/projects/bio210019p/stevesho/genomic_nlp/data/abstracts_logistic_classified_tfidf_40000.pkl",
     )
     parser.add_argument("--num_parts", type=int, default=10)
     parser.add_argument(
         "--output_base_path",
         type=str,
-        default="../data/abstracts_classified_tfidf_20000_chunk",
+        default="/ocean/projects/bio210019p/stevesho/genomic_nlp/data/abstracts_logistic_classified_tfidf_40000_chunk",
     )
     args = parser.parse_args()
 
-    # load abstracts
-    with open(args.relevant_abstracts, "rb") as f:
-        corpus = pickle.load(f)
+    # get relevant abstracts
+    corpus = _get_relevant_abstracts(args.classified_abstracts)
 
     # chunk the corpus
     chunk_corpus(
