@@ -21,12 +21,9 @@ ran the script without the --grid_search flag to train the final model.
 
 
 import argparse
-import contextlib
 import json
-import os
 from pathlib import Path
-import pickle
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Tuple, Union
 
 import joblib  # type: ignore
 import numpy as np
@@ -51,22 +48,6 @@ from utils import _abstract_retrieval_concat
 from utils import get_physical_cores
 
 RANDOM_SEED = 42
-
-
-def get_training_data(corpus_path: str) -> pd.DataFrame:
-    """Prepares and cleans an abstract collection object."""
-    # if corpus file exists, load it
-    if os.path.exists(corpus_path):
-        return pd.read_pickle(corpus_path)
-
-    # if corpus file does not exist, create, clean, and save
-    with contextlib.suppress(FileExistsError):
-        _abstract_retrieval_concat(data_path=corpus_path, save=True)
-    abstractcollectionObj = AbstractCleaner(pd.read_pickle(corpus_path))
-    cleaned_abstracts = abstractcollectionObj.clean_abstracts()
-    with open(corpus_path, "wb") as f:
-        pickle.dump(cleaned_abstracts, f)
-    return cleaned_abstracts
 
 
 def _prepare_annotated_classification_set(
@@ -253,6 +234,7 @@ def pretrain_model(
 def finetune_model(
     finetune_abstracts: pd.DataFrame,
     pretrained_model: Union[LogisticRegression, MLPClassifier],
+    finetuned_classifier: Union[LogisticRegression, MLPClassifier],
     vectorizer: TfidfVectorizer,
     selector: SelectKBest,
     k: int,
@@ -263,16 +245,6 @@ def finetune_model(
     x_finetune, y_finetune = vectorize_abstracts(
         abstracts=finetune_abstracts, vectorizer=vectorizer, selector=selector
     )
-    # finetuned_model = LogisticRegression(C=50, max_iter=100, random_state=RANDOM_SEED)
-    finetuned_model = MLPClassifier(
-        solver="adam",
-        alpha=0.001,
-        max_iter=100,
-        hidden_layer_sizes=(32,),
-        random_state=RANDOM_SEED,
-        early_stopping=True,
-    )
-
     if grid_search:
         param_grid = get_param_grid(pretrained_model)
         return perform_grid_search(
@@ -288,7 +260,8 @@ def finetune_model(
         )
     else:
         finetuned_model = share_model_params(
-            pretrained_classifier=pretrained_model, finetune_classifier=finetuned_model
+            pretrained_classifier=pretrained_model,
+            finetune_classifier=finetuned_classifier,
         )  # share params from pre-trained model
 
         # fine-tune with smaller learning rate
@@ -301,6 +274,8 @@ def finetune_model(
 def pretrain_and_finetune_classifier(
     pretrain_abstracts: pd.DataFrame,
     finetune_abstracts: pd.DataFrame,
+    pretrain_classifier: Union[LogisticRegression, MLPClassifier],
+    finetuned_classifier: Union[LogisticRegression, MLPClassifier],
     vectorizer: TfidfVectorizer,
     selector: SelectKBest,
     k: int,
@@ -312,17 +287,6 @@ def pretrain_and_finetune_classifier(
     """Pre-trains a classifier on abstracts stratified by journal type as a
     proxy for relevancy before fine-tuning on manually annotated abstracts.
     """
-    # pretrain_classifier = LogisticRegression(
-    #     C=0.1, max_iter=100, random_state=RANDOM_SEED
-    # )
-    pretrain_classifier = MLPClassifier(
-        solver="adam",
-        alpha=0.001,
-        max_iter=200,
-        hidden_layer_sizes=(32,),
-        random_state=RANDOM_SEED,
-        early_stopping=True,
-    )
     pretrained_model, fitted_vectorizer, fitted_selector = pretrain_model(
         pretrain_abstracts=pretrain_abstracts,
         classifier=pretrain_classifier,
@@ -339,6 +303,7 @@ def pretrain_and_finetune_classifier(
     finetuned_model = finetune_model(
         finetune_abstracts=finetune_abstracts,
         pretrained_model=pretrained_model,
+        finetuned_classifier=finetuned_classifier,
         vectorizer=fitted_vectorizer,
         selector=fitted_selector,
         k=k,
@@ -442,22 +407,25 @@ def _classify_full_corpus(
     corpora: Any,
     selector: SelectKBest,
     classifier: Union[LogisticRegression, MLPClassifier],
-):
+) -> Any:
     """Classify a full corpus using the provided vectorizer, selector, and
     classifier.
 
     Args:
-        vectorizer: The vectorizer used to transform the text data. corpora: The
-        corpus to be classified. selector: The feature selector for transforming
-        the vectorized data. classifier: The classification model for predicting
-        labels.
+        vectorizer: The vectorizer used to transform the text data.
+        corpora: The corpus to be classified.
+        selector: The feature selector for transforming the vectorized data.
+        classifier: The classification model for predicting labels.
 
     Returns:
         array-like: Predicted labels for the input corpus.
     """
-    ex = vectorizer.transform(corpora)
-    ex2 = selector.transform(ex)
-    return classifier.predict(ex2)
+    if isinstance(corpora, pd.DataFrame):
+        tfidf_feats = vectorizer.transform(corpora["abstracts"])
+    else:
+        tfidf_feats = vectorizer.transform(corpora)
+    selected_feats = selector.transform(tfidf_feats)
+    return classifier.predict(selected_feats)
 
 
 def classify_corpus(
@@ -468,44 +436,43 @@ def classify_corpus(
     savepath: Path,
     k: int,
     test: bool = False,
-) -> pd.DataFrame:
+) -> Any:
     """Classifies a corpus of abstracts using the provided vectorizer, feature
     selector, and classifier.
 
     Args:
         corpus (Union[Set[str], pd.DataFrame]): The corpus of abstracts to
-        classify. vectorizer (TfidfVectorizer): The vectorizer used to transform
-        the abstracts into feature vectors. selector (SelectKBest): The feature
-        selector used to select the most informative features. classifier
-        (LogisticRegression): The classifier used to predict the class labels.
+        classify.
+        vectorizer (TfidfVectorizer): The vectorizer used to transform the
+        abstracts into feature vectors.
+        selector (SelectKBest): The feature selector used to select the most
+        informative features.
+        classifier (LogisticRegression): The classifier used to predict the
+        class labels.
         test (bool, optional): Flag indicating whether the corpus is a test set.
         Defaults to False.
 
     Returns:
         pd.DataFrame: A DataFrame containing the classified abstracts.
     """
-    if test:
-        results, accuracy = _classify_test_corpus(
-            corpus=corpus,
-            vectorizer=vectorizer,
-            selector=selector,
-            classifier=classifier,
-            savepath=savepath,
-            k=k,
-        )
-        abstracts, predictions = zip(*results)
-        df = pd.DataFrame(
-            {"abstracts": abstracts, "predictions": predictions, "accuracy": accuracy}
-        )
-    else:
-        predictions = _classify_full_corpus(vectorizer, corpus, selector, classifier)
-        accuracy = None
-        df = pd.DataFrame({"abstracts": list(corpus), "predictions": predictions})
-
-    if accuracy is not None:
-        df["accuracy"] = accuracy
-
-    return df
+    if not test:
+        return _classify_full_corpus(vectorizer, corpus, selector, classifier)
+    results, accuracy = _classify_test_corpus(
+        corpus=corpus,
+        vectorizer=vectorizer,
+        selector=selector,
+        classifier=classifier,
+        savepath=savepath,
+        k=k,
+    )
+    abstracts, predictions = zip(*results)
+    return pd.DataFrame(
+        {
+            "abstracts": abstracts,
+            "predictions": predictions,
+            "accuracy": accuracy,
+        }
+    )
 
 
 def _get_testset(
@@ -579,6 +546,39 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def define_classifier(
+    classifier: str,
+) -> Tuple[
+    Union[LogisticRegression, MLPClassifier], Union[LogisticRegression, MLPClassifier]
+]:
+    """Define pretrain and finetune classifiers."""
+    if classifier == "logistic":
+        pretrain_classifier = LogisticRegression(
+            C=0.1, max_iter=100, random_state=RANDOM_SEED
+        )
+        finetuned_classifier = LogisticRegression(
+            C=50, max_iter=100, random_state=RANDOM_SEED
+        )
+    elif classifier == "mlp":
+        pretrain_classifier = MLPClassifier(
+            solver="adam",
+            alpha=0.001,
+            max_iter=200,
+            hidden_layer_sizes=(32,),
+            random_state=RANDOM_SEED,
+            early_stopping=True,
+        )
+        finetuned_classifier = MLPClassifier(
+            solver="adam",
+            alpha=0.001,
+            max_iter=100,
+            hidden_layer_sizes=(32,),
+            random_state=RANDOM_SEED,
+            early_stopping=True,
+        )
+    return pretrain_classifier, finetuned_classifier
+
+
 def main() -> None:
     """Main function to classify relevancy of abstracts based on term
     frequency"""
@@ -586,9 +586,10 @@ def main() -> None:
     savepath = Path(args.model_save_dir)
     num = args.k
 
-    # get training data and set-up annotated abstracts
-    abstract_corpus = get_training_data(args.corpus)
+    # get corpus
+    abstract_corpus = pd.read_pickle(args.corpus)
 
+    # get finetune data
     finetune_abstracts = pd.concat(
         [
             _prepare_annotated_classification_set(
@@ -617,12 +618,7 @@ def main() -> None:
     )
 
     # get classifier
-    if args.classifier == "logistic":
-        classifier = LogisticRegression(C=20, max_iter=100, random_state=RANDOM_SEED)
-    if args.classifier == "mlp":
-        classifier = MLPClassifier(
-            hidden_layer_sizes=(256,), max_iter=1000, random_state=RANDOM_SEED
-        )
+    pretrain_classifier, finetuned_classifier = define_classifier(args.classifier)
 
     # get vectorizer and selector
     vectorizer = get_vectorizer()
@@ -634,7 +630,8 @@ def main() -> None:
         pretrain_and_finetune_classifier(
             pretrain_abstracts=pretrain_abstracts,
             finetune_abstracts=finetune_abstracts,
-            # classifier=classifier,
+            pretrain_classifier=pretrain_classifier,
+            finetuned_classifier=finetuned_classifier,
             vectorizer=vectorizer,
             selector=selector,
             k=num,
@@ -651,6 +648,8 @@ def main() -> None:
     final_model, fitted_vectorizer, fitted_selector = pretrain_and_finetune_classifier(
         pretrain_abstracts=pretrain_abstracts,
         finetune_abstracts=finetune_abstracts,
+        pretrain_classifier=pretrain_classifier,
+        finetuned_classifier=finetuned_classifier,
         vectorizer=vectorizer,
         selector=selector,
         k=num,
@@ -689,7 +688,7 @@ def main() -> None:
         )
 
         # classify full corpus
-        abstracts_classified = classify_corpus(
+        predictions = classify_corpus(
             corpus=abstract_corpus,
             vectorizer=fitted_vectorizer,
             selector=fitted_selector,
@@ -697,11 +696,11 @@ def main() -> None:
             savepath=savepath,
             k=num,
         )
-        with open(
-            savepath / f"abstracts_{args.classifier}_classified_tfidf_{num}.pkl", "wb"
-        ) as f:
-            pickle.dump(abstracts_classified, f)
 
+        abstract_corpus["predictions"] = predictions
+        abstract_corpus.to_pickle(
+            savepath / f"abstracts_{args.classifier}_classified_tfidf_{num}.pkl"
+        )
         print("Final model training, evaluation, and classification completed.")
     else:
         print("Error: Final model training failed.")

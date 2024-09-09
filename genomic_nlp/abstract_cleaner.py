@@ -8,7 +8,7 @@
 import argparse
 import contextlib
 import re
-from typing import Union
+from typing import Callable, Set, Union
 
 import pandas as pd
 from tqdm import tqdm  # type: ignore
@@ -57,14 +57,14 @@ class AbstractCleaner:
         """Initialize the class. Dataframe should have both `abstracts` and
         `year` columns.
         """
-        if (
-            not isinstance(abstracts, pd.DataFrame)
-            or "abstracts" not in abstracts.columns
-            or "year" not in abstracts.columns
+        if isinstance(abstracts, pd.DataFrame) and (
+            "abstracts" not in abstracts.columns or "year" not in abstracts.columns
         ):
             raise ValueError(
                 "Input must be a DataFrame with columns 'abstracts' and 'year'."
             )
+        elif not isinstance(abstracts, pd.Series):
+            raise ValueError("Input must be a pandas Series or DataFrame.")
         self.abstracts = abstracts
 
     def _abstract_cleaning(self, abstract: Union[str, float]) -> str:
@@ -109,37 +109,47 @@ class AbstractCleaner:
             print(f"Abstract: {abstract}...")
             return ""
 
-    def clean_abstracts(self) -> pd.DataFrame:
-        """Process abstracts with regex and return a cleaned DataFrame."""
+    def _apply_with_progress(self, series: pd.Series, func: Callable) -> pd.Series:
+        """Apply a function to a series with a progress bar."""
         tqdm.pandas(desc="Cleaning abstracts")
-        cleaned_abstracts = self.abstracts["abstracts"].progress_apply(
-            lambda x: self._abstract_cleaning(x)
-        )
-        cleaned_df = pd.DataFrame(
-            {"cleaned_abstracts": cleaned_abstracts, "year": self.abstracts["year"]}
-        )
-        cleaned_df = cleaned_df[cleaned_df["cleaned_abstracts"].str.strip() != ""]
+        return series.progress_apply(func)
 
-        return cleaned_df
-
-
-def main() -> None:
-    """Main function."""
-    parser = argparse.ArgumentParser(description="Clean abstracts.")
-    parser.add_argument(
-        "--path",
-        type=str,
-        help="Path to the input file (CSV).",
-        default="/ocean/projects/bio210019p/stevesho/genomic_nlp/abstracts",
-    )
-    args = parser.parse_args()
-
-    abstractcollectionObj = AbstractCleaner(
-        pd.read_pickle(f"{args.path}/abstracts_combined.pkl")
-    )
-    cleaned_abstracts = abstractcollectionObj.clean_abstracts()
-    cleaned_abstracts.to_pickle(f"{args.path}/abstracts_cleaned.pkl")
+    def clean_abstracts(self) -> Union[pd.DataFrame, Set[str]]:
+        """Process abstracts with regex and return a cleaned DataFrame."""
+        if isinstance(self.abstracts, pd.DataFrame):
+            cleaned_abstracts = self._apply_with_progress(
+                self.abstracts["abstracts"], self._abstract_cleaning
+            )
+            cleaned_df = pd.DataFrame(
+                {"cleaned_abstracts": cleaned_abstracts, "year": self.abstracts["year"]}
+            )
+            cleaned_df = cleaned_df[cleaned_df["cleaned_abstracts"].str.strip() != ""]
+            return cleaned_df
+        else:
+            cleaned_series = self._apply_with_progress(
+                self.abstracts, self._abstract_cleaning
+            )
+            cleaned_series = cleaned_series[cleaned_series.str.strip() != ""]
+            return set(cleaned_series)
 
 
-if __name__ == "__main__":
-    main()
+# def main() -> None:
+#     """Main function."""
+#     parser = argparse.ArgumentParser(description="Clean abstracts.")
+#     parser.add_argument(
+#         "--path",
+#         type=str,
+#         help="Path to the input file (CSV).",
+#         default="/ocean/projects/bio210019p/stevesho/genomic_nlp/abstracts",
+#     )
+#     args = parser.parse_args()
+
+#     abstractcollectionObj = AbstractCleaner(
+#         pd.read_pickle(f"{args.path}/abstracts_combined.pkl")
+#     )
+#     cleaned_abstracts = abstractcollectionObj.clean_abstracts()
+#     cleaned_abstracts.to_pickle(f"{args.path}/abstracts_cleaned.pkl")
+
+
+# if __name__ == "__main__":
+#     main()
