@@ -127,7 +127,7 @@ def main() -> None:
     """Main function."""
     parser = argparse.ArgumentParser(description="Clean abstracts.")
     parser.add_argument(
-        "path",
+        "--path",
         type=str,
         help="Path to the input file (CSV).",
         default="/ocean/projects/bio210019p/stevesho/genomic_nlp/abstracts",
