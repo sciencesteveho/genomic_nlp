@@ -421,7 +421,7 @@ def _classify_full_corpus(
         array-like: Predicted labels for the input corpus.
     """
     if isinstance(corpora, pd.DataFrame):
-        tfidf_feats = vectorizer.transform(corpora["abstracts"])
+        tfidf_feats = vectorizer.transform(corpora["cleaned_abstracts"])
     else:
         tfidf_feats = vectorizer.transform(corpora)
     selected_feats = selector.transform(tfidf_feats)
