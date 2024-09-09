@@ -63,10 +63,10 @@ def get_training_data(corpus_path: str) -> pd.DataFrame:
     with contextlib.suppress(FileExistsError):
         _abstract_retrieval_concat(data_path=corpus_path, save=True)
     abstractcollectionObj = AbstractCleaner(pd.read_pickle(corpus_path))
-    abstractcollectionObj.clean_abstracts()
+    cleaned_abstracts = abstractcollectionObj.clean_abstracts()
     with open(corpus_path, "wb") as f:
-        pickle.dump(abstractcollectionObj.cleaned_abstracts, f)
-    return abstractcollectionObj.cleaned_abstracts
+        pickle.dump(cleaned_abstracts, f)
+    return cleaned_abstracts
 
 
 def _prepare_annotated_classification_set(
@@ -534,8 +534,8 @@ def _get_testset(
     testCorpus = AbstractCleaner(
         df[df.columns[0]].astype(str) + ". " + df[df.columns[1]].astype(str)
     )
-    testCorpus.clean_abstracts()
-    newdf = pd.DataFrame(testCorpus.cleaned_abstracts, columns=["abstracts"])
+    cleaned = testCorpus.clean_abstracts()
+    newdf = pd.DataFrame(cleaned, columns=["abstracts"])
     newdf["encoding"] = 1 if positive else 0
     return newdf
 
