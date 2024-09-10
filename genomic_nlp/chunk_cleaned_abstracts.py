@@ -12,19 +12,16 @@ from typing import List
 
 import more_itertools  # type: ignore
 import pandas as pd  # type: ignore
-import spacy  # type: ignore
 from tqdm import tqdm  # type: ignore
 
 
-def _get_relevant_abstracts(abstract_file: str) -> List[str]:
+def _get_relevant_abstracts(abstract_file: str) -> pd.DataFrame:
     """Get abstracts classified as relevant"""
     abstracts_df = pd.read_pickle(abstract_file)
-    return abstracts_df.loc[abstracts_df["predictions"] == 1][
-        "cleaned_abstracts"
-    ].to_list()
+    return abstracts_df.loc[abstracts_df["predictions"] == 1]
 
 
-def chunk_corpus(corpus: List[str], parts: int, output_base_path: str) -> None:
+def chunk_corpus(corpus: pd.DataFrame, parts: int, output_base_path: str) -> None:
     """Splits the corpus into a specified number of parts and saves each part as
     a pickle file.
 
@@ -34,8 +31,10 @@ def chunk_corpus(corpus: List[str], parts: int, output_base_path: str) -> None:
         output_base_path (str): Base output path for the chunks.
     """
     chunk_size = ceil(len(corpus) / parts)  # get size of each chunk
-
-    for idx, batch in enumerate(more_itertools.chunked(corpus, chunk_size)):
+    for idx in range(parts):
+        start_idx = idx * chunk_size
+        end_idx = min((idx + 1) * chunk_size, len(corpus))
+        batch = corpus.iloc[start_idx:end_idx]
         output_path = f"{output_base_path}_part_{idx}.pkl"
         with open(output_path, "wb") as f:
             pickle.dump(batch, f)
