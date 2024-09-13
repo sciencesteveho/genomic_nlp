@@ -336,18 +336,24 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--chunk", type=str, required=True)
     parser.add_argument(
-        "--root_dir", type=str, default="/ocean/projects/bio210019p/stevesho/nlp"
+        "--root_dir",
+        type=str,
+        default="/ocean/projects/bio210019p/stevesho/genomic_nlp",
     )
     parser.add_argument(
         "--gene_gtf",
         type=str,
-        default="../reference_files/gencode.v45.basic.annotation.gtf",
+        default="/ocean/projects/bio210019p/stevesho/genomic_nlp/reference_files/gencode.v45.basic.annotation.gtf",
     )
     parser.add_argument(
-        "--ncbi_genes", type=str, default="../reference_files/ncbi_genes.tsv"
+        "--ncbi_genes",
+        type=str,
+        default="/ocean/projects/bio210019p/stevesho/genomic_nlp/reference_files/ncbi_genes.tsv",
     )
     parser.add_argument(
-        "--hgnc_genes", type=str, default="../reference_files/hgnc_complete_set.txt"
+        "--hgnc_genes",
+        type=str,
+        default="/ocean/projects/bio210019p/stevesho/genomic_nlp/reference_files/hgnc_complete_set.txt",
     )
     parser.add_argument("--lemmatizer", action="store_true")
     parser.add_argument("--prep_word2vec", action="store_true")
