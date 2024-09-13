@@ -339,11 +339,15 @@ def main() -> None:
         "--root_dir", type=str, default="/ocean/projects/bio210019p/stevesho/nlp"
     )
     parser.add_argument(
-        "--gene_gtf", type=str, default="../data/gencode.v45.basic.annotation.gtf"
+        "--gene_gtf",
+        type=str,
+        default="../reference_files/gencode.v45.basic.annotation.gtf",
     )
-    parser.add_argument("--ncbi_genes", type=str, default="../data/ncbi_genes.tsv")
     parser.add_argument(
-        "--hgnc_genes", type=str, default="../data/hgnc_complete_set.txt"
+        "--ncbi_genes", type=str, default="../reference_files/ncbi_genes.tsv"
+    )
+    parser.add_argument(
+        "--hgnc_genes", type=str, default="../reference_files/hgnc_complete_set.txt"
     )
     parser.add_argument("--lemmatizer", action="store_true")
     parser.add_argument("--prep_word2vec", action="store_true")
