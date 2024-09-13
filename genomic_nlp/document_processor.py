@@ -1,19 +1,19 @@
-# sourcery skip: do-not-use-staticmethod
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
 
 """Sentence splitting, tokenization, optional lemmatization, and some additional
-cleanup"""
+cleanup."""
 
 
 import argparse
 import csv
-import pickle
-from typing import Any, List, Set, Union
+from typing import Any, Iterator, List, Set, Union
 
+import pandas as pd  # type: ignore
 from progressbar import ProgressBar  # type: ignore
 import pybedtools  # type: ignore
+from space.spacy.language import Language  # type: ignore
 import spacy  # type: ignore
 from spacy.tokens import Token  # type: ignore
 from tqdm import tqdm  # type: ignore
@@ -24,27 +24,18 @@ from utils import is_number
 from utils import time_decorator
 
 
+def gene_symbol_from_gencode(gencode_ref: pybedtools.BedTool) -> Set[str]:
+    """Returns deduped set of genes from a gencode gtf. Written for the gencode
+    45 and avoids header"""
+    return {
+        line[8].split('gene_name "')[1].split('";')[0]
+        for line in gencode_ref
+        if not line[0].startswith("#") and "gene_name" in line[8]
+    }
+
+
 def gencode_genes(gtf: str) -> Set[str]:
-    """_summary_
-
-    Args:
-        entity_file (str): _description_
-        genes (Set[str]): _description_
-        type (str, optional): _description_. Defaults to "gene".
-
-    Returns:
-        Set[str]: _description_
-    """
-
-    def gene_symbol_from_gencode(gencode_ref: pybedtools.BedTool) -> Set[str]:
-        """Returns deduped set of genes from a gencode gtf. Written for the gencode
-        45 and avoids header"""
-        return {
-            line[8].split('gene_name "')[1].split('";')[0]
-            for line in gencode_ref
-            if not line[0].startswith("#") and "gene_name" in line[8]
-        }
-
+    """Get gene symbols from a gencode gtf file."""
     print("Grabbing genes from GTF")
     gtf = pybedtools.BedTool(gtf)
     genes = list(gene_symbol_from_gencode(gtf))
@@ -158,7 +149,7 @@ class ChunkedDocumentProcessor:
     def __init__(
         self,
         root_dir: str,
-        abstracts: Union[List[str], List[List[str]], List[List[List[str]]]],
+        abstracts: pd.DataFrame,
         chunk: int,
         lemmatizer: bool,
         word2vec: bool,
@@ -167,12 +158,15 @@ class ChunkedDocumentProcessor:
     ):
         """Initialize the class"""
         self.root_dir = root_dir
-        self.abstracts = abstracts
         self.chunk = chunk
         self.lemmatizer = lemmatizer
         self.word2vec = word2vec
         self.finetune = finetune
         self.genes = genes
+        self.word_attr = "lemma_" if lemmatizer else "text"
+        self.nlp: Language = None
+
+        self.df = abstracts[["cleaned_abstracts", "year"]]
 
     def _make_directories(self) -> None:
         """Make directories for processing"""
@@ -184,53 +178,29 @@ class ChunkedDocumentProcessor:
         ]:
             dir_check_make(dir)
 
-    @time_decorator(print_args=False)
-    def tokenization(self, abstracts: List[str], use_gpu: bool = False) -> None:
-        """Tokenize the abstracts using spaCy.
-        Args:
-            use_gpu (bool, optional): Flag to indicate whether to use GPU for
-            processing. Defaults to False.
+    def process_batch(
+        self, texts: List[str], nlp: Language, batch_size: int = 32
+    ) -> Iterator[List[List[str]]]:
+        """Use batch processing for efficiency."""
+        for i in tqdm(range(0, len(texts), batch_size)):
+            batch = texts[i : i + batch_size]
+            docs = list(nlp.pipe(batch))
+            yield from (self.process_doc(doc) for doc in docs)
 
-        Returns:
-            list: Tokens extracted from the cleaned abstracts.
-        """
+    def setup_pipeline(self, use_gpu: bool = False) -> None:
+        """Set up the spaCy pipeline"""
         if use_gpu:
             spacy_model = "en_core_sci_scibert"
-            n_process = 1
-            batch_size = 16
             spacy.require_gpu()
         else:
             spacy_model = "en_core_sci_md"
-            n_process = 4
-            batch_size = 500
 
-        # set up spaCy pipeline
-        nlp = spacy.load(spacy_model)
-        nlp.add_pipe("sentencizer")
+        self.nlp = spacy.load(spacy_model)
+        self.nlp.add_pipe("sentencizer")
         disable_pipes = ["parser"]
-
         if not self.lemmatizer:
             disable_pipes.append("lemmatizer")
-
-        word_attr = "lemma_" if self.lemmatizer else "text"
-
-        dataset_tokens = []
-        for doc in tqdm(
-            nlp.pipe(
-                abstracts,
-                n_process=n_process,
-                batch_size=batch_size,
-                disable=disable_pipes,
-            ),
-            total=len(abstracts),
-        ):
-            dataset_tokens.extend(
-                [
-                    [self.custom_lemmatize(token, word_attr) for token in sentence]
-                    for sentence in doc.sents
-                ]
-            )
-        self.abstracts = dataset_tokens
+        self.nlp.disable_pipes(*disable_pipes)
 
     def custom_lemmatize(self, token: Token, word_attr: str) -> str:
         """Custom token processing. Only lemmatize tokens that are not
@@ -238,140 +208,126 @@ class ChunkedDocumentProcessor:
         """
         return token.text if token.ent_type == "ENTITY" else getattr(token, word_attr)
 
-    @time_decorator(print_args=False)
-    def exclude_punctuation_tokens_replace_standalone_numbers(
-        self, abstracts: Union[List[str], List[List[str]], List[List[List[str]]]]
-    ) -> None:
-        """Removes standalone symbols if they exist as tokens. Replaces
-        numbers with a number based symbol.
-        """
-        pbar = ProgressBar()
-        new_corpus = []
-        if self.finetune:
-            for abstract in pbar(abstracts):
-                new_abstract = []
-                for sentence in abstract:
-                    new_sentence = [
-                        "<nUm>" if is_number(token) else token
-                        for token in sentence
-                        if token not in self.EXTRAS
-                    ]
-                    new_abstract.append(new_sentence)
-                new_corpus.append(new_abstract)
-        else:
-            for sentence in pbar(abstracts):
-                new_sentence = [
-                    "<nUm>" if is_number(token) else token
-                    for token in sentence
-                    if token not in self.EXTRAS
-                ]
-                new_corpus.append(new_sentence)
+    def process_doc(self, doc: spacy.tokens.Doc) -> List[List[str]]:
+        """Process a document."""
+        return [
+            [self.custom_lemmatize(token, self.word_attr) for token in sentence]
+            for sentence in doc.sents
+        ]
 
-        self.abstracts = new_corpus
+    def process_token(self, token: str) -> Union[str, None]:
+        """Replace numbers with a number based symbol, and symbols with None."""
+        if token in self.EXTRAS:
+            return None
+        return "<nUm>" if is_number(token) else token
 
-    @time_decorator(print_args=False)
-    def selective_casefold(
-        self,
-        abstracts: list[list[Any]],
-        genes: Set[str],
-    ) -> None:
-        """Casefold the abstracts"""
-        if self.finetune:
-            self.abstracts = [
-                [
-                    [
-                        token.casefold() if token not in genes else token
-                        for token in sentence
-                    ]
-                    for sentence in abstract
-                ]
-                for abstract in abstracts
-            ]
-        else:
-            self.abstracts = [
-                [
-                    token.casefold() if token not in genes else token
-                    for token in sentence
-                ]
-                for sentence in abstracts
-            ]
+    def process_sentence(self, sentence: List[str]) -> List[str]:
+        """Process a sentence of tokens."""
+        processed_tokens = []
+        for token in sentence:
+            processed_token = self.process_token(token)
+            if processed_token is not None:
+                processed_tokens.append(processed_token)
+        return processed_tokens
+
+    def selective_casefold_token(self, token: str) -> str:
+        """Selectively casefold tokens, avoding gene symbols."""
+        return token if token in self.genes else token.casefold()
+
+    def casefold_sentence(self, sentence: List[str]) -> List[str]:
+        """Casefold a sentence of tokens."""
+        return [self.selective_casefold_token(token) for token in sentence]
+
+    def remove_gene(self, token: str) -> Union[str, None]:
+        """Remove gene symbols from tokens, for future n-gram generation."""
+        return None if token in self.genes else token
+
+    def remove_genes_from_sentence(self, sentence: List[str]) -> List[str]:
+        """Remove gene symbols from a sentence of tokens."""
+        return [
+            token
+            for token in (self.remove_gene(t) for t in sentence)
+            if token is not None
+        ]
 
     @time_decorator(print_args=False)
-    def _remove_entities_in_tokenized_corpus(
-        self,
-        entity_list: Set[str],
-        abstracts: Union[list[list[Any]], list[list[list[Any]]]],
-    ) -> None:
-        """Remove genes in gene_list from tokenized corpus
+    def tokenization(self, use_gpu: bool = False) -> None:
+        """Tokenize the abstracts using spaCy."""
+        self.setup_pipeline(use_gpu=use_gpu)
+        self.df["tokenized_abstracts"] = self.df["cleaned_abstracts"].progress_apply(
+            lambda x: self.process_doc(self.nlp(x))
+        )
 
-        # Arguments
-            entity_list: genes from GTF
-        """
+    @time_decorator(print_args=False)
+    def exclude_punctuation_tokens_replace_standalone_numbers(self) -> None:
+        """Exclude punctuation tokens and replace standalone numbers."""
+        tqdm.pandas(desc="Cleaning tokens")
         if self.finetune:
-            self.abstracts = [
-                [
-                    [token for token in sentence if token not in entity_list]
-                    for sentence in abstract
-                ]
-                for abstract in abstracts
-            ]
+            self.df["processed_abstracts"] = self.df[
+                "tokenized_abstracts"
+            ].progress_apply(lambda x: [self.process_sentence(sent) for sent in x])
         else:
-            self.abstracts = [
-                [token for token in sentence if token not in entity_list]
-                for sentence in abstracts
-            ]
+            self.df["processed_abstracts"] = self.df[
+                "tokenized_abstracts"
+            ].progress_apply(
+                lambda x: self.process_sentence([token for sent in x for token in sent])
+            )
 
-    def _save_processed_abstracts_checkpoint(self, outname: str, chunk: int) -> None:
+    @time_decorator(print_args=False)
+    def selective_casefold(self) -> None:
+        """Selectively casefold the abstracts."""
+        tqdm.pandas(desc="Casefolding")
+        if self.finetune:
+            self.df["casefolded_abstracts"] = self.df[
+                "processed_abstracts"
+            ].progress_apply(lambda x: [self.casefold_sentence(sent) for sent in x])
+        else:
+            self.df["casefolded_abstracts"] = self.df[
+                "processed_abstracts"
+            ].progress_apply(self.casefold_sentence)
+
+    @time_decorator(print_args=False)
+    def remove_entities_in_tokenized_corpus(self) -> None:
+        """Remove gene symbols from the tokenized corpus for n-gram
+        generation.
         """
-        Save processed abstracts to a pickle file after cleaning and lemmatization.
+        tqdm.pandas(desc="Removing entities")
+        if self.finetune:
+            self.df["final_abstracts"] = self.df["casefolded_abstracts"].progress_apply(
+                lambda x: [self.remove_genes_from_sentence(sent) for sent in x]
+            )
+        else:
+            self.df["final_abstracts"] = self.df["casefolded_abstracts"].progress_apply(
+                self.remove_genes_from_sentence
+            )
 
-        Returns:
-            None
+    def _save_checkpoints(self, outpref: str) -> None:
+        """Save processed abstracts to a pickle file after cleaning and
+        lemmatization.
         """
         if self.lemmatizer:
-            outname += "_lemmatized"
+            outpref += "_lemmatized"
         if self.finetune:
-            outname += "_finetune"
-        outname += f"_{chunk}.pkl"
-        with open(outname, "wb") as output:
-            pickle.dump(self.abstracts, output)
+            outpref += "_finetune"
+        outpref += f"_{self.chunk}.pkl"
+        self.df.to_pickle(outpref)
 
-    def processing_pipeline(self) -> None:
-        """Runs the initial cleaning pipeline."""
-        # tokenize abstracts
-        self.tokenization(abstracts=self.abstracts, use_gpu=False)
-
-        # remove punctuation and standardize numbers with replacement
-        self.exclude_punctuation_tokens_replace_standalone_numbers(
-            abstracts=self.abstracts
+    def processing_pipeline(self, use_gpu: bool = False) -> None:
+        """Run the nlp pipeline."""
+        self.tokenization(use_gpu=use_gpu)
+        self.exclude_punctuation_tokens_replace_standalone_numbers()
+        self._save_checkpoints(
+            outpref=f"{self.root_dir}/data/tokens_cleaned_abstracts_remove_punct"
         )
-
-        # save the cleaned abstracts
-        self._save_processed_abstracts_checkpoint(
-            outname=f"{self.root_dir}/data/tokens_cleaned_abstracts_remove_punct",
-            chunk=self.chunk,
+        self.selective_casefold()
+        self._save_checkpoints(
+            outpref=f"{self.root_dir}/data/tokens_cleaned_abstracts_casefold"
         )
-
-        # selective casefolding
-        self.selective_casefold(abstracts=self.abstracts, genes=self.genes)
-
-        # save cleaned, casefolded abstracts
-        self._save_processed_abstracts_checkpoint(
-            outname=f"{self.root_dir}/data/tokens_cleaned_abstracts_casefold",
-            chunk=self.chunk,
-        )
-
-        if not self.word2vec:
-            return
-
-        self._remove_entities_in_tokenized_corpus(
-            abstracts=self.abstracts, entity_list=self.genes
-        )
-
-        self._save_processed_abstracts_checkpoint(
-            outname=f"{self.root_dir}/data/tokens_cleaned_abstracts_remove_genes",
-            chunk=self.chunk,
-        )
+        if self.word2vec:
+            self.remove_entities_in_tokenized_corpus()
+            self._save_checkpoints(
+                outpref=f"{self.root_dir}/data/tokens_cleaned_abstracts_remove_genes"
+            )
 
 
 def main() -> None:
@@ -392,14 +348,17 @@ def main() -> None:
     parser.add_argument("--lemmatizer", action="store_true")
     parser.add_argument("--prep_word2vec", action="store_true")
     parser.add_argument("--prep_finetune", action="store_true")
+    parser.add_argument("--use_gpu", action="store_true")
     args = parser.parse_args()
 
-    # get relevant abstracts
-    with open(
-        f"{args.root_dir}/data/abstracts_classified_tfidf_20000_chunk_part_{args.chunk}.pkl",
-        "rb",
-    ) as f:
-        abstracts = pickle.load(f)
+    # load abstract df
+    abstracts = pd.read_pickle(
+        f"{args.root_dir}/data/abstracts_classified_tfidf_20000_chunk_part_{args.chunk}.pkl"
+    )
+
+    # check that we have the required "year" column
+    if "year" not in abstracts.columns:
+        raise ValueError("Abstracts must have a 'year' column")
 
     # get genes
     gencode = gencode_genes(
@@ -429,7 +388,7 @@ def main() -> None:
     )
 
     # run processing pipeline
-    documentProcessor.processing_pipeline()
+    documentProcessor.processing_pipeline(use_gpu=args.use_gpu)
 
 
 if __name__ == "__main__":
