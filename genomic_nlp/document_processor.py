@@ -363,7 +363,7 @@ def main() -> None:
 
     # load abstract df
     abstracts = pd.read_pickle(
-        f"{args.root_dir}/data/abstracts_logistic_classified_tfidf_20000_chunk_part_{args.chunk}.pkl"
+        f"{args.root_dir}/data/abstracts_logistic_classified_tfidf_40000_chunk_part_{args.chunk}.pkl"
     )
 
     # check that we have the required "year" column
