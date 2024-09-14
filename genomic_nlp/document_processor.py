@@ -254,6 +254,7 @@ class ChunkedDocumentProcessor:
     def tokenization(self, use_gpu: bool = False) -> None:
         """Tokenize the abstracts using spaCy."""
         self.setup_pipeline(use_gpu=use_gpu)
+        tqdm.pandas(desc="SciSpacy pipe")
         self.df["tokenized_abstracts"] = self.df["cleaned_abstracts"].progress_apply(
             lambda x: self.process_doc(self.nlp(x))
         )
