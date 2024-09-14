@@ -179,7 +179,7 @@ class ChunkedDocumentProcessor:
             dir_check_make(dir)
 
     def process_batch(
-        self, texts: List[str], nlp: Language, batch_size: int = 32
+        self, texts: List[str], nlp: Language, batch_size: int = 64
     ) -> Iterator[List[List[str]]]:
         """Use batch processing for efficiency."""
         for i in tqdm(range(0, len(texts), batch_size)):
@@ -194,6 +194,9 @@ class ChunkedDocumentProcessor:
             spacy.require_gpu()
         else:
             spacy_model = "en_core_sci_md"
+
+        print(f"Loading spaCy model: {spacy_model}")
+        print(f"Using GPU: {use_gpu}")
 
         self.nlp = spacy.load(spacy_model)
         self.nlp.add_pipe("sentencizer")
