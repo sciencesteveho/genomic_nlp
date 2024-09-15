@@ -13,9 +13,9 @@ from typing import Any, Iterator, List, Set, Union
 import pandas as pd  # type: ignore
 from progressbar import ProgressBar  # type: ignore
 import pybedtools  # type: ignore
-from space.tokens import Doc  # type: ignore
 import spacy  # type: ignore
 from spacy.language import Language  # type: ignore
+from spacy.tokens import Doc  # type: ignore
 from spacy.tokens import Token  # type: ignore
 from tqdm import tqdm  # type: ignore
 
