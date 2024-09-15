@@ -167,6 +167,7 @@ class ChunkedDocumentProcessor:
         finetune: bool,
         genes: Set[str],
         max_length: int = 512,
+        batch_size: int = 32,
     ):
         """Initialize the ChunkedDocumentProcessor object."""
         self.root_dir = root_dir
@@ -176,6 +177,7 @@ class ChunkedDocumentProcessor:
         self.finetune = finetune
         self.genes = genes
         self.word_attr = "lemma_" if lemmatizer else "text"
+        self.batch_size = batch_size
 
         self.df = abstracts[["cleaned_abstracts", "year"]]
         self.max_length = max_length
@@ -192,15 +194,6 @@ class ChunkedDocumentProcessor:
             "models/w2v_models",
         ]:
             dir_check_make(dir)
-
-    def process_batch(
-        self, texts: List[str], nlp: Language, batch_size: int = 150
-    ) -> Iterator[List[List[str]]]:
-        """Use batch processing for efficiency."""
-        for i in tqdm(range(0, len(texts), batch_size)):
-            batch = texts[i : i + batch_size]
-            docs = list(nlp.pipe(batch))
-            yield from (self.process_doc(doc) for doc in docs)
 
     def setup_pipeline(self, use_gpu: bool = False) -> None:
         """Set up the spaCy pipeline"""
@@ -313,15 +306,15 @@ class ChunkedDocumentProcessor:
     @time_decorator(print_args=False)
     def tokenization_and_ner(self, use_gpu: bool = False) -> None:
         """Tokenize the abstracts using spaCy."""
-        tqdm.pandas(desc="SciSpacy pipe")
-        if self.spacy_model == "en_core_sci_scibert":
-            self.df["tokenized_abstracts"] = self.df[
-                "cleaned_abstracts"
-            ].progress_apply(lambda x: self.process_doc(self.nlp.make_doc(x)))
-        else:
-            self.df["tokenized_abstracts"] = self.df[
-                "cleaned_abstracts"
-            ].progress_apply(lambda x: self.process_doc(self.nlp(x)))
+        cleaned_abstracts = self.df["cleaned_abstracts"].tolist()
+        processed_docs: List[List[List[str]]] = []
+
+        for doc in tqdm(self.nlp.pipe(cleaned_abstracts, batch_size=self.batch_size)):
+            if self.spacy_model == "en_core_sci_scibert":
+                processed_docs.append(self.process_doc_scibert(doc))
+            else:
+                processed_docs.append(self.process_doc(doc))
+        self.df["tokenized_abstracts"] = processed_docs
 
     @time_decorator(print_args=False)
     def exclude_punctuation_tokens_replace_standalone_numbers(self) -> None:
