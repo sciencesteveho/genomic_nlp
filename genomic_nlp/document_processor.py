@@ -13,6 +13,7 @@ from typing import Any, Iterator, List, Set, Union
 import pandas as pd  # type: ignore
 from progressbar import ProgressBar  # type: ignore
 import pybedtools  # type: ignore
+from space.tokens import Doc  # type: ignore
 import spacy  # type: ignore
 from spacy.language import Language  # type: ignore
 from spacy.tokens import Token  # type: ignore
@@ -71,25 +72,35 @@ class ChunkedDocumentProcessor:
     """Object class to process a chunk of abstracts before model training.
 
     Attributes:
-        root_dir: root directory for the project
-        abstracts: list of abstracts
-        date: date of processing
-        lemmatizer: bool to apply lemmatization, which gets root stem of words
-        word2vec: bool to apply additional word2vec processing steps
+        root_dir (str): Root directory for the project.
+        chunk (int): Chunk identifier for the current set of abstracts.
+        lemmatizer (bool): Whether to apply lemmatization.
+        word2vec (bool): Whether to apply additional word2vec processing steps.
+        finetune (bool): Whether the processing is for fine-tuning.
+        genes (Set[str]): Set of gene names to be used in processing.
+        word_attr (str): Word attribute to use ('lemma_' if lemmatizer is True,
+        else 'text').
+        nlp (spacy.language.Language): spaCy language model.
+        df (pd.DataFrame): DataFrame containing the abstracts to process.
+        max_length (int): Maximum sequence length for the model.
+        spacy_model (str): Name of the spaCy model being used.
 
     Methods
     ----------
-    _make_directories:
-        Make directories for processing
-    tokenization:
-        Tokenize the abstracts using spaCy
-    exclude_punctuation_tokens_replace_standalone_numbers:
-        Removes standalone symbols if they exist as tokens. Replaces numbers
-        with a number based symbol
-    remove_entities_in_tokenized_corpus:
-        Remove genes in gene_list from tokenized corpus
+    process_doc:
+        Process a single document.
+    process_doc_scibert:
+        Process a document using SciBERT model.
+    process_chunk:
+        Process a chunk of tokens.
+    tokenization_and_ner:
+        Perform tokenization and NER on all abstracts.
+    setup_pipeline:
+        Set up the spaCy pipeline.
+    custom_lemmatize:
+        Custom lemmatization for tokens.
     processing_pipeline:
-        Runs the nlp pipeline
+        Run the full processing pipeline.
 
     # Helpers
         EXTRAS -- set of extra characters to remove
@@ -157,7 +168,7 @@ class ChunkedDocumentProcessor:
         genes: Set[str],
         max_length: int = 512,
     ):
-        """Initialize the class"""
+        """Initialize the ChunkedDocumentProcessor object."""
         self.root_dir = root_dir
         self.chunk = chunk
         self.lemmatizer = lemmatizer
@@ -165,10 +176,12 @@ class ChunkedDocumentProcessor:
         self.finetune = finetune
         self.genes = genes
         self.word_attr = "lemma_" if lemmatizer else "text"
-        self.nlp: Language = None
 
         self.df = abstracts[["cleaned_abstracts", "year"]]
         self.max_length = max_length
+
+        self.nlp: Language = None
+        self.spacy_model: str = ""
 
     def _make_directories(self) -> None:
         """Make directories for processing"""
@@ -217,23 +230,48 @@ class ChunkedDocumentProcessor:
         """Process a document. If we are using the scibert model, then sentences
         passing the BERT max_length will need to be split."""
         if self.spacy_model == "en_core_sci_scibert":
-            processed_sentences = []
-            for sentence in doc.sents:
-                if len(sentence) > self.max_length:
-                    processed_sentences.append(
-                        [
-                            self.custom_lemmatize(token, self.word_attr)
-                            for token in sentence[: self.max_length]
-                        ]
-                    )
-                    sentence = sentence[self.max_length :]
-                processed_sentences.append(
-                    [self.custom_lemmatize(token, self.word_attr) for token in sentence]
-                )
-            return processed_sentences
+            return self.process_doc_scibert(doc)
+        else:
+            return [
+                [self.custom_lemmatize(token, self.word_attr) for token in sentence]
+                for sentence in doc.sents
+            ]
+
+    def process_doc_scibert(self, doc: Doc) -> List[List[str]]:
+        """Process a document using the SciBERT model. Longer squences are
+        split.
+        """
+        processed_sentences: List[List[str]] = []
+        current_chunk: List[str] = []
+        current_length = 0
+
+        for sent in doc.sents:
+            sent_tokens = [
+                self.custom_lemmatize(token, self.word_attr) for token in sent
+            ]
+            sent_length = len(sent_tokens)
+
+            if current_length + sent_length > self.max_length:
+                if current_chunk:
+                    processed_sentences.extend(self.process_chunk(current_chunk))
+                current_chunk = sent_tokens
+                current_length = sent_length
+            else:
+                current_chunk.extend(sent_tokens)
+                current_length += sent_length
+
+        # process remaining chunk
+        if current_chunk:
+            processed_sentences.extend(self.process_chunk(current_chunk))
+
+        return processed_sentences
+
+    def process_chunk(self, chunk: List[str]) -> List[List[str]]:
+        """Process a chunk of tokens that fits within max_length."""
+        doc = Doc(self.nlp.vocab, words=chunk)
         return [
             [self.custom_lemmatize(token, self.word_attr) for token in sentence]
-            for sentence in doc.sents
+            for sentence in self.nlp(doc).sents
         ]
 
     def process_token(self, token: str) -> Union[str, None]:
@@ -276,9 +314,14 @@ class ChunkedDocumentProcessor:
         """Tokenize the abstracts using spaCy."""
         self.setup_pipeline(use_gpu=use_gpu)
         tqdm.pandas(desc="SciSpacy pipe")
-        self.df["tokenized_abstracts"] = self.df["cleaned_abstracts"].progress_apply(
-            lambda x: self.process_doc(self.nlp(x))
-        )
+        if self.spacy_model == "en_core_sci_scibert":
+            self.df["tokenized_abstracts"] = self.df[
+                "cleaned_abstracts"
+            ].progress_apply(lambda x: self.process_doc(self.nlp.make_doc(x)))
+        else:
+            self.df["tokenized_abstracts"] = self.df[
+                "cleaned_abstracts"
+            ].progress_apply(lambda x: self.process_doc(self.nlp(x)))
 
     @time_decorator(print_args=False)
     def exclude_punctuation_tokens_replace_standalone_numbers(self) -> None:
