@@ -309,11 +309,24 @@ class ChunkedDocumentProcessor:
         cleaned_abstracts = self.df["cleaned_abstracts"].tolist()
         processed_docs: List[List[List[str]]] = []
 
-        for doc in tqdm(self.nlp.pipe(cleaned_abstracts, batch_size=self.batch_size)):
+        pbar = tqdm(
+            total=len(cleaned_abstracts),
+            desc="Processing documents",
+            unit="doc",
+            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]",
+        )
+
+        for doc in self.nlp.pipe(cleaned_abstracts, batch_size=self.batch_size):
             if self.spacy_model == "en_core_sci_scibert":
                 processed_docs.append(self.process_doc_scibert(doc))
             else:
                 processed_docs.append(self.process_doc(doc))
+
+            pbar.update(1)
+            pbar.set_postfix({"Current batch": len(processed_docs)})
+
+        pbar.close()
+
         self.df["tokenized_abstracts"] = processed_docs
 
     @time_decorator(print_args=False)
