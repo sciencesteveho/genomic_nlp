@@ -219,6 +219,7 @@ class ChunkedDocumentProcessor:
         if not self.lemmatizer:
             disable_pipes.append("lemmatizer")
         self.nlp.disable_pipes(*disable_pipes)
+        print(f"Pipeline components: {self.nlp.pipe_names}")
 
     def custom_lemmatize(self, token: Token, word_attr: str) -> str:
         """Custom token processing. Only lemmatize tokens that are not
@@ -312,7 +313,6 @@ class ChunkedDocumentProcessor:
     @time_decorator(print_args=False)
     def tokenization_and_ner(self, use_gpu: bool = False) -> None:
         """Tokenize the abstracts using spaCy."""
-        self.setup_pipeline(use_gpu=use_gpu)
         tqdm.pandas(desc="SciSpacy pipe")
         if self.spacy_model == "en_core_sci_scibert":
             self.df["tokenized_abstracts"] = self.df[
@@ -380,6 +380,7 @@ class ChunkedDocumentProcessor:
     def processing_pipeline(self, use_gpu: bool = False) -> None:
         """Run the nlp pipeline."""
         # spacy pipeline
+        self.setup_pipeline(use_gpu=use_gpu)
         self.tokenization_and_ner(use_gpu=use_gpu)
         self._save_checkpoints(
             outpref=f"{self.root_dir}/data/tokens_ner_cleaned_abstracts"
