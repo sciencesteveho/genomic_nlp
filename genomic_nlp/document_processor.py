@@ -155,6 +155,7 @@ class ChunkedDocumentProcessor:
         word2vec: bool,
         finetune: bool,
         genes: Set[str],
+        max_length: int = 512,
     ):
         """Initialize the class"""
         self.root_dir = root_dir
@@ -167,6 +168,7 @@ class ChunkedDocumentProcessor:
         self.nlp: Language = None
 
         self.df = abstracts[["cleaned_abstracts", "year"]]
+        self.max_length = max_length
 
     def _make_directories(self) -> None:
         """Make directories for processing"""
@@ -190,15 +192,15 @@ class ChunkedDocumentProcessor:
     def setup_pipeline(self, use_gpu: bool = False) -> None:
         """Set up the spaCy pipeline"""
         if use_gpu:
-            spacy_model = "en_core_sci_scibert"
+            self.spacy_model = "en_core_sci_scibert"
             spacy.require_gpu()
         else:
-            spacy_model = "en_core_sci_md"
+            self.spacy_model = "en_core_sci_md"
 
-        print(f"Loading spaCy model: {spacy_model}")
+        print(f"Loading spaCy model: {self.spacy_model}")
         print(f"Using GPU: {use_gpu}")
 
-        self.nlp = spacy.load(spacy_model)
+        self.nlp = spacy.load(self.spacy_model)
         self.nlp.add_pipe("sentencizer")
         disable_pipes = ["parser"]
         if not self.lemmatizer:
@@ -212,7 +214,23 @@ class ChunkedDocumentProcessor:
         return token.text if token.ent_type == "ENTITY" else getattr(token, word_attr)
 
     def process_doc(self, doc: spacy.tokens.Doc) -> List[List[str]]:
-        """Process a document."""
+        """Process a document. If we are using the scibert model, then sentences
+        passing the BERT max_length will need to be split."""
+        if self.spacy_model == "en_core_sci_scibert":
+            processed_sentences = []
+            for sentence in doc.sents:
+                if len(sentence) > self.max_length:
+                    processed_sentences.append(
+                        [
+                            self.custom_lemmatize(token, self.word_attr)
+                            for token in sentence[: self.max_length]
+                        ]
+                    )
+                    sentence = sentence[self.max_length :]
+                processed_sentences.append(
+                    [self.custom_lemmatize(token, self.word_attr) for token in sentence]
+                )
+            return processed_sentences
         return [
             [self.custom_lemmatize(token, self.word_attr) for token in sentence]
             for sentence in doc.sents
@@ -254,7 +272,7 @@ class ChunkedDocumentProcessor:
         ]
 
     @time_decorator(print_args=False)
-    def tokenization(self, use_gpu: bool = False) -> None:
+    def tokenization_and_ner(self, use_gpu: bool = False) -> None:
         """Tokenize the abstracts using spaCy."""
         self.setup_pipeline(use_gpu=use_gpu)
         tqdm.pandas(desc="SciSpacy pipe")
@@ -318,7 +336,13 @@ class ChunkedDocumentProcessor:
 
     def processing_pipeline(self, use_gpu: bool = False) -> None:
         """Run the nlp pipeline."""
-        self.tokenization(use_gpu=use_gpu)
+        # spacy pipeline
+        self.tokenization_and_ner(use_gpu=use_gpu)
+        self._save_checkpoints(
+            outpref=f"{self.root_dir}/data/tokens_ner_cleaned_abstracts"
+        )
+
+        # additional processing
         self.exclude_punctuation_tokens_replace_standalone_numbers()
         self._save_checkpoints(
             outpref=f"{self.root_dir}/data/tokens_cleaned_abstracts_remove_punct"
@@ -327,6 +351,8 @@ class ChunkedDocumentProcessor:
         self._save_checkpoints(
             outpref=f"{self.root_dir}/data/tokens_cleaned_abstracts_casefold"
         )
+
+        # additional processing for word2vec
         if self.word2vec:
             self.remove_entities_in_tokenized_corpus()
             self._save_checkpoints(
