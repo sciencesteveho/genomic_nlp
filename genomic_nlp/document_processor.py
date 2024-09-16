@@ -8,8 +8,9 @@ cleanup."""
 
 import argparse
 import csv
+import logging
 import math
-from typing import Any, Iterator, List, Set, Union
+from typing import Any, Iterator, List, Optional, Set, Union
 
 import pandas as pd  # type: ignore
 from progressbar import ProgressBar  # type: ignore
@@ -25,6 +26,9 @@ from utils import dir_check_make
 from utils import is_number
 from utils import time_decorator
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 
 def gene_symbol_from_gencode(gencode_ref: pybedtools.BedTool) -> Set[str]:
     """Returns deduped set of genes from a gencode gtf. Written for the gencode
@@ -38,7 +42,7 @@ def gene_symbol_from_gencode(gencode_ref: pybedtools.BedTool) -> Set[str]:
 
 def gencode_genes(gtf: str) -> Set[str]:
     """Get gene symbols from a gencode gtf file."""
-    print("Grabbing genes from GTF")
+    logger.info("Grabbing genes from GTF")
     gtf = pybedtools.BedTool(gtf)
     genes = list(gene_symbol_from_gencode(gtf))
 
@@ -168,7 +172,7 @@ class ChunkedDocumentProcessor:
         finetune: bool,
         genes: Set[str],
         max_length: int = 512,
-        batch_size: int = 32,
+        batch_size: int = 64,
     ):
         """Initialize the ChunkedDocumentProcessor object."""
         self.root_dir = root_dir
@@ -204,8 +208,8 @@ class ChunkedDocumentProcessor:
         else:
             self.spacy_model = "en_core_sci_md"
 
-        print(f"Loading spaCy model: {self.spacy_model}")
-        print(f"Using GPU: {use_gpu}")
+        logger.info(f"Loading spaCy model: {self.spacy_model}")
+        logger.info(f"Using GPU: {use_gpu}")
 
         self.nlp = spacy.load(self.spacy_model)
         self.nlp.add_pipe("sentencizer")
@@ -213,38 +217,53 @@ class ChunkedDocumentProcessor:
         if not self.lemmatizer:
             disable_pipes.append("lemmatizer")
         self.nlp.disable_pipes(*disable_pipes)
-        print(f"Pipeline components: {self.nlp.pipe_names}")
+        logger.info(f"Pipeline components: {self.nlp.pipe_names}")
 
-    def custom_lemmatize(self, token: Token, word_attr: str) -> str:
+    def custom_lemmatize(self, token: Token) -> str:
         """Custom token processing. Only lemmatize tokens that are not
         recognized as entities via NER.
         """
-        return token.text if token.ent_type == "ENTITY" else getattr(token, word_attr)
+        return (
+            token.text if token.ent_type == "ENTITY" else getattr(token, self.word_attr)
+        )
 
-    def process_doc(self, doc: spacy.tokens.Doc) -> List[List[str]]:
+    def process_doc(self, doc: Doc) -> List[List[str]]:
         """Process a document. If we are using the scibert model, then sentences
         passing the BERT max_length will need to be split."""
         if self.spacy_model == "en_core_sci_scibert":
             return self.process_doc_scibert(doc)
         else:
-            return [
-                [self.custom_lemmatize(token, self.word_attr) for token in sentence]
-                for sentence in doc.sents
-            ]
+            return self.process_doc_standard(doc)
+
+    def process_doc_standard(self, doc: Doc) -> List[List[str]]:
+        """Process a standard document without a core SciSpacy model."""
+        return [
+            [self.custom_lemmatize(token) for token in sentence]
+            for sentence in doc.sents
+        ]
 
     def process_doc_scibert(self, doc: Doc) -> List[List[str]]:
-        """Process a document using the SciBERT model. Longer squences are
-        split.
+        """Process a document using the SciBERT model. Due to specific size
+        limits, docs and sentences passing max_length need to be split.
         """
         processed_sentences: List[List[str]] = []
         current_chunk: List[str] = []
         current_length = 0
 
         for sent in doc.sents:
-            sent_tokens = [
-                self.custom_lemmatize(token, self.word_attr) for token in sent
-            ]
+            sent_tokens = [self.custom_lemmatize(token) for token in sent]
             sent_length = len(sent_tokens)
+
+            # split long sentences
+            if sent_length > self.max_length:
+                logger.warning(
+                    f"Sentence length {sent_length} exceeds max_length"
+                    f"{self.max_length}. Splitting sentence."
+                )
+                sub_chunks = self._split_into_subchunks(sent_tokens)
+                for sub_chunk in sub_chunks:
+                    processed_sentences.extend(self.process_chunk(sub_chunk))
+                continue
 
             if current_length + sent_length > self.max_length:
                 if current_chunk:
@@ -259,20 +278,27 @@ class ChunkedDocumentProcessor:
                 processed_sentences.extend(
                     self.process_chunk(current_chunk[: self.max_length])
                 )
-                current_chunk = []
-                current_length = 0
+                current_chunk = current_chunk[self.max_length :]
+                current_length = len(current_chunk)
 
-        # process remaining chunk
+        # Process remaining tokens
         if current_chunk:
             processed_sentences.extend(self.process_chunk(current_chunk))
 
         return processed_sentences
 
+    def _split_into_subchunks(self, tokens: List[str]) -> List[List[str]]:
+        """Split a list of tokens into subchunks each not exceeding max_length."""
+        return [
+            tokens[i : i + self.max_length]
+            for i in range(0, len(tokens), self.max_length)
+        ]
+
     def process_chunk(self, chunk: List[str]) -> List[List[str]]:
         """Process a chunk of tokens that fits within max_length."""
         doc = Doc(self.nlp.vocab, words=chunk)
         return [
-            [self.custom_lemmatize(token, self.word_attr) for token in sentence]
+            [self.custom_lemmatize(token) for token in sentence]
             for sentence in self.nlp(doc).sents
         ]
 
@@ -282,14 +308,13 @@ class ChunkedDocumentProcessor:
             return None
         return "<nUm>" if is_number(token) else token
 
-    def process_sentence(self, sentence: List[str]) -> List[str]:
+    def process_sentence(self, sentence: List[str]) -> List[Optional[str]]:
         """Process a sentence of tokens."""
-        processed_tokens = []
-        for token in sentence:
-            processed_token = self.process_token(token)
-            if processed_token is not None:
-                processed_tokens.append(processed_token)
-        return processed_tokens
+        return [
+            self.process_token(token)
+            for token in sentence
+            if self.process_token(token) is not None
+        ]
 
     def selective_casefold_token(self, token: str) -> str:
         """Selectively casefold tokens, avoding gene symbols."""
@@ -314,17 +339,22 @@ class ChunkedDocumentProcessor:
     def split_on_sentences(self, doc: Doc, max_chars: int = 5000) -> List[Doc]:
         """Split a document into chunks of text based on sentence length."""
         chunks: List[Doc] = []
-        current_chunk: List[spacy.tokens.Span] = []
+        current_chunk: List[Token] = []
         current_length = 0
         for sent in doc.sents:
-            if current_length + len(sent.text) > max_chars and current_chunk:
-                chunks.append(doc[current_chunk[0].start : current_chunk[-1].end])
+            sent_length = len(sent.text)
+            if current_length + sent_length > max_chars and current_chunk:
+                chunks.append(
+                    Doc(self.nlp.vocab, words=[token.text for token in current_chunk])
+                )
                 current_chunk = []
                 current_length = 0
-            current_chunk.append(sent)
-            current_length += len(sent.text)
+            current_chunk.extend(sent)
+            current_length += sent_length
         if current_chunk:
-            chunks.append(doc[current_chunk[0].start : current_chunk[-1].end])
+            chunks.append(
+                Doc(self.nlp.vocab, words=[token.text for token in current_chunk])
+            )
         return chunks
 
     @time_decorator(print_args=False)
@@ -348,7 +378,7 @@ class ChunkedDocumentProcessor:
             if self.spacy_model == "en_core_sci_scibert":
                 chunks = self.split_on_sentences(doc)
                 if len(chunks) > 1:
-                    print(
+                    logger.info(
                         f"Splitting document of length {len(doc)} into {len(chunks)} chunks"
                     )
                 processed_chunks: List[List[str]] = []
@@ -488,19 +518,9 @@ def main() -> None:
         raise ValueError("Abstracts must have a 'year' column")
 
     # get genes
-    gencode = gencode_genes(
-        gtf=args.gene_gtf,
-    )
-
-    hgnc = hgnc_ncbi_genes(
-        tsv=args.hgnc_genes,
-        hgnc=True,
-    )
-
-    ncbi = hgnc_ncbi_genes(
-        tsv=args.ncbi_genes,
-    )
-
+    gencode = gencode_genes(gtf=args.gene_gtf)
+    hgnc = hgnc_ncbi_genes(tsv=args.hgnc_genes, hgnc=True)
+    ncbi = hgnc_ncbi_genes(tsv=args.ncbi_genes)
     genes = gencode.union(hgnc).union(ncbi)
 
     # instantiate document processor
