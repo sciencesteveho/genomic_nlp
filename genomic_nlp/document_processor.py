@@ -255,6 +255,13 @@ class ChunkedDocumentProcessor:
                 current_chunk.extend(sent_tokens)
                 current_length += sent_length
 
+            if current_length >= self.max_length:
+                processed_sentences.extend(
+                    self.process_chunk(current_chunk[: self.max_length])
+                )
+                current_chunk = []
+                current_length = 0
+
         # process remaining chunk
         if current_chunk:
             processed_sentences.extend(self.process_chunk(current_chunk))
