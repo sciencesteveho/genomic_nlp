@@ -248,9 +248,7 @@ class ChunkedDocumentProcessor:
         ]
 
     def process_doc_scibert(self, doc: Doc) -> List[List[str]]:
-        """Process a document using the SciBERT model. Due to specific size
-        limits, docs and sentences passing max_length need to be split.
-        """
+        """Process a document using the SciBERT model, handling long sequences appropriately."""
         processed_sentences: List[List[str]] = []
         current_chunk: List[str] = []
         current_length = 0
@@ -262,33 +260,32 @@ class ChunkedDocumentProcessor:
             # split long sentences
             if sent_length > self.max_length:
                 logger.warning(
-                    f"Sentence length {sent_length} exceeds max_length"
-                    f"{self.max_length}. Splitting sentence."
+                    f"Sentence length {sent_length} exceeds max_length {self.max_length}. Splitting sentence."
                 )
                 sub_chunks = self._split_into_subchunks(sent_tokens)
                 for sub_chunk in sub_chunks:
-                    processed_sentences.extend(self.process_chunk(sub_chunk))
+                    processed_sentences.append(sub_chunk)
                 continue
 
+            # accumulate tokens into chunks without exceeding max_length
             if current_length + sent_length > self.max_length:
                 if current_chunk:
-                    processed_sentences.extend(self.process_chunk(current_chunk))
+                    processed_sentences.append(current_chunk)
                 current_chunk = sent_tokens
                 current_length = sent_length
             else:
                 current_chunk.extend(sent_tokens)
                 current_length += sent_length
 
+            # start new chunk if current_chunk is full
             if current_length >= self.max_length:
-                processed_sentences.extend(
-                    self.process_chunk(current_chunk[: self.max_length])
-                )
+                processed_sentences.append(current_chunk[: self.max_length])
                 current_chunk = current_chunk[self.max_length :]
                 current_length = len(current_chunk)
 
-        # Process remaining tokens
+        # process remaining tokens
         if current_chunk:
-            processed_sentences.extend(self.process_chunk(current_chunk))
+            processed_sentences.append(current_chunk)
 
         return processed_sentences
 
