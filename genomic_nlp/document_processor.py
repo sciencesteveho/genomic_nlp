@@ -213,7 +213,7 @@ class ChunkedDocumentProcessor:
 
         self.nlp = spacy.load(self.spacy_model)
         self.nlp.add_pipe("sentencizer")
-        disable_pipes = ["parser"]
+        disable_pipes = ["parser", "tagger"]
         if not self.lemmatizer:
             disable_pipes.append("lemmatizer")
         self.nlp.disable_pipes(*disable_pipes)
@@ -296,10 +296,11 @@ class ChunkedDocumentProcessor:
 
     def process_chunk(self, chunk: List[str]) -> List[List[str]]:
         """Process a chunk of tokens that fits within max_length."""
-        doc = Doc(self.nlp.vocab, words=chunk)
+        text = " ".join(chunk)
+        doc = self.nlp(text)
         return [
             [self.custom_lemmatize(token) for token in sentence]
-            for sentence in self.nlp(doc).sents
+            for sentence in doc.sents
         ]
 
     def process_token(self, token: str) -> Union[str, None]:
