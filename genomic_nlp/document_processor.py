@@ -296,16 +296,16 @@ class ChunkedDocumentProcessor:
             for i in range(0, len(tokens), self.max_length)
         ]
 
-    def process_chunk(self, chunk: List[str]) -> List[List[str]]:
-        """Process a chunk of tokens that fits within max_length."""
-        text = " ".join(chunk)
-        doc = self.nlp(text)
-        num_sentences = len(list(doc.sents))
-        logger.debug(f"Processed chunk into {num_sentences} sentences.")
-        return [
-            [self.custom_lemmatize(token) for token in sentence]
-            for sentence in doc.sents
-        ]
+    # def process_chunk(self, chunk: List[str]) -> List[List[str]]:
+    #     """Process a chunk of tokens that fits within max_length."""
+    #     text = " ".join(chunk)
+    #     doc = self.nlp(text)
+    #     num_sentences = len(list(doc.sents))
+    #     logger.debug(f"Processed chunk into {num_sentences} sentences.")
+    #     return [
+    #         [self.custom_lemmatize(token) for token in sentence]
+    #         for sentence in doc.sents
+    #     ]
 
     def process_token(self, token: str) -> Union[str, None]:
         """Replace numbers with a number based symbol, and symbols with None."""
@@ -361,7 +361,7 @@ class ChunkedDocumentProcessor:
         return chunks
 
     @time_decorator(print_args=False)
-    def tokenization_and_ner(self, use_gpu: bool = False) -> None:
+    def tokenization_and_ner(self) -> None:
         """Tokenize the abstracts using spaCy."""
         cleaned_abstracts = self.df["cleaned_abstracts"].tolist()
         total_docs = len(cleaned_abstracts)
@@ -370,31 +370,44 @@ class ChunkedDocumentProcessor:
         total_batches = math.ceil(total_docs / self.batch_size)
         pbar = tqdm(
             total=total_batches,
-            desc="Processing batches",
-            unit="batch",
+            desc="Processing documents",
+            unit="Batch",
             bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]",
         )
 
-        for i, doc in enumerate(
-            self.nlp.pipe(cleaned_abstracts, batch_size=self.batch_size)
-        ):
-            if self.spacy_model == "en_core_sci_scibert":
-                chunks = self.split_on_sentences(doc)
-                if len(chunks) > 1:
-                    logger.info(
-                        f"Splitting document of length {len(doc)} into {len(chunks)} chunks"
+        # split abstracts into sentences with smaller model
+        sentencizer_nlp = spacy.load(
+            "en_core_sci_sm", disable=["parser", "ner", "lemmatizer", "tagger"]
+        )
+        sentencizer_nlp.add_pipe("sentencizer")
+
+        for abstract in cleaned_abstracts:
+            doc = sentencizer_nlp(abstract)
+            sentences = [sent.text.strip() for sent in doc.sents]
+
+            processed_sentences = []
+            for sent in sentences:
+                if not sent:
+                    continue
+                # split sentences longer than max_length into smaller chunks
+                tokens = sent.split()
+                if len(tokens) > self.max_length:
+                    sub_chunks = self._split_into_subchunks(tokens)
+                    for sub_chunk in sub_chunks:
+                        sub_sent = " ".join(sub_chunk)
+                        sent_doc = self.nlp(sub_sent)
+                        processed_sentences.append(
+                            [self.custom_lemmatize(token) for token in sent_doc]
+                        )
+                else:
+                    sent_doc = self.nlp(sent)
+                    processed_sentences.append(
+                        [self.custom_lemmatize(token) for token in sent_doc]
                     )
-                processed_chunks: List[List[str]] = []
-                for chunk in chunks:
-                    processed_chunks.extend(self.process_doc_scibert(chunk))
-                processed_docs.append(processed_chunks)
-            else:
-                processed_docs.append(self.process_doc(doc))
 
-            if (i + 1) % self.batch_size == 0 or i == total_docs - 1:
-                pbar.update(1)
-                pbar.set_postfix({"Processed docs": len(processed_docs)})
-
+            processed_docs.append(processed_sentences)
+            pbar.update(1)
+            pbar.set_postfix({"Processed docs": len(processed_docs)})
         pbar.close()
 
         self.df["tokenized_abstracts"] = processed_docs
