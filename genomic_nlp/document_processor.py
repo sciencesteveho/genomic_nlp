@@ -8,6 +8,7 @@ cleanup."""
 
 import argparse
 import csv
+import math
 from typing import Any, Iterator, List, Set, Union
 
 import pandas as pd  # type: ignore
@@ -307,23 +308,28 @@ class ChunkedDocumentProcessor:
     def tokenization_and_ner(self, use_gpu: bool = False) -> None:
         """Tokenize the abstracts using spaCy."""
         cleaned_abstracts = self.df["cleaned_abstracts"].tolist()
+        total_docs = len(cleaned_abstracts)
         processed_docs: List[List[List[str]]] = []
 
+        total_batches = math.ceil(total_docs / self.batch_size)
         pbar = tqdm(
-            total=len(cleaned_abstracts),
-            desc="Processing documents",
-            unit="doc",
+            total=total_batches,
+            desc="Processing batches",
+            unit="batch",
             bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]",
         )
 
-        for doc in self.nlp.pipe(cleaned_abstracts, batch_size=self.batch_size):
+        for i, doc in enumerate(
+            self.nlp.pipe(cleaned_abstracts, batch_size=self.batch_size)
+        ):
             if self.spacy_model == "en_core_sci_scibert":
                 processed_docs.append(self.process_doc_scibert(doc))
             else:
                 processed_docs.append(self.process_doc(doc))
 
-            pbar.update(1)
-            pbar.set_postfix({"Current batch": len(processed_docs)})
+            if (i + 1) % self.batch_size == 0 or i == total_docs - 1:
+                pbar.update(1)
+                pbar.set_postfix({"Processed docs": len(processed_docs)})
 
         pbar.close()
 
