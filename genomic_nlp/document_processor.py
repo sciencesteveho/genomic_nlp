@@ -168,7 +168,7 @@ class ChunkedDocumentProcessor:
         finetune: bool,
         genes: Set[str],
         max_length: int = 512,
-        batch_size: int = 64,
+        batch_size: int = 32,
     ):
         """Initialize the ChunkedDocumentProcessor object."""
         self.root_dir = root_dir
