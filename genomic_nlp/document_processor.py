@@ -470,7 +470,7 @@ class ChunkedDocumentProcessor:
         """Run the nlp pipeline."""
         # spacy pipeline
         self.setup_pipeline(use_gpu=use_gpu)
-        self.tokenization_and_ner(use_gpu=use_gpu)
+        self.tokenization_and_ner()
         self._save_checkpoints(
             outpref=f"{self.root_dir}/data/tokens_ner_cleaned_abstracts"
         )
