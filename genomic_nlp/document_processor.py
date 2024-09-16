@@ -311,6 +311,22 @@ class ChunkedDocumentProcessor:
             if token is not None
         ]
 
+    def split_on_sentences(self, doc: Doc, max_chars: int = 5000) -> List[Doc]:
+        """Split a document into chunks of text based on sentence length."""
+        chunks: List[Doc] = []
+        current_chunk: List[spacy.tokens.Span] = []
+        current_length = 0
+        for sent in doc.sents:
+            if current_length + len(sent.text) > max_chars and current_chunk:
+                chunks.append(doc[current_chunk[0].start : current_chunk[-1].end])
+                current_chunk = []
+                current_length = 0
+            current_chunk.append(sent)
+            current_length += len(sent.text)
+        if current_chunk:
+            chunks.append(doc[current_chunk[0].start : current_chunk[-1].end])
+        return chunks
+
     @time_decorator(print_args=False)
     def tokenization_and_ner(self, use_gpu: bool = False) -> None:
         """Tokenize the abstracts using spaCy."""
@@ -330,7 +346,15 @@ class ChunkedDocumentProcessor:
             self.nlp.pipe(cleaned_abstracts, batch_size=self.batch_size)
         ):
             if self.spacy_model == "en_core_sci_scibert":
-                processed_docs.append(self.process_doc_scibert(doc))
+                chunks = self.split_on_sentences(doc)
+                if len(chunks) > 1:
+                    print(
+                        f"Splitting document of length {len(doc)} into {len(chunks)} chunks"
+                    )
+                processed_chunks: List[List[str]] = []
+                for chunk in chunks:
+                    processed_chunks.extend(self.process_doc_scibert(chunk))
+                processed_docs.append(processed_chunks)
             else:
                 processed_docs.append(self.process_doc(doc))
 
