@@ -212,11 +212,16 @@ class ChunkedDocumentProcessor:
         logger.info(f"Using GPU: {use_gpu}")
 
         self.nlp = spacy.load(self.spacy_model)
-        self.nlp.add_pipe("sentencizer")
+
+        if "sentencizer" not in self.nlp.pipe_names:
+            self.nlp.add_pipe("sentencizer", first=True)
+
+        # disable unnecessary pipeline components
         disable_pipes = ["parser", "tagger"]
         if not self.lemmatizer:
             disable_pipes.append("lemmatizer")
         self.nlp.disable_pipes(*disable_pipes)
+
         logger.info(f"Pipeline components: {self.nlp.pipe_names}")
 
     def custom_lemmatize(self, token: Token) -> str:
@@ -298,6 +303,8 @@ class ChunkedDocumentProcessor:
         """Process a chunk of tokens that fits within max_length."""
         text = " ".join(chunk)
         doc = self.nlp(text)
+        num_sentences = len(list(doc.sents))
+        logger.debug(f"Processed chunk into {num_sentences} sentences.")
         return [
             [self.custom_lemmatize(token) for token in sentence]
             for sentence in doc.sents
@@ -340,22 +347,20 @@ class ChunkedDocumentProcessor:
     def split_on_sentences(self, doc: Doc, max_chars: int = 5000) -> List[Doc]:
         """Split a document into chunks of text based on sentence length."""
         chunks: List[Doc] = []
-        current_chunk: List[Token] = []
+        current_chunk: List[str] = []
         current_length = 0
         for sent in doc.sents:
             sent_length = len(sent.text)
             if current_length + sent_length > max_chars and current_chunk:
-                chunks.append(
-                    Doc(self.nlp.vocab, words=[token.text for token in current_chunk])
-                )
+                text = " ".join(current_chunk)
+                chunks.append(self.nlp(text))
                 current_chunk = []
                 current_length = 0
-            current_chunk.extend(sent)
+            current_chunk.extend([token.text for token in sent])
             current_length += sent_length
         if current_chunk:
-            chunks.append(
-                Doc(self.nlp.vocab, words=[token.text for token in current_chunk])
-            )
+            text = " ".join(current_chunk)
+            chunks.append(self.nlp(text))
         return chunks
 
     @time_decorator(print_args=False)
