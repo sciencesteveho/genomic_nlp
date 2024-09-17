@@ -297,6 +297,9 @@ class ChunkedDocumentProcessor:
 
         total_sentences = 0
 
+        pbar = tqdm(
+            total=len(cleaned_abstracts), desc="Processing documents", unit="Doc"
+        )
         for doc_idx, doc in enumerate(
             sentencizer_nlp.pipe(cleaned_abstracts, batch_size=self.batch_size)
         ):
@@ -316,6 +319,8 @@ class ChunkedDocumentProcessor:
                     sentences.append(sent)
                     doc_indices.append(doc_idx)
                     total_sentences += 1
+            pbar.update(1)
+        pbar.close()
 
         # process all sentences via scibert nlp.pipe
         processed_sentences = []
