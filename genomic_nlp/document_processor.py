@@ -1,3 +1,4 @@
+# sourcery skip: lambdas-should-be-short
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
@@ -224,6 +225,14 @@ class ChunkedDocumentProcessor:
 
         logger.info(f"Pipeline components: {self.nlp.pipe_names}")
 
+    def load_sentencizer_model(self) -> Language:
+        """Load a small model that only includes the sentencizer."""
+        sentencizer_nlp = spacy.load(
+            "en_core_sci_sm", disable=["parser", "ner", "lemmatizer", "tagger"]
+        )
+        sentencizer_nlp.add_pipe("sentencizer")
+        return sentencizer_nlp
+
     def custom_lemmatize(self, token: Token) -> str:
         """Custom token processing. Only lemmatize tokens that are not
         recognized as entities via NER.
@@ -232,114 +241,28 @@ class ChunkedDocumentProcessor:
             token.text if token.ent_type == "ENTITY" else getattr(token, self.word_attr)
         )
 
-    def process_doc(self, doc: Doc) -> List[List[str]]:
-        """Process a document. If we are using the scibert model, then sentences
-        passing the BERT max_length will need to be split."""
-        if self.spacy_model == "en_core_sci_scibert":
-            return self.process_doc_scibert(doc)
-        else:
-            return self.process_doc_standard(doc)
-
-    def process_doc_standard(self, doc: Doc) -> List[List[str]]:
-        """Process a standard document without a core SciSpacy model."""
-        return [
-            [self.custom_lemmatize(token) for token in sentence]
-            for sentence in doc.sents
-        ]
-
-    def process_doc_scibert(self, doc: Doc) -> List[List[str]]:
-        """Process a document using the SciBERT model, handling long sequences appropriately."""
-        processed_sentences: List[List[str]] = []
-        current_chunk: List[str] = []
-        current_length = 0
-
-        for sent in doc.sents:
-            sent_tokens = [self.custom_lemmatize(token) for token in sent]
-            sent_length = len(sent_tokens)
-
-            # split long sentences
-            if sent_length > self.max_length:
-                logger.warning(
-                    f"Sentence length {sent_length} exceeds max_length {self.max_length}. Splitting sentence."
-                )
-                sub_chunks = self._split_into_subchunks(sent_tokens)
-                for sub_chunk in sub_chunks:
-                    processed_sentences.append(sub_chunk)
-                continue
-
-            # accumulate tokens into chunks without exceeding max_length
-            if current_length + sent_length > self.max_length:
-                if current_chunk:
-                    processed_sentences.append(current_chunk)
-                current_chunk = sent_tokens
-                current_length = sent_length
-            else:
-                current_chunk.extend(sent_tokens)
-                current_length += sent_length
-
-            # start new chunk if current_chunk is full
-            if current_length >= self.max_length:
-                processed_sentences.append(current_chunk[: self.max_length])
-                current_chunk = current_chunk[self.max_length :]
-                current_length = len(current_chunk)
-
-        # process remaining tokens
-        if current_chunk:
-            processed_sentences.append(current_chunk)
-
-        return processed_sentences
-
     def _split_into_subchunks(self, tokens: List[str]) -> List[List[str]]:
-        """Split a list of tokens into subchunks each not exceeding max_length."""
-        return [
-            tokens[i : i + self.max_length]
-            for i in range(0, len(tokens), self.max_length)
-        ]
+        """Recursively split a list of tokens into subchunks not exceeding
+        max_length.
+        """
+        subchunks = []
+        for i in range(0, len(tokens), self.max_length):
+            subchunk = tokens[i : i + self.max_length]
+            if len(subchunk) > self.max_length:
+                subchunks.extend(self._split_into_subchunks(subchunk))
+            else:
+                subchunks.append(subchunk)
+        return subchunks
 
-    # def process_chunk(self, chunk: List[str]) -> List[List[str]]:
-    #     """Process a chunk of tokens that fits within max_length."""
-    #     text = " ".join(chunk)
-    #     doc = self.nlp(text)
-    #     num_sentences = len(list(doc.sents))
-    #     logger.debug(f"Processed chunk into {num_sentences} sentences.")
-    #     return [
-    #         [self.custom_lemmatize(token) for token in sentence]
-    #         for sentence in doc.sents
-    #     ]
-
-    def process_token(self, token: str) -> Union[str, None]:
+    def replace_number_symbol_tokens(self, token: str) -> Union[str, None]:
         """Replace numbers with a number based symbol, and symbols with None."""
         if token in self.EXTRAS:
             return None
         return "<nUm>" if is_number(token) else token
 
-    def process_sentence(self, sentence: List[str]) -> List[Optional[str]]:
-        """Process a sentence of tokens."""
-        return [
-            self.process_token(token)
-            for token in sentence
-            if self.process_token(token) is not None
-        ]
-
     def selective_casefold_token(self, token: str) -> str:
         """Selectively casefold tokens, avoding gene symbols."""
         return token if token in self.genes else token.casefold()
-
-    def casefold_sentence(self, sentence: List[str]) -> List[str]:
-        """Casefold a sentence of tokens."""
-        return [self.selective_casefold_token(token) for token in sentence]
-
-    def remove_gene(self, token: str) -> Union[str, None]:
-        """Remove gene symbols from tokens, for future n-gram generation."""
-        return None if token in self.genes else token
-
-    def remove_genes_from_sentence(self, sentence: List[str]) -> List[str]:
-        """Remove gene symbols from a sentence of tokens."""
-        return [
-            token
-            for token in (self.remove_gene(t) for t in sentence)
-            if token is not None
-        ]
 
     def split_on_sentences(self, doc: Doc, max_chars: int = 5000) -> List[Doc]:
         """Split a document into chunks of text based on sentence length."""
@@ -361,70 +284,78 @@ class ChunkedDocumentProcessor:
         return chunks
 
     @time_decorator(print_args=False)
-    def tokenization_and_ner(self) -> None:
-        """Tokenize the abstracts using spaCy."""
-        cleaned_abstracts = self.df["cleaned_abstracts"].tolist()
-        total_docs = len(cleaned_abstracts)
+    def tokenize_and_ner(self) -> None:
+        """Tokenize the abstracts using spaCy with batch processing."""
         processed_docs: List[List[List[str]]] = []
 
-        total_batches = math.ceil(total_docs / self.batch_size)
+        cleaned_abstracts = self.df["cleaned_abstracts"].tolist()
+        sentencizer_nlp = self.load_sentencizer_model()
+
         pbar = tqdm(
-            total=total_batches,
+            total=len(cleaned_abstracts),
             desc="Processing documents",
-            unit="Batch",
+            unit="Doc",
             bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]",
         )
 
-        # split abstracts into sentences with smaller model
-        sentencizer_nlp = spacy.load(
-            "en_core_sci_sm", disable=["parser", "ner", "lemmatizer", "tagger"]
-        )
-        sentencizer_nlp.add_pipe("sentencizer")
-
-        for abstract in cleaned_abstracts:
-            doc = sentencizer_nlp(abstract)
+        for doc in sentencizer_nlp.pipe(cleaned_abstracts, batch_size=self.batch_size):
             sentences = [sent.text.strip() for sent in doc.sents]
-
-            processed_sentences = []
+            processed_sentences: List[List[str]] = []
             for sent in sentences:
                 if not sent:
                     continue
-                # split sentences longer than max_length into smaller chunks
                 tokens = sent.split()
                 if len(tokens) > self.max_length:
                     sub_chunks = self._split_into_subchunks(tokens)
-                    for sub_chunk in sub_chunks:
-                        sub_sent = " ".join(sub_chunk)
-                        sent_doc = self.nlp(sub_sent)
-                        processed_sentences.append(
-                            [self.custom_lemmatize(token) for token in sent_doc]
-                        )
+                    processed_sentences.extend(iter(sub_chunks))
                 else:
-                    sent_doc = self.nlp(sent)
-                    processed_sentences.append(
-                        [self.custom_lemmatize(token) for token in sent_doc]
-                    )
+                    processed_sentences.append(tokens)
 
-            processed_docs.append(processed_sentences)
+            # flatten and use nlp.pipe for batch processing
+            flat_sentences = [" ".join(sent) for sent in processed_sentences]
+            processed_batch = []
+            for doc_processed in self.nlp.pipe(
+                flat_sentences, batch_size=self.batch_size
+            ):
+                processed_sentences_doc = [
+                    self.custom_lemmatize(token) for token in doc_processed
+                ]
+                processed_batch.append(processed_sentences_doc)
+
+            processed_docs.append(processed_batch)
             pbar.update(1)
             pbar.set_postfix({"Processed docs": len(processed_docs)})
-        pbar.close()
 
+        pbar.close()
         self.df["tokenized_abstracts"] = processed_docs
 
     @time_decorator(print_args=False)
-    def exclude_punctuation_tokens_replace_standalone_numbers(self) -> None:
+    def exclude_punctuation_replace_standalone_numbers(self) -> None:
         """Exclude punctuation tokens and replace standalone numbers."""
         tqdm.pandas(desc="Cleaning tokens")
         if self.finetune:
             self.df["processed_abstracts"] = self.df[
                 "tokenized_abstracts"
-            ].progress_apply(lambda x: [self.process_sentence(sent) for sent in x])
+            ].progress_apply(
+                lambda docs: [
+                    [
+                        self.replace_number_symbol_tokens(token)
+                        for token in sent
+                        if self.replace_number_symbol_tokens(token)
+                    ]
+                    for sent in docs
+                ]
+            )
         else:
             self.df["processed_abstracts"] = self.df[
                 "tokenized_abstracts"
             ].progress_apply(
-                lambda x: self.process_sentence([token for sent in x for token in sent])
+                lambda docs: [
+                    self.replace_number_symbol_tokens(token)
+                    for sent in docs
+                    for token in sent
+                    if self.replace_number_symbol_tokens(token)
+                ]
             )
 
     @time_decorator(print_args=False)
@@ -434,26 +365,34 @@ class ChunkedDocumentProcessor:
         if self.finetune:
             self.df["casefolded_abstracts"] = self.df[
                 "processed_abstracts"
-            ].progress_apply(lambda x: [self.casefold_sentence(sent) for sent in x])
+            ].progress_apply(
+                lambda docs: [
+                    [self.selective_casefold_token(token) for token in sent]
+                    for sent in docs
+                ]
+            )
         else:
             self.df["casefolded_abstracts"] = self.df[
                 "processed_abstracts"
-            ].progress_apply(self.casefold_sentence)
+            ].progress_apply(
+                lambda tokens: [
+                    self.selective_casefold_token(token) for token in tokens
+                ]
+            )
 
     @time_decorator(print_args=False)
-    def remove_entities_in_tokenized_corpus(self) -> None:
-        """Remove gene symbols from the tokenized corpus for n-gram
-        generation.
-        """
-        tqdm.pandas(desc="Removing entities")
-        if self.finetune:
+    def remove_genes(self) -> None:
+        """Remove gene symbols from tokens, for future n-gram generation."""
+        tqdm.pandas(desc="Removing genes")
+        if self.word2vec:
             self.df["final_abstracts"] = self.df["casefolded_abstracts"].progress_apply(
-                lambda x: [self.remove_genes_from_sentence(sent) for sent in x]
+                lambda docs: [
+                    [token for token in sent if token not in self.genes]
+                    for sent in docs
+                ]
             )
         else:
-            self.df["final_abstracts"] = self.df["casefolded_abstracts"].progress_apply(
-                self.remove_genes_from_sentence
-            )
+            self.df["final_abstracts"] = self.df["casefolded_abstracts"].copy()
 
     def _save_checkpoints(self, outpref: str) -> None:
         """Save processed abstracts to a pickle file after cleaning and
@@ -470,26 +409,28 @@ class ChunkedDocumentProcessor:
         """Run the nlp pipeline."""
         # spacy pipeline
         self.setup_pipeline(use_gpu=use_gpu)
-        self.tokenization_and_ner()
+
+        # tokenization and NER
+        self.tokenize_and_ner()
+        self._save_checkpoints(f"{self.root_dir}/data/tokens_ner_cleaned_abstracts")
+
+        # eclude punctuation and replace standalone numbers
+        self.exclude_punctuation_replace_standalone_numbers()
         self._save_checkpoints(
-            outpref=f"{self.root_dir}/data/tokens_ner_cleaned_abstracts"
+            f"{self.root_dir}/data/tokens_cleaned_abstracts_remove_punct"
         )
 
-        # additional processing
-        self.exclude_punctuation_tokens_replace_standalone_numbers()
-        self._save_checkpoints(
-            outpref=f"{self.root_dir}/data/tokens_cleaned_abstracts_remove_punct"
-        )
+        # casefolding
         self.selective_casefold()
         self._save_checkpoints(
-            outpref=f"{self.root_dir}/data/tokens_cleaned_abstracts_casefold"
+            f"{self.root_dir}/data/tokens_cleaned_abstracts_casefold"
         )
 
         # additional processing for word2vec
         if self.word2vec:
-            self.remove_entities_in_tokenized_corpus()
+            self.remove_genes()
             self._save_checkpoints(
-                outpref=f"{self.root_dir}/data/tokens_cleaned_abstracts_remove_genes"
+                f"{self.root_dir}/data/tokens_cleaned_abstracts_remove_genes"
             )
 
 
