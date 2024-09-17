@@ -291,42 +291,53 @@ class ChunkedDocumentProcessor:
         cleaned_abstracts = self.df["cleaned_abstracts"].tolist()
         sentencizer_nlp = self.load_sentencizer_model()
 
-        pbar = tqdm(
-            total=len(cleaned_abstracts),
-            desc="Processing documents",
-            unit="Doc",
-            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]",
-        )
+        # collect sentences and document indices
+        sentences = []
+        doc_indices = []
 
-        for doc in sentencizer_nlp.pipe(cleaned_abstracts, batch_size=self.batch_size):
+        total_sentences = 0
+
+        for doc_idx, doc in enumerate(
+            sentencizer_nlp.pipe(cleaned_abstracts, batch_size=self.batch_size)
+        ):
             sentences = [sent.text.strip() for sent in doc.sents]
-            processed_sentences: List[List[str]] = []
             for sent in sentences:
                 if not sent:
                     continue
                 tokens = sent.split()
                 if len(tokens) > self.max_length:
                     sub_chunks = self._split_into_subchunks(tokens)
-                    processed_sentences.extend(iter(sub_chunks))
+                    for subchunk in sub_chunks:
+                        text = " ".join(subchunk)
+                        sentences.append(text)
+                        doc_indices.append(doc_idx)
+                        total_sentences += 1
                 else:
-                    processed_sentences.append(tokens)
+                    sentences.append(sent)
+                    doc_indices.append(doc_idx)
+                    total_sentences += 1
 
-            # flatten and use nlp.pipe for batch processing
-            flat_sentences = [" ".join(sent) for sent in processed_sentences]
-            processed_batch = []
-            for doc_processed in self.nlp.pipe(
-                flat_sentences, batch_size=self.batch_size
-            ):
-                processed_sentences_doc = [
-                    self.custom_lemmatize(token) for token in doc_processed
-                ]
-                processed_batch.append(processed_sentences_doc)
-
-            processed_docs.append(processed_batch)
+        # process all sentences via scibert nlp.pipe
+        processed_sentences = []
+        pbar = tqdm(total=total_sentences, desc="Processing sentences", unit="Sent")
+        for doc_processed in self.nlp.pipe(sentences, batch_size=self.batch_size):
+            processed_sentences_doc = [
+                self.custom_lemmatize(token) for token in doc_processed
+            ]
+            processed_sentences.append(processed_sentences_doc)
             pbar.update(1)
-            pbar.set_postfix({"Processed docs": len(processed_docs)})
-
         pbar.close()
+
+        # reconstruct documents
+        from collections import defaultdict
+
+        docs = defaultdict(list)
+        for idx, tokens in zip(doc_indices, processed_sentences):
+            docs[idx].append(tokens)
+
+        # Convert to list in the order of documents
+        processed_docs = [docs[i] for i in range(len(cleaned_abstracts))]
+
         self.df["tokenized_abstracts"] = processed_docs
 
     @time_decorator(print_args=False)
