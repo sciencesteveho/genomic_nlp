@@ -294,33 +294,31 @@ class ChunkedDocumentProcessor:
         # collect sentences and document indices
         sentences = []
         doc_indices = []
-
         total_sentences = 0
 
-        pbar = tqdm(
-            total=len(cleaned_abstracts), desc="Processing documents", unit="Doc"
-        )
-        for doc_idx, doc in enumerate(
-            sentencizer_nlp.pipe(cleaned_abstracts, batch_size=self.batch_size)
-        ):
-            sentences = [sent.text.strip() for sent in doc.sents]
-            for sent in sentences:
-                if not sent:
-                    continue
-                tokens = sent.split()
-                if len(tokens) > self.max_length:
-                    sub_chunks = self._split_into_subchunks(tokens)
-                    for subchunk in sub_chunks:
-                        text = " ".join(subchunk)
-                        sentences.append(text)
+        with tqdm(
+            total=len(cleaned_abstracts), desc="Collecting sentences", unit="doc"
+        ) as pbar:
+            for doc_idx, doc in enumerate(
+                sentencizer_nlp.pipe(cleaned_abstracts, batch_size=self.batch_size)
+            ):
+                sentences = [sent.text.strip() for sent in doc.sents]
+                for sent in sentences:
+                    if not sent:
+                        continue
+                    tokens = sent.split()
+                    if len(tokens) > self.max_length:
+                        sub_chunks = self._split_into_subchunks(tokens)
+                        for subchunk in sub_chunks:
+                            text = " ".join(subchunk)
+                            sentences.append(text)
+                            doc_indices.append(doc_idx)
+                            total_sentences += 1
+                    else:
+                        sentences.append(sent)
                         doc_indices.append(doc_idx)
                         total_sentences += 1
-                else:
-                    sentences.append(sent)
-                    doc_indices.append(doc_idx)
-                    total_sentences += 1
-                pbar.update(1)
-        pbar.close()
+                    pbar.update(1)
 
         # process all sentences via scibert nlp.pipe
         processed_sentences = []
