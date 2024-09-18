@@ -10,8 +10,7 @@ cleanup."""
 import argparse
 import csv
 import logging
-import math
-from typing import Any, Iterator, List, Optional, Set, Union
+from typing import List, Set, Union
 
 import pandas as pd  # type: ignore
 from progressbar import ProgressBar  # type: ignore
