@@ -16,6 +16,7 @@ from typing import List, Set, Tuple, Union
 import pandas as pd  # type: ignore
 import pybedtools  # type: ignore
 from scispacy.linking import EntityLinker  # type: ignore
+from spacy import Span  # type: ignore
 import spacy  # type: ignore
 from spacy.language import Language  # type: ignore
 from spacy.tokens import Doc  # type: ignore
@@ -80,31 +81,33 @@ class ChunkedDocumentProcessor:
     Attributes:
         root_dir (str): Root directory for the project.
         chunk (int): Chunk identifier for the current set of abstracts.
-        lemmatizer (bool): Whether to apply lemmatization.
-        word2vec (bool): Whether to apply additional word2vec processing steps.
-        finetune (bool): Whether the processing is for fine-tuning.
         genes (Set[str]): Set of gene names to be used in processing.
-        word_attr (str): Word attribute to use ('lemma_' if lemmatizer is True,
-        else 'text').
-        nlp (spacy.language.Language): spaCy language model.
+        batch_size (int): Number of documents to process in each batch.
         df (pd.DataFrame): DataFrame containing the abstracts to process.
         max_length (int): Maximum sequence length for the model.
+        nlp (spacy.language.Language): spaCy language model.
         spacy_model (str): Name of the spaCy model being used.
 
     Methods
     ----------
-    process_doc:
-        Process a single document.
-    process_doc_scibert:
-        Process a document using SciBERT model.
-    process_chunk:
-        Process a chunk of tokens.
-    tokenization_and_ner:
+    tokenize_and_ner:
         Perform tokenization and NER on all abstracts.
     setup_pipeline:
         Set up the spaCy pipeline.
     custom_lemmatize:
         Custom lemmatization for tokens.
+    get_canonical_entity:
+        Normalize entities using canonical names.
+    reconstruct_documents:
+        Reconstruct documents from processed sentences.
+    exclude_punctuation_replace_standalone_numbers:
+        Exclude punctuation and replace standalone numbers.
+    selective_casefold:
+        Selectively casefold tokens.
+    remove_genes:
+        Remove gene symbols from tokens.
+    _save_checkpoints:
+        Save processed abstracts to separate files for Word2Vec and finetune.
     processing_pipeline:
         Run the full processing pipeline.
 
@@ -116,10 +119,11 @@ class ChunkedDocumentProcessor:
     >>> documentProcessor = ChunkedDocumentProcessor(
         root_dir=root_dir,
         abstracts=abstracts,
-        date=date.today(),
+        chunk=1,
+        genes=genes,
     )
 
-    >>> documentProcessor.processing_pipeline(gene_gtf=args.gene_gtf)
+    >>> documentProcessor.processing_pipeline(use_gpu=True)
     """
 
     extras = set(
@@ -168,9 +172,6 @@ class ChunkedDocumentProcessor:
         root_dir: str,
         abstracts: pd.DataFrame,
         chunk: int,
-        lemmatizer: bool,
-        word2vec: bool,
-        finetune: bool,
         genes: Set[str],
         max_length: int = 512,
         batch_size: int = 64,
@@ -178,11 +179,7 @@ class ChunkedDocumentProcessor:
         """Initialize the ChunkedDocumentProcessor object."""
         self.root_dir = root_dir
         self.chunk = chunk
-        self.lemmatizer = lemmatizer
-        self.word2vec = word2vec
-        self.finetune = finetune
         self.genes = genes
-        self.word_attr = "lemma_" if lemmatizer else "text"
         self.batch_size = batch_size
 
         self.df = abstracts[["cleaned_abstracts", "year"]]
@@ -232,8 +229,6 @@ class ChunkedDocumentProcessor:
 
         # disable unnecessary pipeline components
         disable_pipes = ["parser", "tagger"]
-        if not self.lemmatizer:
-            disable_pipes.append("lemmatizer")
         self.nlp.disable_pipes(*disable_pipes)
 
         logger.info(f"Pipeline components: {self.nlp.pipe_names}")
@@ -246,13 +241,14 @@ class ChunkedDocumentProcessor:
         sentencizer_nlp.add_pipe("sentencizer")
         return sentencizer_nlp
 
-    def custom_lemmatize(self, token: Token) -> str:
+    def custom_lemmatize(self, token: Token, lemmatize: bool = True) -> str:
         """Custom token processing. Only lemmatize tokens that are not
         recognized as entities via NER.
         """
-        return (
-            token.text if token.ent_type == "ENTITY" else getattr(token, self.word_attr)
-        )
+        if token.ent_type_ == "ENTITY":
+            return token.text
+        else:
+            return token.lemma_ if lemmatize else token.text
 
     def _split_into_subchunks(self, tokens: List[str]) -> List[List[str]]:
         """Recursively split a list of tokens into subchunks not exceeding
@@ -277,25 +273,6 @@ class ChunkedDocumentProcessor:
         """Selectively casefold tokens, avoding gene symbols."""
         return token if token in self.genes else token.casefold()
 
-    def split_on_sentences(self, doc: Doc, max_chars: int = 5000) -> List[Doc]:
-        """Split a document into chunks of text based on sentence length."""
-        chunks: List[Doc] = []
-        current_chunk: List[str] = []
-        current_length = 0
-        for sent in doc.sents:
-            sent_length = len(sent.text)
-            if current_length + sent_length > max_chars and current_chunk:
-                text = " ".join(current_chunk)
-                chunks.append(self.nlp(text))
-                current_chunk = []
-                current_length = 0
-            current_chunk.extend([token.text for token in sent])
-            current_length += sent_length
-        if current_chunk:
-            text = " ".join(current_chunk)
-            chunks.append(self.nlp(text))
-        return chunks
-
     def collect_sentences(self, doc: Doc) -> Tuple[List[str], List[int], int, int]:
         """Preprocess the abstracts by splitting into sentences. This helps to
         avoid tensor mismatch errors, due to max length limitations of the
@@ -305,8 +282,7 @@ class ChunkedDocumentProcessor:
         sentencizer_nlp = self.load_sentencizer_model()
         total_abstracts = len(cleaned_abstracts)
 
-        sentences = []
-        doc_indices = []
+        sentences, doc_indices = [], []
         total_sentences = 0
 
         with tqdm(
@@ -339,162 +315,210 @@ class ChunkedDocumentProcessor:
     @time_decorator(print_args=False)
     def tokenize_and_ner(self) -> None:
         """Tokenize the abstracts using spaCy with batch processing and standardize entities."""
-        processed_docs: List[List[List[str]]] = []
         sentences, doc_indices, total_sentences, total_abstracts = (
             self.collect_sentences(self.nlp)
         )
 
-        processed_sentences = []
+        processed_sentences_w2v = []
+        processed_sentences_finetune = []
         with tqdm(
             total=total_sentences, desc="Processing sentences", unit="Sent"
         ) as pbar:
             for doc_processed in self.nlp.pipe(sentences, batch_size=self.batch_size):
-                # initialize list for new tokens
-                new_tokens = []
+                new_tokens_w2v, new_tokens_finetune = [], []
                 last_index = 0
                 for ent in doc_processed.ents:
                     start = ent.start
                     end = ent.end
-                    new_tokens.extend(
-                        [token.text for token in doc_processed[last_index:start]]
-                    )
+                    tokens_before = list(doc_processed[last_index:start])
 
-                    # get canonical name
-                    if ent._.kb_ents:
-                        kb_id, score = ent._.kb_ents[0]
-                        if score >= self.nlp.get_pipe("scispacy_linker").threshold:
-                            canonical_name = (
-                                self.nlp.get_pipe("scispacy_linker")
-                                .kb.cui_to_entity[kb_id]
-                                .canonical_name
-                            )
-                            new_tokens.append(canonical_name)
-                        else:
-                            new_tokens.extend([token.text for token in ent])
-                    else:
-                        new_tokens.extend([token.text for token in ent])
+                    # process tokens before the entity
+                    for token in tokens_before:
+                        new_tokens_w2v.append(
+                            self.custom_lemmatize(token, lemmatize=True)
+                        )
+                        new_tokens_finetune.append(
+                            self.custom_lemmatize(token, lemmatize=False)
+                        )
+
+                    # normalize the entity
+                    canonical_entity_w2v = self.get_canonical_entity(
+                        ent=ent, lemmatize=True
+                    )
+                    canonical_entity_finetune = self.get_canonical_entity(
+                        ent=ent, lemmatize=False
+                    )
+                    new_tokens_w2v.append(canonical_entity_w2v)
+                    new_tokens_finetune.append(canonical_entity_finetune)
                     last_index = end
 
-                new_tokens.extend([token.text for token in doc_processed[last_index:]])
-                processed_sentences_doc = [
-                    self.custom_lemmatize(token) for token in new_tokens
-                ]
-                processed_sentences.append(processed_sentences_doc)
+                # add tokens after the last entity
+                tokens_after = list(doc_processed[last_index:])
+                for token in tokens_after:
+                    new_tokens_w2v.append(self.custom_lemmatize(token, lemmatize=True))
+                    new_tokens_finetune.append(
+                        self.custom_lemmatize(token, lemmatize=False)
+                    )
+
+                processed_sentences_w2v.append(new_tokens_w2v)
+                processed_sentences_finetune.append(new_tokens_finetune)
                 pbar.update(1)
 
         # reconstruct documents
-        docs = defaultdict(list)
-        for idx, tokens in zip(doc_indices, processed_sentences):
-            docs[idx].append(tokens)
+        processed_docs_w2v, processed_docs_finetune = self.reconstruct_documents(
+            processed_sentences_w2v,
+            processed_sentences_finetune,
+            doc_indices,
+            total_abstracts,
+        )
 
-        # convert to list in the order of documents
-        processed_docs = [docs[i] for i in range(total_abstracts)]
+        self.df["tokenized_abstracts_w2v"] = processed_docs_w2v
+        self.df["tokenized_abstracts_finetune"] = processed_docs_finetune
 
-        self.df["tokenized_abstracts"] = processed_docs
+    def get_canonical_entity(self, ent: Span, lemmatize: bool) -> str:
+        """Normalize entities in a document using the UMLS term."""
+        if ent._.kb_ents:
+            kb_id, score = ent._.kb_ents[0]
+            if score >= self.nlp.get_pipe("scispacy_linker").threshold:
+                return (
+                    self.nlp.get_pipe("scispacy_linker")
+                    .kb.cui_to_entity[kb_id]
+                    .canonical_name
+                )
+        if not lemmatize:
+            return ent.text
+        lemmatized_tokens = [token.lemma_ for token in ent]
+        return " ".join(lemmatized_tokens)
+
+    def reconstruct_documents(
+        self,
+        processed_sentences_w2v: List[List[str]],
+        processed_sentences_finetune: List[List[str]],
+        doc_indices: List[int],
+        total_abstracts: int,
+    ) -> Tuple[List[List[List[str]]], List[List[List[str]]]]:
+        """Reconstruct documents from processed sentences aligning with the
+        original document indices.
+        """
+        docs_w2v = defaultdict(list)
+        docs_finetune = defaultdict(list)
+        for idx, tokens_w2v, tokens_finetune in zip(
+            doc_indices, processed_sentences_w2v, processed_sentences_finetune
+        ):
+            docs_w2v[idx].append(tokens_w2v)
+            docs_finetune[idx].append(tokens_finetune)
+
+        return [docs_w2v[i] for i in range(total_abstracts)], [
+            docs_finetune[i] for i in range(total_abstracts)
+        ]
 
     @time_decorator(print_args=False)
     def exclude_punctuation_replace_standalone_numbers(self) -> None:
         """Exclude punctuation tokens and replace standalone numbers."""
         tqdm.pandas(desc="Cleaning tokens")
-        if self.finetune:
-            self.df["processed_abstracts"] = self.df[
-                "tokenized_abstracts"
-            ].progress_apply(
-                lambda docs: [
-                    [
-                        self.replace_number_symbol_tokens(token)
-                        for token in sent
-                        if self.replace_number_symbol_tokens(token)
-                    ]
-                    for sent in docs
-                ]
-            )
-        else:
-            self.df["processed_abstracts"] = self.df[
-                "tokenized_abstracts"
-            ].progress_apply(
-                lambda docs: [
-                    self.replace_number_symbol_tokens(token)
-                    for sent in docs
+
+        # process Word2Vec version
+        self.df["processed_abstracts_w2v"] = self.df[
+            "tokenized_abstracts_w2v"
+        ].progress_apply(
+            lambda docs: [
+                [
+                    replacement
                     for token in sent
-                    if self.replace_number_symbol_tokens(token)
+                    if (replacement := self.replace_number_symbol_tokens(token))
+                    is not None
                 ]
-            )
+                for sent in docs
+            ]
+        )
+
+        # process finetune version
+        self.df["processed_abstracts_finetune"] = self.df[
+            "tokenized_abstracts_finetune"
+        ].progress_apply(
+            lambda docs: [
+                replacement
+                for sent in docs
+                for token in sent
+                if (replacement := self.replace_number_symbol_tokens(token)) is not None
+            ]
+        )
 
     @time_decorator(print_args=False)
     def selective_casefold(self) -> None:
         """Selectively casefold the abstracts."""
         tqdm.pandas(desc="Casefolding")
-        if self.finetune:
-            self.df["casefolded_abstracts"] = self.df[
-                "processed_abstracts"
-            ].progress_apply(
-                lambda docs: [
-                    [self.selective_casefold_token(token) for token in sent]
-                    for sent in docs
-                ]
-            )
-        else:
-            self.df["casefolded_abstracts"] = self.df[
-                "processed_abstracts"
-            ].progress_apply(
-                lambda tokens: [
-                    self.selective_casefold_token(token) for token in tokens
-                ]
-            )
+
+        # process Word2Vec version
+        self.df["casefolded_abstracts_w2v"] = self.df[
+            "processed_abstracts_w2v"
+        ].progress_apply(
+            lambda docs: [
+                [self.selective_casefold_token(token) for token in sent]
+                for sent in docs
+            ]
+        )
+
+        # process finetune version
+        self.df["casefolded_abstracts_finetune"] = self.df[
+            "processed_abstracts_finetune"
+        ].progress_apply(
+            lambda tokens: [self.selective_casefold_token(token) for token in tokens]
+        )
 
     @time_decorator(print_args=False)
     def remove_genes(self) -> None:
         """Remove gene symbols from tokens, for future n-gram generation."""
         tqdm.pandas(desc="Removing genes")
-        if self.word2vec:
-            self.df["final_abstracts"] = self.df["casefolded_abstracts"].progress_apply(
-                lambda docs: [
-                    [token for token in sent if token not in self.genes]
-                    for sent in docs
-                ]
-            )
-        else:
-            self.df["final_abstracts"] = self.df["casefolded_abstracts"].copy()
 
-    def _save_checkpoints(self, outpref: str) -> None:
-        """Save processed abstracts to a pickle file after cleaning and
-        lemmatization.
+        # process Word2Vec version
+        self.df["final_abstracts_w2v"] = self.df[
+            "casefolded_abstracts_w2v"
+        ].progress_apply(
+            lambda docs: [
+                [token for token in sent if token not in self.genes] for sent in docs
+            ]
+        )
+
+        # process finetune version - we don't remove genes from this version
+        self.df["final_abstracts_finetune"] = self.df["casefolded_abstracts_finetune"]
+
+    def save_data(self, outpref: str) -> None:
+        """Save final copies of abstracts with cleaned, processed, and year
+        columns.
         """
-        if self.lemmatizer:
-            outpref += "_lemmatized"
-        if self.finetune:
-            outpref += "_finetune"
-        outpref += f"_{self.chunk}.pkl"
-        self.df.to_pickle(outpref)
+        columns_to_save = ["cleaned_abstracts", "year"]
 
+        if "final_abstracts_w2v" in self.df.columns:
+            w2v_outpref = f"{outpref}_w2v_chunk_{self.chunk}.pkl"
+            columns_to_save.append("final_abstracts_w2v")
+            self.df[columns_to_save].to_pickle(w2v_outpref)
+            logger.info(f"Saved Word2Vec processed abstracts to {w2v_outpref}")
+
+        if "final_abstracts_finetune" in self.df.columns:
+            finetune_outpref = f"{outpref}_finetune_chunk_{self.chunk}.pkl"
+            columns_to_save.append("final_abstracts_finetune")
+            self.df[columns_to_save].to_pickle(finetune_outpref)
+            logger.info(f"Saved finetune processed abstracts to {finetune_outpref}")
+
+    @time_decorator(print_args=False)
     def processing_pipeline(self, use_gpu: bool = False) -> None:
-        """Run the nlp pipeline."""
-        # spacy pipeline
+        """Run the NLP pipeline for both Word2Vec and BERT fine-tuning."""
+        # setup spaCy pipeline
         self.setup_pipeline(use_gpu=use_gpu)
 
         # tokenization and NER
         self.tokenize_and_ner()
-        self._save_checkpoints(f"{self.root_dir}/data/tokens_ner_cleaned_abstracts")
 
         # exclude punctuation and replace standalone numbers
         self.exclude_punctuation_replace_standalone_numbers()
-        self._save_checkpoints(
-            f"{self.root_dir}/data/tokens_cleaned_abstracts_remove_punct"
-        )
 
         # casefolding
         self.selective_casefold()
-        self._save_checkpoints(
-            f"{self.root_dir}/data/tokens_cleaned_abstracts_casefold"
-        )
 
-        # additional processing for word2vec
-        if self.word2vec:
-            self.remove_genes()
-            self._save_checkpoints(
-                f"{self.root_dir}/data/tokens_cleaned_abstracts_remove_genes"
-            )
+        # additional processing for Word2Vec and finetune
+        self.remove_genes()
+        self.save_data(f"{self.root_dir}/data/tokens_cleaned_abstracts_remove_genes")
 
 
 def main() -> None:
@@ -522,9 +546,6 @@ def main() -> None:
         type=str,
         default="/ocean/projects/bio210019p/stevesho/genomic_nlp/reference_files/hgnc_complete_set.txt",
     )
-    parser.add_argument("--lemmatizer", action="store_true")
-    parser.add_argument("--prep_word2vec", action="store_true")
-    parser.add_argument("--prep_finetune", action="store_true")
     parser.add_argument("--use_gpu", action="store_true")
     args = parser.parse_args()
 
@@ -548,9 +569,6 @@ def main() -> None:
         root_dir=args.root_dir,
         abstracts=abstracts,
         chunk=args.chunk,
-        lemmatizer=args.lemmatizer,
-        word2vec=args.prep_word2vec,
-        finetune=args.prep_finetune,
         genes=genes,
     )
 
