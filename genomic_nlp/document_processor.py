@@ -321,9 +321,10 @@ class ChunkedDocumentProcessor:
 
         processed_sentences_w2v = []
         processed_sentences_finetune = []
-        total_docs = len(set(doc_indices))
 
-        with tqdm(total=total_docs, desc="Processing sentences", unit="doc") as pbar:
+        with tqdm(
+            total=total_sentences, desc="Processing sentences", unit="doc"
+        ) as pbar:
             for doc_processed in self.nlp.pipe(sentences, batch_size=self.batch_size):
                 new_tokens_w2v, new_tokens_finetune = [], []
                 last_index = 0
