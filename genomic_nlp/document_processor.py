@@ -8,6 +8,7 @@ cleanup."""
 
 
 import argparse
+from collections import defaultdict
 import csv
 import logging
 from typing import List, Set, Union
@@ -121,7 +122,7 @@ class ChunkedDocumentProcessor:
     >>> documentProcessor.processing_pipeline(gene_gtf=args.gene_gtf)
     """
 
-    EXTRAS = set(
+    extras = set(
         [
             ".",
             "\\",
@@ -255,7 +256,7 @@ class ChunkedDocumentProcessor:
 
     def replace_number_symbol_tokens(self, token: str) -> Union[str, None]:
         """Replace numbers with a number based symbol, and symbols with None."""
-        if token in self.EXTRAS:
+        if token in self.extras:
             return None
         return "<nUm>" if is_number(token) else token
 
@@ -301,8 +302,9 @@ class ChunkedDocumentProcessor:
             for doc_idx, doc in enumerate(
                 sentencizer_nlp.pipe(cleaned_abstracts, batch_size=self.batch_size)
             ):
-                sentences = [sent.text.strip() for sent in doc.sents]
-                for sent in sentences:
+                current_sentences = [sent.text.strip() for sent in doc.sents]
+
+                for sent in current_sentences:
                     if not sent:
                         continue
                     tokens = sent.split()
@@ -317,27 +319,26 @@ class ChunkedDocumentProcessor:
                         sentences.append(sent)
                         doc_indices.append(doc_idx)
                         total_sentences += 1
-                    pbar.update(1)
+                pbar.update(1)
 
         # process all sentences via scibert nlp.pipe
         processed_sentences = []
-        pbar = tqdm(total=total_sentences, desc="Processing sentences", unit="Sent")
-        for doc_processed in self.nlp.pipe(sentences, batch_size=self.batch_size):
-            processed_sentences_doc = [
-                self.custom_lemmatize(token) for token in doc_processed
-            ]
-            processed_sentences.append(processed_sentences_doc)
-            pbar.update(1)
-        pbar.close()
+        with tqdm(
+            total=total_sentences, desc="Processing sentences", unit="Sent"
+        ) as pbar:
+            for doc_processed in self.nlp.pipe(sentences, batch_size=self.batch_size):
+                processed_sentences_doc = [
+                    self.custom_lemmatize(token) for token in doc_processed
+                ]
+                processed_sentences.append(processed_sentences_doc)
+                pbar.update(1)
 
         # reconstruct documents
-        from collections import defaultdict
-
         docs = defaultdict(list)
         for idx, tokens in zip(doc_indices, processed_sentences):
             docs[idx].append(tokens)
 
-        # Convert to list in the order of documents
+        # convert to list in the order of documents
         processed_docs = [docs[i] for i in range(len(cleaned_abstracts))]
 
         self.df["tokenized_abstracts"] = processed_docs
