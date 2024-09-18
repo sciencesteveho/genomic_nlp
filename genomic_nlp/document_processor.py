@@ -11,11 +11,11 @@ import argparse
 from collections import defaultdict
 import csv
 import logging
-from typing import List, Set, Union
+from typing import List, Set, Tuple, Union
 
 import pandas as pd  # type: ignore
-from progressbar import ProgressBar  # type: ignore
 import pybedtools  # type: ignore
+from scispacy.linking import EntityLinker  # type: ignore
 import spacy  # type: ignore
 from spacy.language import Language  # type: ignore
 from spacy.tokens import Doc  # type: ignore
@@ -214,8 +214,21 @@ class ChunkedDocumentProcessor:
 
         self.nlp = spacy.load(self.spacy_model)
 
+        # add sentencizer if not present
         if "sentencizer" not in self.nlp.pipe_names:
             self.nlp.add_pipe("sentencizer", first=True)
+
+        # add entity linker if not present
+        self.nlp.add_pipe(
+            "scispacy_linker",
+            config={
+                "resolve_abbreviations": True,
+                "linker_name": "umls",
+                "threshold": 0.8,
+                "max_entities_per_mention": 1,
+            },
+            last=True,
+        )
 
         # disable unnecessary pipeline components
         disable_pipes = ["parser", "tagger"]
@@ -283,21 +296,21 @@ class ChunkedDocumentProcessor:
             chunks.append(self.nlp(text))
         return chunks
 
-    @time_decorator(print_args=False)
-    def tokenize_and_ner(self) -> None:
-        """Tokenize the abstracts using spaCy with batch processing."""
-        processed_docs: List[List[List[str]]] = []
-
+    def collect_sentences(self, doc: Doc) -> Tuple[List[str], List[int], int, int]:
+        """Preprocess the abstracts by splitting into sentences. This helps to
+        avoid tensor mismatch errors, due to max length limitations of the
+        scibert model.
+        """
         cleaned_abstracts = self.df["cleaned_abstracts"].tolist()
         sentencizer_nlp = self.load_sentencizer_model()
+        total_abstracts = len(cleaned_abstracts)
 
-        # collect sentences and document indices
         sentences = []
         doc_indices = []
         total_sentences = 0
 
         with tqdm(
-            total=len(cleaned_abstracts), desc="Collecting sentences", unit="doc"
+            total=total_abstracts, desc="Collecting sentences", unit="doc"
         ) as pbar:
             for doc_idx, doc in enumerate(
                 sentencizer_nlp.pipe(cleaned_abstracts, batch_size=self.batch_size)
@@ -321,14 +334,50 @@ class ChunkedDocumentProcessor:
                         total_sentences += 1
                 pbar.update(1)
 
-        # process all sentences via scibert nlp.pipe
+        return sentences, doc_indices, total_sentences, total_abstracts
+
+    @time_decorator(print_args=False)
+    def tokenize_and_ner(self) -> None:
+        """Tokenize the abstracts using spaCy with batch processing and standardize entities."""
+        processed_docs: List[List[List[str]]] = []
+        sentences, doc_indices, total_sentences, total_abstracts = (
+            self.collect_sentences(self.nlp)
+        )
+
         processed_sentences = []
         with tqdm(
             total=total_sentences, desc="Processing sentences", unit="Sent"
         ) as pbar:
             for doc_processed in self.nlp.pipe(sentences, batch_size=self.batch_size):
+                # initialize list for new tokens
+                new_tokens = []
+                last_index = 0
+                for ent in doc_processed.ents:
+                    start = ent.start
+                    end = ent.end
+                    new_tokens.extend(
+                        [token.text for token in doc_processed[last_index:start]]
+                    )
+
+                    # get canonical name
+                    if ent._.kb_ents:
+                        kb_id, score = ent._.kb_ents[0]
+                        if score >= self.nlp.get_pipe("scispacy_linker").threshold:
+                            canonical_name = (
+                                self.nlp.get_pipe("scispacy_linker")
+                                .kb.cui_to_entity[kb_id]
+                                .canonical_name
+                            )
+                            new_tokens.append(canonical_name)
+                        else:
+                            new_tokens.extend([token.text for token in ent])
+                    else:
+                        new_tokens.extend([token.text for token in ent])
+                    last_index = end
+
+                new_tokens.extend([token.text for token in doc_processed[last_index:]])
                 processed_sentences_doc = [
-                    self.custom_lemmatize(token) for token in doc_processed
+                    self.custom_lemmatize(token) for token in new_tokens
                 ]
                 processed_sentences.append(processed_sentences_doc)
                 pbar.update(1)
@@ -339,7 +388,7 @@ class ChunkedDocumentProcessor:
             docs[idx].append(tokens)
 
         # convert to list in the order of documents
-        processed_docs = [docs[i] for i in range(len(cleaned_abstracts))]
+        processed_docs = [docs[i] for i in range(total_abstracts)]
 
         self.df["tokenized_abstracts"] = processed_docs
 
@@ -428,7 +477,7 @@ class ChunkedDocumentProcessor:
         self.tokenize_and_ner()
         self._save_checkpoints(f"{self.root_dir}/data/tokens_ner_cleaned_abstracts")
 
-        # eclude punctuation and replace standalone numbers
+        # exclude punctuation and replace standalone numbers
         self.exclude_punctuation_replace_standalone_numbers()
         self._save_checkpoints(
             f"{self.root_dir}/data/tokens_cleaned_abstracts_remove_punct"
