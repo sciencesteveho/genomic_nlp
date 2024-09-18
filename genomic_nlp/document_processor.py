@@ -16,10 +16,10 @@ from typing import List, Set, Tuple, Union
 import pandas as pd  # type: ignore
 import pybedtools  # type: ignore
 from scispacy.linking import EntityLinker  # type: ignore
-from spacy import Span  # type: ignore
 import spacy  # type: ignore
 from spacy.language import Language  # type: ignore
 from spacy.tokens import Doc  # type: ignore
+from spacy.tokens import Span  # type: ignore
 from spacy.tokens import Token  # type: ignore
 from tqdm import tqdm  # type: ignore
 
