@@ -174,7 +174,7 @@ class ChunkedDocumentProcessor:
         chunk: int,
         genes: Set[str],
         max_length: int = 512,
-        batch_size: int = 768,
+        batch_size: int = 512,
     ):
         """Initialize the ChunkedDocumentProcessor object."""
         self.root_dir = root_dir
@@ -321,8 +321,9 @@ class ChunkedDocumentProcessor:
 
         processed_sentences_w2v = []
         processed_sentences_finetune = []
+
         with tqdm(
-            total=total_sentences, desc="Processing sentences", unit="Sent"
+            total=total_sentences, desc="Processing sentences", unit="doc"
         ) as pbar:
             for doc_processed in self.nlp.pipe(sentences, batch_size=self.batch_size):
                 new_tokens_w2v, new_tokens_finetune = [], []
@@ -505,18 +506,23 @@ class ChunkedDocumentProcessor:
     def processing_pipeline(self, use_gpu: bool = False) -> None:
         """Run the NLP pipeline for both Word2Vec and BERT fine-tuning."""
         # setup spaCy pipeline
+        logger.info("Setting up spaCy pipeline")
         self.setup_pipeline(use_gpu=use_gpu)
 
         # tokenization and NER
+        logger.info("Tokenizing and NER")
         self.tokenize_and_ner()
 
         # exclude punctuation and replace standalone numbers
+        logger.info("Excluding punctuation and replacing standalone numbers")
         self.exclude_punctuation_replace_standalone_numbers()
 
         # casefolding
+        logger.info("Casefolding")
         self.selective_casefold()
 
         # additional processing for Word2Vec and finetune
+        logger.info("Removing genes")
         self.remove_genes()
         self.save_data(f"{self.root_dir}/data/tokens_cleaned_abstracts_remove_genes")
 
