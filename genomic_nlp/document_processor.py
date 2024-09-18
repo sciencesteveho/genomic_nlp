@@ -319,7 +319,7 @@ class ChunkedDocumentProcessor:
                     sentences.append(sent)
                     doc_indices.append(doc_idx)
                     total_sentences += 1
-            pbar.update(1)
+                pbar.update(1)
         pbar.close()
 
         # process all sentences via scibert nlp.pipe
