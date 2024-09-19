@@ -29,7 +29,14 @@ from utils import dir_check_make
 from utils import is_number
 from utils import time_decorator
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler("document_processor_debug.log"),
+        logging.StreamHandler(),
+    ],
+)
 logger = logging.getLogger(__name__)
 
 
@@ -279,30 +286,42 @@ class ChunkedDocumentProcessor:
         current_chunk: List[str] = []
 
         for token in tokens:
+            token_tokenized_ids = tokenizer.encode(token, add_special_tokens=False)
+            token_length = len(token_tokenized_ids)
+            if token_length > max_length:
+                logger.warning(
+                    f"Token '{token}' is longer than max_length ({token_length} > {max_length}) after encoding and will be skipped."
+                )
+                continue
+
             temp_chunk = current_chunk + [token]
             chunk_text = " ".join(temp_chunk)
             tokenized_ids = tokenizer.encode(chunk_text, add_special_tokens=True)
             subword_length = len(tokenized_ids)
 
+            logger.debug(
+                f"Attempting to add token '{token}'. Current chunk length: {subword_length} tokens."
+            )
+
             if subword_length <= max_length:
                 current_chunk.append(token)
+                logger.debug(f"Added token '{token}' to current chunk.")
             else:
                 if current_chunk:
                     subchunks.append(current_chunk)
-
-                # check token lengths
-                token_tokenized_ids = tokenizer.encode(token, add_special_tokens=True)
-                token_length = len(token_tokenized_ids)
-                if token_length <= max_length:
-                    current_chunk = [token]
-                else:
-                    # skip instances where the token is longer than max_length
-                    logger.warning(
-                        f"Token '{token}' is longer than max_length after encoding."
+                    logger.debug(
+                        f"Subchunk created with {len(current_chunk)} tokens: '{' '.join(current_chunk)}'"
                     )
-                    current_chunk = []
+                current_chunk = [token]
+                logger.debug(
+                    f"Starting new chunk with token '{token}'. Current chunk length: {len(tokenizer.encode(' '.join(current_chunk), add_special_tokens=True))} tokens."
+                )
+
         if current_chunk:
             subchunks.append(current_chunk)
+            logger.debug(
+                f"Final subchunk added with {len(current_chunk)} tokens: '{' '.join(current_chunk)}'"
+            )
         return subchunks
 
     def collect_sentences(self) -> Tuple[List[str], List[int], int, int]:
@@ -331,6 +350,9 @@ class ChunkedDocumentProcessor:
                         continue
                     tokenized_ids = tokenizer.encode(sent, add_special_tokens=True)
                     subword_length = len(tokenized_ids)
+                    logger.debug(
+                        f"Sentence index {doc_idx}, sentence: '{sent}' | Tokenized length: {subword_length}"
+                    )
                     if subword_length > self.max_length:
                         tokens = sent.split()
                         sub_chunks = self._split_into_subchunks(
@@ -338,15 +360,33 @@ class ChunkedDocumentProcessor:
                             tokenizer=tokenizer,
                             max_length=self.max_length,
                         )
+                        logger.debug(
+                            f"Sentence '{sent}' exceeded max_length. Split into {len(sub_chunks)} subchunks."
+                        )
                         for subchunk in sub_chunks:
                             text = " ".join(subchunk)
+                            tokenized_subchunk_ids = tokenizer.encode(
+                                text, add_special_tokens=True
+                            )
+                            subchunk_length = len(tokenized_subchunk_ids)
+                            if subchunk_length > self.max_length:
+                                logger.error(
+                                    f"Subchunk exceeds max_length: {subchunk_length} tokens. Subchunk: '{text}'"
+                                )
+                                continue  # Skip this subchunk
                             sentences.append(text)
                             doc_indices.append(doc_idx)
                             total_sentences += 1
+                            logger.debug(
+                                f"Subchunk added: '{text}' | Length: {subchunk_length} tokens."
+                            )
                     else:
                         sentences.append(sent)
                         doc_indices.append(doc_idx)
                         total_sentences += 1
+                        logger.debug(
+                            f"Sentence added: '{sent}' | Length: {subword_length} tokens."
+                        )
                 pbar.update(1)
 
         return sentences, doc_indices, total_sentences, total_abstracts
