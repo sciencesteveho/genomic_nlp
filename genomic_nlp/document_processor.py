@@ -355,7 +355,7 @@ class ChunkedDocumentProcessor:
     def tokenize_and_ner(self) -> None:
         """Tokenize the abstracts using spaCy with batch processing and standardize entities."""
         sentences, doc_indices, total_sentences, total_abstracts = (
-            self.collect_sentences(self.nlp)
+            self.collect_sentences()
         )
 
         processed_sentences_w2v = []
