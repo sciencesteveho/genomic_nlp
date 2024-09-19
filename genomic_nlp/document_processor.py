@@ -242,6 +242,13 @@ class ChunkedDocumentProcessor:
         sentencizer_nlp.add_pipe("sentencizer")
         return sentencizer_nlp
 
+    def load_tokenizer(self) -> Tokenizer:
+        """Configure the transformer tokenizer to handle the sentences that go
+        past max_length via truncating.
+        """
+        transformer_pipe = self.nlp.get_pipe("transformer")
+        return transformer_pipe.model.tokenizer
+
     def custom_lemmatize(self, token: Token, lemmatize: bool = True) -> str:
         """Custom token processing. Only lemmatize tokens that are not
         recognized as entities via NER.
@@ -250,32 +257,6 @@ class ChunkedDocumentProcessor:
             return token.text
         else:
             return token.lemma_ if lemmatize else token.text
-
-    def _split_into_subchunks(
-        self, tokens: List[str], tokenizer: Tokenizer, max_length: int = 512
-    ) -> List[List[str]]:
-        """Split a list of tokens into subchunks not exceeding max_length after
-        subword tokenization.  Sentences are split after tokenization, to get a
-        proper length count and avoid data loss.
-        """
-        subchunks: List[List[str]] = []
-        current_chunk: List[str] = []
-        current_length = 0
-
-        for token in tokens:
-            subword_tokens = tokenizer.tokenize(token)
-            token_length = len(subword_tokens)
-            if current_length + token_length > max_length and current_chunk:
-                subchunks.append(current_chunk)
-                current_chunk = []
-                current_length = 0
-            current_chunk.append(token)
-            current_length += token_length
-
-        if current_chunk:
-            subchunks.append(current_chunk)
-
-        return subchunks
 
     def replace_number_symbol_tokens(self, token: str) -> Union[str, None]:
         """Replace numbers with a number based symbol, and symbols with None."""
@@ -287,14 +268,44 @@ class ChunkedDocumentProcessor:
         """Selectively casefold tokens, avoding gene symbols."""
         return token if token in self.genes else token.casefold()
 
-    def load_tokenizer(self) -> Tokenizer:
-        """Configure the transformer tokenizer to handle the sentences that go
-        past max_length via truncating.
+    def _split_into_subchunks(
+        self, tokens: List[str], tokenizer: Tokenizer, max_length: int = 512
+    ) -> List[List[str]]:
+        """Split a list of tokens into subchunks not exceeding max_length after
+        subword tokenization.  Sentences are split after tokenization, to get a
+        proper length count and avoid data loss.
         """
-        transformer_pipe = self.nlp.get_pipe("transformer")
-        return transformer_pipe.model.tokenizer
+        subchunks: List[List[str]] = []
+        current_chunk: List[str] = []
 
-    def collect_sentences(self, doc: Doc) -> Tuple[List[str], List[int], int, int]:
+        for token in tokens:
+            temp_chunk = current_chunk + [token]
+            chunk_text = " ".join(temp_chunk)
+            tokenized_ids = tokenizer.encode(chunk_text, add_special_tokens=True)
+            subword_length = len(tokenized_ids)
+
+            if subword_length <= max_length:
+                current_chunk.append(token)
+            else:
+                if current_chunk:
+                    subchunks.append(current_chunk)
+
+                # check token lengths
+                token_tokenized_ids = tokenizer.encode(token, add_special_tokens=True)
+                token_length = len(token_tokenized_ids)
+                if token_length <= max_length:
+                    current_chunk = [token]
+                else:
+                    # skip instances where the token is longer than max_length
+                    logger.warning(
+                        f"Token '{token}' is longer than max_length after encoding."
+                    )
+                    current_chunk = []
+        if current_chunk:
+            subchunks.append(current_chunk)
+        return subchunks
+
+    def collect_sentences(self) -> Tuple[List[str], List[int], int, int]:
         """Preprocess the abstracts by splitting into sentences. This helps to
         avoid tensor mismatch errors, due to max length limitations of the
         scibert model.
@@ -318,9 +329,10 @@ class ChunkedDocumentProcessor:
                 for sent in current_sentences:
                     if not sent:
                         continue
-                    tokens = sent.split()
-                    subword_length = sum(len(tokenizer.tokenize(t)) for t in tokens)
+                    tokenized_ids = tokenizer.encode(sent, add_special_tokens=True)
+                    subword_length = len(tokenized_ids)
                     if subword_length > self.max_length:
+                        tokens = sent.split()
                         sub_chunks = self._split_into_subchunks(
                             tokens=tokens,
                             tokenizer=tokenizer,
@@ -343,7 +355,7 @@ class ChunkedDocumentProcessor:
     def tokenize_and_ner(self) -> None:
         """Tokenize the abstracts using spaCy with batch processing and standardize entities."""
         sentences, doc_indices, total_sentences, total_abstracts = (
-            self.collect_sentences(self.nlp)
+            self.collect_sentences()
         )
 
         processed_sentences_w2v = []
