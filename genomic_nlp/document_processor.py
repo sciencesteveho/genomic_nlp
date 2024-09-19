@@ -242,6 +242,13 @@ class ChunkedDocumentProcessor:
         sentencizer_nlp.add_pipe("sentencizer")
         return sentencizer_nlp
 
+    def load_tokenizer(self) -> Tokenizer:
+        """Configure the transformer tokenizer to handle the sentences that go
+        past max_length via truncating.
+        """
+        transformer_pipe = self.nlp.get_pipe("transformer")
+        return transformer_pipe.model.tokenizer
+
     def custom_lemmatize(self, token: Token, lemmatize: bool = True) -> str:
         """Custom token processing. Only lemmatize tokens that are not
         recognized as entities via NER.
@@ -250,32 +257,6 @@ class ChunkedDocumentProcessor:
             return token.text
         else:
             return token.lemma_ if lemmatize else token.text
-
-    def _split_into_subchunks(
-        self, tokens: List[str], tokenizer: Tokenizer, max_length: int = 512
-    ) -> List[List[str]]:
-        """Split a list of tokens into subchunks not exceeding max_length after
-        subword tokenization.  Sentences are split after tokenization, to get a
-        proper length count and avoid data loss.
-        """
-        subchunks: List[List[str]] = []
-        current_chunk: List[str] = []
-        current_length = 0
-
-        for token in tokens:
-            subword_tokens = tokenizer.tokenize(token)
-            token_length = len(subword_tokens)
-            if current_length + token_length > max_length and current_chunk:
-                subchunks.append(current_chunk)
-                current_chunk = []
-                current_length = 0
-            current_chunk.append(token)
-            current_length += token_length
-
-        if current_chunk:
-            subchunks.append(current_chunk)
-
-        return subchunks
 
     def replace_number_symbol_tokens(self, token: str) -> Union[str, None]:
         """Replace numbers with a number based symbol, and symbols with None."""
@@ -287,12 +268,32 @@ class ChunkedDocumentProcessor:
         """Selectively casefold tokens, avoding gene symbols."""
         return token if token in self.genes else token.casefold()
 
-    def load_tokenizer(self) -> Tokenizer:
-        """Configure the transformer tokenizer to handle the sentences that go
-        past max_length via truncating.
+    def _split_into_subchunks(
+        self, tokens: List[str], tokenizer: Tokenizer, max_length: int = 512
+    ) -> List[List[str]]:
+        """Split a list of tokens into subchunks not exceeding max_length after
+        subword tokenization.  Sentences are split after tokenization, to get a
+        proper length count and avoid data loss.
         """
-        transformer_pipe = self.nlp.get_pipe("transformer")
-        return transformer_pipe.model.tokenizer
+        subchunks: List[List[str]] = []
+        current_chunk: List[str] = []
+
+        for token in tokens:
+            current_chunk.append(token)
+            chunk_text = " ".join(current_chunk)
+            subword_length = len(tokenizer.tokenize(chunk_text))
+            if subword_length > max_length:
+                current_chunk.pop()  # remove last token
+
+                # add the current chunk to subchunks if it's not empty
+                if current_chunk:
+                    subchunks.append(current_chunk)
+
+                # start a new chunk with the last token
+                current_chunk = [token]
+        if current_chunk:
+            subchunks.append(current_chunk)  # add remaining tokens
+        return subchunks
 
     def collect_sentences(self, doc: Doc) -> Tuple[List[str], List[int], int, int]:
         """Preprocess the abstracts by splitting into sentences. This helps to
@@ -318,9 +319,9 @@ class ChunkedDocumentProcessor:
                 for sent in current_sentences:
                     if not sent:
                         continue
-                    tokens = sent.split()
-                    subword_length = sum(len(tokenizer.tokenize(t)) for t in tokens)
+                    subword_length = len(tokenizer.tokenize(sent))
                     if subword_length > self.max_length:
+                        tokens = sent.split()
                         sub_chunks = self._split_into_subchunks(
                             tokens=tokens,
                             tokenizer=tokenizer,
