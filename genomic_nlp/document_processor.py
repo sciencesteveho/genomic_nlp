@@ -279,23 +279,33 @@ class ChunkedDocumentProcessor:
         current_chunk: List[str] = []
 
         for token in tokens:
-            current_chunk.append(token)
-            chunk_text = " ".join(current_chunk)
-            subword_length = len(tokenizer.tokenize(chunk_text))
-            if subword_length > max_length:
-                current_chunk.pop()  # remove last token
+            temp_chunk = current_chunk + [token]
+            chunk_text = " ".join(temp_chunk)
+            tokenized_ids = tokenizer.encode(chunk_text, add_special_tokens=True)
+            subword_length = len(tokenized_ids)
 
-                # add the current chunk to subchunks if it's not empty
+            if subword_length <= max_length:
+                current_chunk.append(token)
+            else:
                 if current_chunk:
                     subchunks.append(current_chunk)
 
-                # start a new chunk with the last token
-                current_chunk = [token]
+                # check token lengths
+                token_tokenized_ids = tokenizer.encode(token, add_special_tokens=True)
+                token_length = len(token_tokenized_ids)
+                if token_length <= max_length:
+                    current_chunk = [token]
+                else:
+                    # skip instances where the token is longer than max_length
+                    logger.warning(
+                        f"Token '{token}' is longer than max_length after encoding."
+                    )
+                    current_chunk = []
         if current_chunk:
-            subchunks.append(current_chunk)  # add remaining tokens
+            subchunks.append(current_chunk)
         return subchunks
 
-    def collect_sentences(self, doc: Doc) -> Tuple[List[str], List[int], int, int]:
+    def collect_sentences(self) -> Tuple[List[str], List[int], int, int]:
         """Preprocess the abstracts by splitting into sentences. This helps to
         avoid tensor mismatch errors, due to max length limitations of the
         scibert model.
@@ -319,7 +329,8 @@ class ChunkedDocumentProcessor:
                 for sent in current_sentences:
                     if not sent:
                         continue
-                    subword_length = len(tokenizer.tokenize(sent))
+                    tokenized_ids = tokenizer.encode(sent, add_special_tokens=True)
+                    subword_length = len(tokenized_ids)
                     if subword_length > self.max_length:
                         tokens = sent.split()
                         sub_chunks = self._split_into_subchunks(
