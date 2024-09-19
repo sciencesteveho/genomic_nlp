@@ -381,11 +381,12 @@ class ChunkedDocumentProcessor:
         if ent._.kb_ents:
             kb_id, score = ent._.kb_ents[0]
             if score >= self.nlp.get_pipe("scispacy_linker").threshold:
-                return (
+                canonical_name = (
                     self.nlp.get_pipe("scispacy_linker")
                     .kb.cui_to_entity[kb_id]
                     .canonical_name
                 )
+                return self._remove_gene_from_token(canonical_name)
         if not lemmatize:
             return ent.text
         lemmatized_tokens = [token.lemma_ for token in ent]
@@ -451,7 +452,7 @@ class ChunkedDocumentProcessor:
         tqdm.pandas(desc="Casefolding")
 
         # process Word2Vec version
-        self.df["casefolded_abstracts_w2v"] = self.df[
+        self.df["final_abstracts_w2v"] = self.df[
             "processed_abstracts_w2v"
         ].progress_apply(
             lambda docs: [
@@ -461,7 +462,7 @@ class ChunkedDocumentProcessor:
         )
 
         # process finetune version
-        self.df["casefolded_abstracts_finetune"] = self.df[
+        self.df["finale_abstracts_finetune"] = self.df[
             "processed_abstracts_finetune"
         ].progress_apply(
             lambda tokens: [self.selective_casefold_token(token) for token in tokens]
@@ -469,20 +470,19 @@ class ChunkedDocumentProcessor:
 
     @time_decorator(print_args=False)
     def remove_genes(self) -> None:
-        """Remove gene symbols from tokens, for future n-gram generation."""
+        """Remove gene symbols from tokens, for future n-gram generation. Only
+        done for Word2Vec.
+        """
         tqdm.pandas(desc="Removing genes")
 
         # process Word2Vec version
-        self.df["final_abstracts_w2v"] = self.df[
-            "casefolded_abstracts_w2v"
+        self.df["final_abstracts_w2v_nogenes"] = self.df[
+            "final_abstracts_w2v"
         ].progress_apply(
             lambda docs: [
                 [token for token in sent if token not in self.genes] for sent in docs
             ]
         )
-
-        # process finetune version - we don't remove genes from this version
-        self.df["final_abstracts_finetune"] = self.df["casefolded_abstracts_finetune"]
 
     def save_data(self, outpref: str) -> None:
         """Save final copies of abstracts with cleaned, processed, and year
@@ -490,17 +490,21 @@ class ChunkedDocumentProcessor:
         """
         columns_to_save = ["cleaned_abstracts", "year"]
 
-        if "final_abstracts_w2v" in self.df.columns:
-            w2v_outpref = f"{outpref}_w2v_chunk_{self.chunk}.pkl"
-            columns_to_save.append("final_abstracts_w2v")
-            self.df[columns_to_save].to_pickle(w2v_outpref)
-            logger.info(f"Saved Word2Vec processed abstracts to {w2v_outpref}")
-
         if "final_abstracts_finetune" in self.df.columns:
             finetune_outpref = f"{outpref}_finetune_chunk_{self.chunk}.pkl"
             columns_to_save.append("final_abstracts_finetune")
             self.df[columns_to_save].to_pickle(finetune_outpref)
-            logger.info(f"Saved finetune processed abstracts to {finetune_outpref}")
+            columns_to_save.remove(
+                "final_abstracts_finetune"
+            )  # remove finetune for next save
+
+        if "final_abstracts_w2v" in self.df.columns:
+            w2v_outpref = f"{outpref}_w2v_chunk_{self.chunk}.pkl"
+            columns_to_save.extend(
+                ("final_abstracts_w2v", "final_abstracts_w2v_nogenes")
+            )
+            self.df[columns_to_save].to_pickle(w2v_outpref)
+            logger.info(f"Saved processed abstracts for chunk {self.chunk}")
 
     @time_decorator(print_args=False)
     def processing_pipeline(self, use_gpu: bool = False) -> None:
@@ -524,7 +528,12 @@ class ChunkedDocumentProcessor:
         # additional processing for Word2Vec and finetune
         logger.info("Removing genes")
         self.remove_genes()
-        self.save_data(f"{self.root_dir}/data/tokens_cleaned_abstracts_remove_genes")
+        self.save_data(f"{self.root_dir}/data/processed_abstracts")
+
+    @staticmethod
+    def _remove_gene_from_token(token: str) -> str:
+        """Remove 'gene' which is added to all ULMS genes."""
+        return token.rsplit(" ", 1)[0] if token.endswith(" gene") else token
 
 
 def main() -> None:
