@@ -18,6 +18,7 @@ import pybedtools  # type: ignore
 from scispacy.linking import EntityLinker  # type: ignore
 import spacy  # type: ignore
 from spacy.language import Language  # type: ignore
+from spacy.tokenizer import Tokenizer  # type: ignore
 from spacy.tokens import Doc  # type: ignore
 from spacy.tokens import Span  # type: ignore
 from spacy.tokens import Token  # type: ignore
@@ -236,7 +237,7 @@ class ChunkedDocumentProcessor:
     def load_sentencizer_model(self) -> Language:
         """Load a small model that only includes the sentencizer."""
         sentencizer_nlp = spacy.load(
-            "en_core_sci_sm", disable=["parser", "ner", "lemmatizer", "tagger"]
+            "en_core_sci_scibert", disable=["parser", "ner", "lemmatizer", "tagger"]
         )
         sentencizer_nlp.add_pipe("sentencizer")
         return sentencizer_nlp
@@ -250,17 +251,30 @@ class ChunkedDocumentProcessor:
         else:
             return token.lemma_ if lemmatize else token.text
 
-    def _split_into_subchunks(self, tokens: List[str]) -> List[List[str]]:
-        """Recursively split a list of tokens into subchunks not exceeding
-        max_length.
+    def _split_into_subchunks(
+        self, tokens: List[str], tokenizer: Tokenizer, max_length: int = 512
+    ) -> List[List[str]]:
+        """Split a list of tokens into subchunks not exceeding max_length after
+        subword tokenization.  Sentences are split after tokenization, to get a
+        proper length count and avoid data loss.
         """
-        subchunks = []
-        for i in range(0, len(tokens), self.max_length):
-            subchunk = tokens[i : i + self.max_length]
-            if len(subchunk) > self.max_length:
-                subchunks.extend(self._split_into_subchunks(subchunk))
-            else:
-                subchunks.append(subchunk)
+        subchunks: List[List[str]] = []
+        current_chunk: List[str] = []
+        current_length = 0
+
+        for token in tokens:
+            subword_tokens = tokenizer.tokenize(token)
+            token_length = len(subword_tokens)
+            if current_length + token_length > max_length and current_chunk:
+                subchunks.append(current_chunk)
+                current_chunk = []
+                current_length = 0
+            current_chunk.append(token)
+            current_length += token_length
+
+        if current_chunk:
+            subchunks.append(current_chunk)
+
         return subchunks
 
     def replace_number_symbol_tokens(self, token: str) -> Union[str, None]:
@@ -273,11 +287,19 @@ class ChunkedDocumentProcessor:
         """Selectively casefold tokens, avoding gene symbols."""
         return token if token in self.genes else token.casefold()
 
+    def load_tokenizer(self) -> Tokenizer:
+        """Configure the transformer tokenizer to handle the sentences that go
+        past max_length via truncating.
+        """
+        transformer_pipe = self.nlp.get_pipe("transformer")
+        return transformer_pipe.model.tokenizer
+
     def collect_sentences(self, doc: Doc) -> Tuple[List[str], List[int], int, int]:
         """Preprocess the abstracts by splitting into sentences. This helps to
         avoid tensor mismatch errors, due to max length limitations of the
         scibert model.
         """
+        tokenizer = self.load_tokenizer()
         cleaned_abstracts = self.df["cleaned_abstracts"].tolist()
         sentencizer_nlp = self.load_sentencizer_model()
         total_abstracts = len(cleaned_abstracts)
@@ -297,8 +319,13 @@ class ChunkedDocumentProcessor:
                     if not sent:
                         continue
                     tokens = sent.split()
-                    if len(tokens) > self.max_length:
-                        sub_chunks = self._split_into_subchunks(tokens)
+                    subword_length = sum(len(tokenizer.tokenize(t)) for t in tokens)
+                    if subword_length > self.max_length:
+                        sub_chunks = self._split_into_subchunks(
+                            tokens=tokens,
+                            tokenizer=tokenizer,
+                            max_length=self.max_length,
+                        )
                         for subchunk in sub_chunks:
                             text = " ".join(subchunk)
                             sentences.append(text)
