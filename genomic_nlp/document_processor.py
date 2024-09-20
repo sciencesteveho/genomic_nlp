@@ -18,8 +18,6 @@ import pybedtools  # type: ignore
 from scispacy.linking import EntityLinker  # type: ignore
 import spacy  # type: ignore
 from spacy.language import Language  # type: ignore
-from spacy.tokenizer import Tokenizer  # type: ignore
-from spacy.tokens import Doc  # type: ignore
 from spacy.tokens import Span  # type: ignore
 from spacy.tokens import Token  # type: ignore
 from tqdm import tqdm  # type: ignore
@@ -181,8 +179,7 @@ class ChunkedDocumentProcessor:
         abstracts: pd.DataFrame,
         chunk: int,
         genes: Set[str],
-        max_length: int = 512,
-        batch_size: int = 512,
+        batch_size: int = 16,
     ):
         """Initialize the ChunkedDocumentProcessor object."""
         self.root_dir = root_dir
@@ -191,7 +188,6 @@ class ChunkedDocumentProcessor:
         self.batch_size = batch_size
 
         self.df = abstracts[["cleaned_abstracts", "year"]]
-        self.max_length = max_length
 
         self.nlp: Language = None
         self.spacy_model: str = ""
@@ -206,16 +202,10 @@ class ChunkedDocumentProcessor:
         ]:
             dir_check_make(dir)
 
-    def setup_pipeline(self, use_gpu: bool = False) -> None:
+    def setup_pipeline(self) -> None:
         """Set up the spaCy pipeline"""
-        if use_gpu:
-            self.spacy_model = "en_core_sci_scibert"
-            spacy.require_gpu()
-        else:
-            self.spacy_model = "en_core_sci_md"
-
+        self.spacy_model = "en_core_sci_lg"
         logger.info(f"Loading spaCy model: {self.spacy_model}")
-        logger.info(f"Using GPU: {use_gpu}")
 
         self.nlp = spacy.load(self.spacy_model)
 
@@ -241,21 +231,6 @@ class ChunkedDocumentProcessor:
 
         logger.info(f"Pipeline components: {self.nlp.pipe_names}")
 
-    def load_sentencizer_model(self) -> Language:
-        """Load a small model that only includes the sentencizer."""
-        sentencizer_nlp = spacy.load(
-            "en_core_sci_scibert", disable=["parser", "ner", "lemmatizer", "tagger"]
-        )
-        sentencizer_nlp.add_pipe("sentencizer")
-        return sentencizer_nlp
-
-    def load_tokenizer(self) -> Tokenizer:
-        """Configure the transformer tokenizer to handle the sentences that go
-        past max_length via truncating.
-        """
-        transformer_pipe = self.nlp.get_pipe("transformer")
-        return transformer_pipe.model.tokenizer
-
     def custom_lemmatize(self, token: Token, lemmatize: bool = True) -> str:
         """Custom token processing. Only lemmatize tokens that are not
         recognized as entities via NER.
@@ -275,127 +250,27 @@ class ChunkedDocumentProcessor:
         """Selectively casefold tokens, avoding gene symbols."""
         return token if token in self.genes else token.casefold()
 
-    def _split_into_subchunks(
-        self, tokens: List[str], tokenizer: Tokenizer, max_length: int = 512
-    ) -> List[List[str]]:
-        """Split tokens into subchunks ensuring the cumulative subword length
-        doesn't exceed max_length.
-        """
-        subchunks: List[List[str]] = []
-        current_chunk: List[str] = []
-        current_length = 0
-
-        # account for special tokens ([CLS], [SEP])
-        special_tokens_count = 2
-        effective_max_length = max_length - special_tokens_count
-
-        for token in tokens:
-            token_tokenized_ids = tokenizer.encode(token, add_special_tokens=False)
-            token_length = len(token_tokenized_ids)
-            if token_length > effective_max_length:
-                logger.warning(
-                    f"Token '{token}' is too long ({token_length} subwords) and will be skipped."
-                )
-                continue
-
-            if current_length + token_length <= effective_max_length:
-                current_chunk.append(token)
-                current_length += token_length
-            else:
-                if current_chunk:
-                    subchunks.append(current_chunk)
-                current_chunk = [token]
-                current_length = token_length
-
-        if current_chunk:
-            subchunks.append(current_chunk)
-
-        return subchunks
-
-    def collect_sentences(self) -> Tuple[List[str], List[int], int, int]:
-        """Preprocess the abstracts by splitting into sentences. This helps to
-        avoid tensor mismatch errors, due to max length limitations of the
-        scibert model.
-        """
-        tokenizer = self.load_tokenizer()
-        cleaned_abstracts = self.df["cleaned_abstracts"].tolist()
-        sentencizer_nlp = self.load_sentencizer_model()
-        total_abstracts = len(cleaned_abstracts)
-
-        sentences, doc_indices = [], []
-        total_sentences = 0
-
-        with tqdm(
-            total=total_abstracts, desc="Collecting sentences", unit="doc"
-        ) as pbar:
-            for doc_idx, doc in enumerate(
-                sentencizer_nlp.pipe(cleaned_abstracts, batch_size=self.batch_size)
-            ):
-                current_sentences = [sent.text.strip() for sent in doc.sents]
-
-                for sent in current_sentences:
-                    if not sent:
-                        continue
-                    tokenized_ids = tokenizer.encode(sent, add_special_tokens=True)
-                    subword_length = len(tokenized_ids)
-                    if subword_length > self.max_length:
-                        tokens = sent.split()
-                        sub_chunks = self._split_into_subchunks(
-                            tokens=tokens,
-                            tokenizer=tokenizer,
-                            max_length=self.max_length,
-                        )
-                        for subchunk in sub_chunks:
-                            text = " ".join(subchunk)
-                            tokenized_subchunk_ids = tokenizer.encode(
-                                text, add_special_tokens=True
-                            )
-                            subchunk_length = len(tokenized_subchunk_ids)
-                            if subchunk_length > self.max_length:
-                                logger.error(
-                                    f"Subchunk exceeds max_length: {subchunk_length} tokens. Subchunk: '{text}'"
-                                )
-                                continue
-                            sentences.append(text)
-                            doc_indices.append(doc_idx)
-                            total_sentences += 1
-                    else:
-                        sentences.append(sent)
-                        doc_indices.append(doc_idx)
-                        total_sentences += 1
-                pbar.update(1)
-
-        return sentences, doc_indices, total_sentences, total_abstracts
-
     @time_decorator(print_args=False)
     def tokenize_and_ner(self) -> None:
-        """Tokenize the abstracts using spaCy with batch processing and standardize entities."""
-        sentences, doc_indices, total_sentences, total_abstracts = (
-            self.collect_sentences()
-        )
+        """Tokenize the abstracts using spaCy with batch processing and
+        standardize entities."""
+        documents = self.df["cleaned_abstracts"].tolist()
+        doc_indices = self.df.index.tolist()
 
         processed_sentences_w2v = []
         processed_sentences_finetune = []
+        new_doc_indices = []
 
         with tqdm(
-            total=total_sentences, desc="Processing sentences", unit="doc"
+            total=len(documents), desc="Processing documents", unit="doc"
         ) as pbar:
-            for idx, doc_processed in enumerate(
-                self.nlp.pipe(sentences, batch_size=self.batch_size)
+            for doc_idx, doc_processed in zip(
+                doc_indices, self.nlp.pipe(documents, batch_size=self.batch_size)
             ):
                 try:
-                    tokenizer = self.load_tokenizer()
-                    tokenized_ids = tokenizer.encode(
-                        doc_processed.text, add_special_tokens=True
-                    )
-                    subword_length = len(tokenized_ids)
-                    if subword_length > self.max_length:
-                        logger.error(
-                            f"Processed sentence {idx} exceeds max_length: {subword_length} tokens. Sentence: '{doc_processed.text}'"
-                        )
-
                     new_tokens_w2v, new_tokens_finetune = [], []
                     last_index = 0
+
                     for ent in doc_processed.ents:
                         start = ent.start
                         end = ent.end
@@ -433,20 +308,18 @@ class ChunkedDocumentProcessor:
 
                     processed_sentences_w2v.append(new_tokens_w2v)
                     processed_sentences_finetune.append(new_tokens_finetune)
+                    new_doc_indices.append(doc_idx)
                 except Exception as e:
-                    logger.error(f"Error processing sentence {idx}: {e}")
+                    logger.error(f"Error processing document {doc_idx}: {e}")
+
                 pbar.update(1)
 
-        # Reconstruct documents
-        processed_docs_w2v, processed_docs_finetune = self.reconstruct_documents(
-            processed_sentences_w2v,
-            processed_sentences_finetune,
-            doc_indices,
-            total_abstracts,
+        self.df["tokenized_abstracts_w2v"] = pd.Series(
+            processed_sentences_w2v, index=new_doc_indices
         )
-
-        self.df["tokenized_abstracts_w2v"] = processed_docs_w2v
-        self.df["tokenized_abstracts_finetune"] = processed_docs_finetune
+        self.df["tokenized_abstracts_finetune"] = pd.Series(
+            processed_sentences_finetune, index=new_doc_indices
+        )
 
     def get_canonical_entity(self, ent: Span, lemmatize: bool) -> str:
         """Normalize entities in a document using the UMLS term."""
@@ -463,28 +336,6 @@ class ChunkedDocumentProcessor:
             return ent.text
         lemmatized_tokens = [token.lemma_ for token in ent]
         return " ".join(lemmatized_tokens)
-
-    def reconstruct_documents(
-        self,
-        processed_sentences_w2v: List[List[str]],
-        processed_sentences_finetune: List[List[str]],
-        doc_indices: List[int],
-        total_abstracts: int,
-    ) -> Tuple[List[List[List[str]]], List[List[List[str]]]]:
-        """Reconstruct documents from processed sentences aligning with the
-        original document indices.
-        """
-        docs_w2v = defaultdict(list)
-        docs_finetune = defaultdict(list)
-        for idx, tokens_w2v, tokens_finetune in zip(
-            doc_indices, processed_sentences_w2v, processed_sentences_finetune
-        ):
-            docs_w2v[idx].append(tokens_w2v)
-            docs_finetune[idx].append(tokens_finetune)
-
-        return [docs_w2v[i] for i in range(total_abstracts)], [
-            docs_finetune[i] for i in range(total_abstracts)
-        ]
 
     @time_decorator(print_args=False)
     def exclude_punctuation_replace_standalone_numbers(self) -> None:
@@ -579,11 +430,11 @@ class ChunkedDocumentProcessor:
             logger.info(f"Saved processed abstracts for chunk {self.chunk}")
 
     @time_decorator(print_args=False)
-    def processing_pipeline(self, use_gpu: bool = False) -> None:
+    def processing_pipeline(self) -> None:
         """Run the NLP pipeline for both Word2Vec and BERT fine-tuning."""
         # setup spaCy pipeline
         logger.info("Setting up spaCy pipeline")
-        self.setup_pipeline(use_gpu=use_gpu)
+        self.setup_pipeline()
 
         # tokenization and NER
         logger.info("Tokenizing and NER")
@@ -633,7 +484,6 @@ def main() -> None:
         type=str,
         default="/ocean/projects/bio210019p/stevesho/genomic_nlp/reference_files/hgnc_complete_set.txt",
     )
-    parser.add_argument("--use_gpu", action="store_true")
     args = parser.parse_args()
 
     # load abstract df
@@ -660,7 +510,7 @@ def main() -> None:
     )
 
     # run processing pipeline
-    documentProcessor.processing_pipeline(use_gpu=args.use_gpu)
+    documentProcessor.processing_pipeline()
 
 
 if __name__ == "__main__":
