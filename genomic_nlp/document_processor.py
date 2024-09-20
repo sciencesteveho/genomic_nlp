@@ -278,76 +278,39 @@ class ChunkedDocumentProcessor:
     def _split_into_subchunks(
         self, tokens: List[str], tokenizer: Tokenizer, max_length: int = 512
     ) -> List[List[str]]:
-        """Split a list of tokens into subchunks not exceeding max_length after
-        subword tokenization, accounting for special tokens added by the
-        transformer.
+        """Split tokens into subchunks ensuring the cumulative subword length
+        doesn't exceed max_length.
         """
         subchunks: List[List[str]] = []
         current_chunk: List[str] = []
+        current_length = 0
 
-        # ([CLS], [SEP]) tokens
+        # account for special tokens ([CLS], [SEP])
         special_tokens_count = 2
         effective_max_length = max_length - special_tokens_count
 
         for token in tokens:
-            # tokenize the individual token without special tokens
             token_tokenized_ids = tokenizer.encode(token, add_special_tokens=False)
             token_length = len(token_tokenized_ids)
             if token_length > effective_max_length:
                 logger.warning(
-                    f"Token '{token}' is longer than effective_max_length ({token_length} > {effective_max_length}) after encoding and will be skipped."
+                    f"Token '{token}' is too long ({token_length} subwords) and will be skipped."
                 )
                 continue
 
-            # tentatively add the token to the current chunk
-            temp_chunk = current_chunk + [token]
-            chunk_text = " ".join(temp_chunk)
-            tokenized_ids = tokenizer.encode(chunk_text, add_special_tokens=True)
-            subword_length = len(tokenized_ids)
-
-            if subword_length <= max_length:
+            if current_length + token_length <= effective_max_length:
                 current_chunk.append(token)
+                current_length += token_length
             else:
                 if current_chunk:
                     subchunks.append(current_chunk)
                 current_chunk = [token]
+                current_length = token_length
 
         if current_chunk:
             subchunks.append(current_chunk)
 
-        # verify all subchunks are within max_length
-        verified_subchunks = []
-        for subchunk in subchunks:
-            text = " ".join(subchunk)
-            tokenized_ids = tokenizer.encode(text, add_special_tokens=True)
-            subchunk_length = len(tokenized_ids)
-            if subchunk_length > max_length:
-                # split the subchunk into smaller parts if it exceeds max_length
-                logger.warning(
-                    f"Subchunk '{text}' exceeds max_length after initial splitting. Further splitting is required."
-                )
-                # split the subchunk into smaller parts
-                split_length = max_length - special_tokens_count
-                for i in range(0, len(subchunk), split_length):
-                    part = subchunk[i : i + split_length]
-                    part_text = " ".join(part)
-                    part_tokenized_ids = tokenizer.encode(
-                        part_text, add_special_tokens=True
-                    )
-                    part_length = len(part_tokenized_ids)
-                    if part_length <= max_length:
-                        verified_subchunks.append(part)
-                    else:
-                        # last resport truncation
-                        truncated_text = " ".join(part[: split_length // 2])
-                        verified_subchunks.append(part[: split_length // 2])
-                        logger.warning(
-                            f"Truncated subchunk to fit max_length: '{truncated_text}'"
-                        )
-            else:
-                verified_subchunks.append(subchunk)
-
-        return verified_subchunks
+        return subchunks
 
     def collect_sentences(self) -> Tuple[List[str], List[int], int, int]:
         """Preprocess the abstracts by splitting into sentences. This helps to
@@ -438,7 +401,7 @@ class ChunkedDocumentProcessor:
                         end = ent.end
                         tokens_before = list(doc_processed[last_index:start])
 
-                        # Process tokens before the entity
+                        # process tokens before the entity
                         for token in tokens_before:
                             new_tokens_w2v.append(
                                 self.custom_lemmatize(token, lemmatize=True)
@@ -447,7 +410,7 @@ class ChunkedDocumentProcessor:
                                 self.custom_lemmatize(token, lemmatize=False)
                             )
 
-                        # Normalize the entity
+                        # normalize the entity
                         canonical_entity_w2v = self.get_canonical_entity(
                             ent=ent, lemmatize=True
                         )
@@ -458,7 +421,7 @@ class ChunkedDocumentProcessor:
                         new_tokens_finetune.append(canonical_entity_finetune)
                         last_index = end
 
-                    # Add tokens after the last entity
+                    # add tokens after the last entity
                     tokens_after = list(doc_processed[last_index:])
                     for token in tokens_after:
                         new_tokens_w2v.append(
