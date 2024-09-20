@@ -314,10 +314,10 @@ class ChunkedDocumentProcessor:
 
                 pbar.update(1)
 
-        self.df["tokenized_abstracts_w2v"] = pd.Series(
+        self.df["processed_abstracts_w2v"] = pd.Series(
             processed_sentences_w2v, index=new_doc_indices
         )
-        self.df["tokenized_abstracts_finetune"] = pd.Series(
+        self.df["processed_abstracts_finetune"] = pd.Series(
             processed_sentences_finetune, index=new_doc_indices
         )
 
@@ -344,7 +344,7 @@ class ChunkedDocumentProcessor:
 
         # process Word2Vec version
         self.df["processed_abstracts_w2v"] = self.df[
-            "tokenized_abstracts_w2v"
+            "processed_abstracts_w2v"
         ].progress_apply(
             lambda docs: [
                 [
@@ -359,7 +359,7 @@ class ChunkedDocumentProcessor:
 
         # process finetune version
         self.df["processed_abstracts_finetune"] = self.df[
-            "tokenized_abstracts_finetune"
+            "processed_abstracts_finetune"
         ].progress_apply(
             lambda docs: [
                 replacement
@@ -375,7 +375,7 @@ class ChunkedDocumentProcessor:
         tqdm.pandas(desc="Casefolding")
 
         # process Word2Vec version
-        self.df["final_abstracts_w2v"] = self.df[
+        self.df["processed_abstracts_w2v"] = self.df[
             "processed_abstracts_w2v"
         ].progress_apply(
             lambda docs: [
@@ -385,7 +385,7 @@ class ChunkedDocumentProcessor:
         )
 
         # process finetune version
-        self.df["finale_abstracts_finetune"] = self.df[
+        self.df["processed_abstracts_finetune"] = self.df[
             "processed_abstracts_finetune"
         ].progress_apply(
             lambda tokens: [self.selective_casefold_token(token) for token in tokens]
@@ -399,8 +399,8 @@ class ChunkedDocumentProcessor:
         tqdm.pandas(desc="Removing genes")
 
         # process Word2Vec version
-        self.df["final_abstracts_w2v_nogenes"] = self.df[
-            "final_abstracts_w2v"
+        self.df["processed_abstracts_w2v_nogenes"] = self.df[
+            "processed_abstracts_w2v"
         ].progress_apply(
             lambda docs: [
                 [token for token in sent if token not in self.genes] for sent in docs
@@ -413,18 +413,18 @@ class ChunkedDocumentProcessor:
         """
         columns_to_save = ["cleaned_abstracts", "year"]
 
-        if "final_abstracts_finetune" in self.df.columns:
+        if "processed_abstracts_finetune" in self.df.columns:
             finetune_outpref = f"{outpref}_finetune_chunk_{self.chunk}.pkl"
-            columns_to_save.append("final_abstracts_finetune")
+            columns_to_save.append("processed_abstracts_finetune")
             self.df[columns_to_save].to_pickle(finetune_outpref)
             columns_to_save.remove(
-                "final_abstracts_finetune"
+                "processed_abstracts_finetune"
             )  # remove finetune for next save
 
-        if "final_abstracts_w2v" in self.df.columns:
+        if "processed_abstracts_w2v" in self.df.columns:
             w2v_outpref = f"{outpref}_w2v_chunk_{self.chunk}.pkl"
             columns_to_save.extend(
-                ("final_abstracts_w2v", "final_abstracts_w2v_nogenes")
+                ("processed_abstracts_w2v", "processed_abstracts_w2v_nogenes")
             )
             self.df[columns_to_save].to_pickle(w2v_outpref)
             logger.info(f"Saved processed abstracts for chunk {self.chunk}")
