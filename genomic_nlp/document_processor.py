@@ -177,13 +177,13 @@ class ChunkedDocumentProcessor:
         self,
         root_dir: str,
         abstracts: pd.DataFrame,
-        # chunk: int,
+        chunk: int,
         genes: Set[str],
         batch_size: int = 16,
     ):
         """Initialize the ChunkedDocumentProcessor object."""
         self.root_dir = root_dir
-        # self.chunk = chunk
+        self.chunk = chunk
         self.genes = genes
         self.batch_size = batch_size
 
@@ -407,28 +407,6 @@ class ChunkedDocumentProcessor:
             ]
         )
 
-    # def save_data(self, outpref: str) -> None:
-    #     """Save final copies of abstracts with cleaned, processed, and year
-    #     columns.
-    #     """
-    #     columns_to_save = ["cleaned_abstracts", "year"]
-
-    #     if "processed_abstracts_finetune" in self.df.columns:
-    #         finetune_outpref = f"{outpref}_finetune_chunk_{self.chunk}.pkl"
-    #         columns_to_save.append("processed_abstracts_finetune")
-    #         self.df[columns_to_save].to_pickle(finetune_outpref)
-    #         columns_to_save.remove(
-    #             "processed_abstracts_finetune"
-    #         )  # remove finetune for next save
-
-    #     if "processed_abstracts_w2v" in self.df.columns:
-    #         w2v_outpref = f"{outpref}_w2v_chunk_{self.chunk}.pkl"
-    #         columns_to_save.extend(
-    #             ("processed_abstracts_w2v", "processed_abstracts_w2v_nogenes")
-    #         )
-    #         self.df[columns_to_save].to_pickle(w2v_outpref)
-    #         logger.info(f"Saved processed abstracts for chunk {self.chunk}")
-
     def save_data(self, outpref: str) -> None:
         """Save final copies of abstracts with cleaned, processed, and year
         columns.
@@ -436,7 +414,7 @@ class ChunkedDocumentProcessor:
         columns_to_save = ["cleaned_abstracts", "year"]
 
         if "processed_abstracts_finetune" in self.df.columns:
-            finetune_outpref = f"{outpref}_finetune.pkl"
+            finetune_outpref = f"{outpref}_finetune_chunk_{self.chunk}.pkl"
             columns_to_save.append("processed_abstracts_finetune")
             self.df[columns_to_save].to_pickle(finetune_outpref)
             columns_to_save.remove(
@@ -444,12 +422,12 @@ class ChunkedDocumentProcessor:
             )  # remove finetune for next save
 
         if "processed_abstracts_w2v" in self.df.columns:
-            w2v_outpref = f"{outpref}_w2v.pkl"
+            w2v_outpref = f"{outpref}_w2v_chunk_{self.chunk}.pkl"
             columns_to_save.extend(
                 ("processed_abstracts_w2v", "processed_abstracts_w2v_nogenes")
             )
             self.df[columns_to_save].to_pickle(w2v_outpref)
-            logger.info("Saved processed abstracts")
+            logger.info(f"Saved processed abstracts for chunk {self.chunk}")
 
     @time_decorator(print_args=False)
     def processing_pipeline(self) -> None:
@@ -485,7 +463,7 @@ def main() -> None:
     """Main function"""
     # load classified abstracts
     parser = argparse.ArgumentParser()
-    # parser.add_argument("--chunk", type=str, required=True)
+    parser.add_argument("--chunk", type=str, required=True)
     parser.add_argument(
         "--root_dir",
         type=str,
@@ -510,7 +488,7 @@ def main() -> None:
 
     # load abstract df
     abstracts = pd.read_pickle(
-        f"{args.root_dir}/data/abstracts_logistic_classified_tfidf_40000.pkl"
+        f"{args.root_dir}/data/abstracts_logistic_classified_tfidf_40000_chunk_part_{args.chunk}.pkl"
     )
 
     # check that we have the required "year" column
@@ -527,7 +505,7 @@ def main() -> None:
     documentProcessor = ChunkedDocumentProcessor(
         root_dir=args.root_dir,
         abstracts=abstracts,
-        # chunk=args.chunk,
+        chunk=args.chunk,
         genes=genes,
     )
 
