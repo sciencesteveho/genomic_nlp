@@ -179,7 +179,7 @@ class ChunkedDocumentProcessor:
         abstracts: pd.DataFrame,
         chunk: int,
         genes: Set[str],
-        batch_size: int = 16,
+        batch_size: int = 100,
     ):
         """Initialize the ChunkedDocumentProcessor object."""
         self.root_dir = root_dir
@@ -488,7 +488,7 @@ def main() -> None:
 
     # load abstract df
     abstracts = pd.read_pickle(
-        f"{args.root_dir}/data/abstracts_logistic_classified_tfidf_40000.pkl"
+        f"{args.root_dir}/data/abstracts_logistic_classified_tfidf_40000_chunk_part_{args.chunk}.pkl"
     )
 
     # check that we have the required "year" column
