@@ -179,7 +179,7 @@ class ChunkedDocumentProcessor:
         abstracts: pd.DataFrame,
         chunk: int,
         genes: Set[str],
-        batch_size: int = 256,
+        batch_size: int = 100,
     ):
         """Initialize the ChunkedDocumentProcessor object."""
         self.root_dir = root_dir
