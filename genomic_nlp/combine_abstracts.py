@@ -6,7 +6,6 @@
 Word2Vec."""
 
 
-import argparse
 import glob
 import os
 from pathlib import Path
