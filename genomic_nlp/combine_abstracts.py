@@ -178,7 +178,6 @@ def main() -> None:
     parser.add_argument(
         "--abstracts_dir",
         type=str,
-        required=True,
         help="Directory containing abstract chunks.",
         default="/ocean/projects/bio210019p/stevesho/genomic_nlp/data",
     )
