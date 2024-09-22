@@ -51,7 +51,7 @@ class EpochSaver(CallbackAny2Vec):
 
 
 class Word2VecCorpus:
-    """Object class to process a chunk of abstracts before model training.
+    """Class to handle word2vec training.
 
     Attributes:
         abstracts
@@ -134,7 +134,7 @@ class Word2VecCorpus:
         negative: int,
         sg: int,
         hs: int,
-        epochs: int,
+        epochs: int = 30,
     ):
         """Initialize the class"""
         self.model_dir = model_dir
@@ -160,9 +160,9 @@ class Word2VecCorpus:
         self.epoch_dir = f"{self.model_dir}/epochs"
         self.data_dir = f"{self.model_dir}/data"
 
-        self.corpus = f"{self.abstract_dir}/processed_abstracts_w2v+{self.year}"
+        self.corpus = f"{self.abstract_dir}/processed_abstracts_w2v_{self.year}.txt"
         self.corpus_nogenes = (
-            f"{self.abstract_dir}/processed_abstracts_w2v_nogenes+{self.year}"
+            f"{self.abstract_dir}/processed_abstracts_w2v_nogenes_{self.year}.txt"
         )
         self.corpus_phrased = f"{self.data_dir}/corpus_phrased.txt"
 
@@ -172,7 +172,7 @@ class Word2VecCorpus:
         minimum: int,
         score: int,
     ) -> None:
-        """Iterates through prefix list to generate n-grams from 2-8!
+        """Iterates through prefix list to generate n-grams.
 
         # Arguments
             minimum:
@@ -236,7 +236,7 @@ class Word2VecCorpus:
             corpus_file=self.corpus_phrased,
             total_examples=model.corpus_count,
             total_words=model.corpus_total_words,
-            epochs=30,
+            epochs=self.epochs,
             report_delay=15,
             compute_loss=True,
             callbacks=[EpochSaver(savedir=f"{self.epoch_dir}")],
