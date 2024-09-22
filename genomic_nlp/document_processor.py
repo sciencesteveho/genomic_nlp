@@ -132,46 +132,72 @@ class ChunkedDocumentProcessor:
     >>> documentProcessor.processing_pipeline(use_gpu=True)
     """
 
-    extras = set(
-        [
-            ".",
-            "\\",
-            "-",
-            "/",
-            "©",
-            "~",
-            "*",
-            "&",
-            "#",
-            "# ",
-            "'",
-            '"',
-            "^",
-            "$",
-            "|",
-            "“",
-            "”",
-            "(",
-            ")",
-            "[",
-            "]",
-            "′′",
-            "!",
-            "'",
-            "''",
-            "+",
-            "'s",
-            "?",
-            "& ",
-            "@",
-            "@ ",
-            "\*\*",
-            "±",
-            "®",
-            "â",
-            "Å",
-        ]
-    )
+    extras = {
+        ".",
+        "\\",
+        "-",
+        "/",
+        "©",
+        "~",
+        "*",
+        "&",
+        "#",
+        "# ",
+        "'",
+        '"',
+        "^",
+        "$",
+        "|",
+        "“",
+        "”",
+        "(",
+        ")",
+        "[",
+        "]",
+        "′′",
+        "!",
+        "'",
+        "''",
+        "+",
+        "'s",
+        "?",
+        "& ",
+        "@",
+        "@ ",
+        "\*\*",
+        "±",
+        "®",
+        "â",
+        "Å",
+    }
+
+    finetune_extras = {
+        "\\",
+        "~",
+        "*",
+        "&",
+        "#",
+        "# ",
+        '"',
+        "^",
+        "$",
+        "|",
+        "!",
+        "''",
+        "+",
+        "'s",
+        "?",
+        "& ",
+        "@",
+        "@ ",
+        "**",
+        "©",
+        "®",
+        "â",
+        "“",
+        "”",
+        "′′",
+    }
 
     def __init__(
         self,
@@ -179,7 +205,7 @@ class ChunkedDocumentProcessor:
         abstracts: pd.DataFrame,
         chunk: int,
         genes: Set[str],
-        batch_size: int = 256,
+        batch_size: int = 64,
     ):
         """Initialize the ChunkedDocumentProcessor object."""
         self.root_dir = root_dir
@@ -240,9 +266,16 @@ class ChunkedDocumentProcessor:
         else:
             return token.lemma_ if lemmatize else token.text
 
-    def replace_number_symbol_tokens(self, token: str) -> Union[str, None]:
+    def replace_number_symbol_tokens(
+        self, token: str, finetune: bool = False
+    ) -> Union[str, None]:
         """Replace numbers with a number based symbol, and symbols with None."""
-        if token in self.extras:
+        if (
+            not finetune
+            and token in self.extras
+            or finetune
+            and token in self.finetune_extras
+        ):
             return None
         return "<nUm>" if is_number(token) else token
 
@@ -264,7 +297,8 @@ class ChunkedDocumentProcessor:
             total=len(documents), desc="Processing documents", unit="doc"
         ) as pbar:
             for doc_idx, doc_processed in zip(
-                doc_indices, self.nlp.pipe(documents, batch_size=self.batch_size)
+                doc_indices,
+                self.nlp.pipe(documents, batch_size=self.batch_size, n_process=4),
             ):
                 try:
                     doc_sentences_w2v = []
@@ -369,16 +403,21 @@ class ChunkedDocumentProcessor:
             lambda tokens: [
                 replacement
                 for token in tokens
-                if (replacement := self.replace_number_symbol_tokens(token)) is not None
+                if (
+                    replacement := self.replace_number_symbol_tokens(
+                        token, finetune=True
+                    )
+                )
+                is not None
             ]
         )
 
     @time_decorator(print_args=False)
     def selective_casefold(self) -> None:
-        """Selectively casefold the abstracts."""
+        """Selectively casefold the abstracts. Only done for Word2Vec."""
         tqdm.pandas(desc="Casefolding")
 
-        # helper function for Word2Vec
+        # helper function
         def casefold_sentences(sentences: List[List[str]]) -> List[List[str]]:
             """Casefold a list of list of tokens."""
             casefolded_sentences = []
@@ -389,17 +428,9 @@ class ChunkedDocumentProcessor:
                 casefolded_sentences.append(casefolded_sent)
             return casefolded_sentences
 
-        # process Word2Vec version
         self.df["processed_abstracts_w2v"] = self.df[
             "processed_abstracts_w2v"
         ].progress_apply(casefold_sentences)
-
-        # process finetune version
-        self.df["processed_abstracts_finetune"] = self.df[
-            "processed_abstracts_finetune"
-        ].progress_apply(
-            lambda tokens: [self.selective_casefold_token(token) for token in tokens]
-        )
 
     @time_decorator(print_args=False)
     def remove_genes(self) -> None:
