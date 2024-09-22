@@ -285,7 +285,7 @@ def main() -> None:
         min_count=10,
         vector_size=300,
         window=12,
-        workers=32,
+        workers=24,
         sample=0.0001,
         alpha=0.005,
         min_alpha=0.0001,
