@@ -108,7 +108,7 @@ def write_temporal_abstracts(
         print(f" - {len(filtered_df)} abstracts after filtering by year.")
 
         for _, row in filtered_df.iterrows():
-            processed_abstract: List[List[str]] = row["processed_abstracts_finetune"]
+            processed_abstract: List[List[str]] = row[column]
             for sentence in processed_abstract:
                 line = " ".join(sentence)
                 output.write(f"{line}\n")
