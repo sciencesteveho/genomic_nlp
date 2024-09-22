@@ -182,12 +182,12 @@ def main() -> None:
         help="Directory containing abstract chunks.",
         default="/ocean/projects/bio210019p/stevesho/genomic_nlp/data",
     )
-    parser.add_argument(
-        "--year",
-        type=int,
-        required=True,
-        help="Cutoff year. Only abstracts up to and including this year will be processed.",
-    )
+    # parser.add_argument(
+    #     "--year",
+    #     type=int,
+    #     required=True,
+    #     help="Cutoff year. Only abstracts up to and including this year will be processed.",
+    # )
     args = parser.parse_args()
 
     combined_df = _combine_chunks(args.abstracts_dir, "processed_abstracts_w2v_")
