@@ -179,7 +179,7 @@ class ChunkedDocumentProcessor:
         abstracts: pd.DataFrame,
         chunk: int,
         genes: Set[str],
-        batch_size: int = 256,
+        batch_size: int = 64,
     ):
         """Initialize the ChunkedDocumentProcessor object."""
         self.root_dir = root_dir
@@ -264,7 +264,8 @@ class ChunkedDocumentProcessor:
             total=len(documents), desc="Processing documents", unit="doc"
         ) as pbar:
             for doc_idx, doc_processed in zip(
-                doc_indices, self.nlp.pipe(documents, batch_size=self.batch_size)
+                doc_indices,
+                self.nlp.pipe(documents, batch_size=self.batch_size, n_process=4),
             ):
                 try:
                     doc_sentences_w2v = []
