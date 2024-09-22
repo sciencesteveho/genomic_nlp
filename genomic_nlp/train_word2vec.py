@@ -60,7 +60,7 @@ class Word2VecCorpus:
     Methods
     ----------
     _gram_generator:
-        Iterates through prefix list to generate n-grams from 2-8!
+        Iterates through prefix list to generate n-grams up to 4-grams
     _normalize_gene_name_to_symbol:
         Looks for grams in corpus that are equivalent to gene names and
         converts them to gene symbols for training
@@ -154,12 +154,8 @@ class Word2VecCorpus:
             minimum:
             score:
         """
-        source_stream = IterableCorpus(
-            "/ocean/projects/bio210019p/stevesho/genomic_nlp/data/combined/tokens_cleaned_abstracts_remove_genes_combined.txt"
-        )
-        source_main = IterableCorpus(
-            "/ocean/projects/bio210019p/stevesho/genomic_nlp/data/combined/tokens_cleaned_abstracts_remove_genes_combined.txt"
-        )
+        source_stream = IterableCorpus("without_genes.txt")
+        source_main = IterableCorpus("with_genes.txt")
 
         # generate and train n-gram models
         phrases = Phrases(source_stream, min_count=minimum, threshold=score)
