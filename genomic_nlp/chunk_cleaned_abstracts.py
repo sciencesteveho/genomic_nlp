@@ -48,7 +48,7 @@ def main() -> None:
         type=str,
         default="/ocean/projects/bio210019p/stevesho/genomic_nlp/data/abstracts_logistic_classified_tfidf_40000.pkl",
     )
-    parser.add_argument("--num_parts", type=int, default=10)
+    parser.add_argument("--num_parts", type=int, default=20)
     parser.add_argument(
         "--output_base_path",
         type=str,
