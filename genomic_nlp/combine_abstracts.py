@@ -15,26 +15,6 @@ from typing import List
 import pandas as pd
 
 
-def parse_arguments() -> argparse.Namespace:
-    """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(
-        description="Combine abstract chunks and write sentences to text files for Word2Vec."
-    )
-    parser.add_argument(
-        "--abstracts_dir",
-        type=str,
-        required=True,
-        help="Directory containing abstract chunks.",
-    )
-    parser.add_argument(
-        "--year",
-        type=int,
-        required=True,
-        help="Cutoff year. Only abstracts up to and including this year will be processed.",
-    )
-    return parser.parse_args()
-
-
 def process_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """Process the DataFrame by combining title and description into abstracts
     and extracting the year.
@@ -54,7 +34,7 @@ def _chunk_locator(path: str, prefix: str) -> List[str]:
     """Locate all chunk files matching the given prefix within the specified
     path.
     """
-    pattern = os.path.join(path, f"{prefix}_*.pkl")
+    pattern = os.path.join(path, f"{prefix}*.pkl")
     return glob.glob(pattern)
 
 
@@ -192,23 +172,38 @@ def prepare_and_load_abstracts(args: argparse.Namespace) -> None:
 
 def main() -> None:
     """Main execution flow."""
-    args = parse_arguments()
+    parser = argparse.ArgumentParser(
+        description="Combine abstract chunks and write sentences to text files for Word2Vec."
+    )
+    parser.add_argument(
+        "--abstracts_dir",
+        type=str,
+        required=True,
+        help="Directory containing abstract chunks.",
+        default="/ocean/projects/bio210019p/stevesho/genomic_nlp/data",
+    )
+    parser.add_argument(
+        "--year",
+        type=int,
+        required=True,
+        help="Cutoff year. Only abstracts up to and including this year will be processed.",
+    )
+    args = parser.parse_args()
 
-    # prepare and load abstracts by combining chunks if necessary
-    prepare_and_load_abstracts(args)
+    combined_df = _combine_chunks(args.abstracts_dir, "processed_abstracts_w2v_")
+    combined_df.to_pickle(f"{args.abstracts_dir}/processed_abstracts_w2v_combined.pkl")
 
-    # define the prefixes corresponding to each suffix
-    prefixes = [
-        "tokens_cleaned_abstracts_casefold_combined.pkl",
-        "tokens_cleaned_abstracts_remove_genes_combined.pkl",
-    ]
+    del combined_df
 
-    # adjust prefixes by removing the '.pkl' extension since write_chunks_to_text expects the base prefix
-    base_prefixes = [prefix.replace("_combined.pkl", "") for prefix in prefixes]
+    combined_df = _combine_chunks(args.abstracts_dir, "processed_abstracts_finetune_")
+    combined_df.to_pickle(
+        f"{args.abstracts_dir}/processed_abstracts_finetune_combined.pkl"
+    )
 
-    # write filtered abstracts to text for Word2Vec
-    for base_prefix in base_prefixes:
-        write_chunks_to_text(args, base_prefix)
+    # combined_df = _combine_chunks(
+    #     "/ocean/projects/bio210019p/stevesho/genomic_nlp/data",
+    #     "processed_abstracts_w2v_",
+    # )
 
 
 if __name__ == "__main__":
