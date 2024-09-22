@@ -114,7 +114,7 @@ class ChunkedDocumentProcessor:
     remove_genes:
         Remove gene symbols from tokens.
     _save_checkpoints:
-        Save processed abstracts to separate files for fasttext and finetune.
+        Save processed abstracts to separate files for w2v and finetune.
     processing_pipeline:
         Run the full processing pipeline.
 
@@ -214,7 +214,7 @@ class ChunkedDocumentProcessor:
             "data",
             "models/gram_models",
             "models/sentence_models",
-            "models/fasttext_models",
+            "models/w2v_models",
         ]:
             dir_check_make(dir)
 
@@ -239,7 +239,7 @@ class ChunkedDocumentProcessor:
             config={
                 "resolve_abbreviations": True,
                 "linker_name": "umls",
-                "threshold": 0.8,
+                "threshold": 0.70,
                 "max_entities_per_mention": 1,
             },
             last=True,
@@ -255,12 +255,10 @@ class ChunkedDocumentProcessor:
         """Custom token processing. Only lemmatize tokens that are not
         recognized as entities via NER.
         """
-        # if token.ent_type_ == "ENTITY":
-        #     return token.text
-        # else:
-        #     return token.lemma_ if lemmatize else token.text
-        # No longer using custom lemmatization as we are moving to fastText
-        return token.text
+        if token.ent_type_ == "ENTITY":
+            return token.text
+        else:
+            return token.lemma_ if lemmatize else token.text
 
     def replace_number_symbol_tokens(
         self, token: str, finetune: bool = False
@@ -285,7 +283,7 @@ class ChunkedDocumentProcessor:
         documents = self.df["cleaned_abstracts"].tolist()
         doc_indices = self.df.index.tolist()
 
-        processed_sentences_fasttext = []
+        processed_sentences_w2v = []
         processed_tokens_finetune = []
         new_doc_indices = []
 
@@ -297,7 +295,7 @@ class ChunkedDocumentProcessor:
                 self.nlp.pipe(documents, batch_size=self.batch_size, n_process=4),
             ):
                 try:
-                    doc_sentences_fasttext = []
+                    doc_sentences_w2v = []
                     doc_tokens_finetune = []
                     token_idx_to_entity = {}
                     for ent in doc_processed.ents:
@@ -305,7 +303,7 @@ class ChunkedDocumentProcessor:
                             token_idx_to_entity[idx] = ent
 
                     for sent in doc_processed.sents:
-                        sent_tokens_fasttext = []
+                        sent_tokens_w2v = []
                         token_iter = iter(sent)
                         for token in token_iter:
                             token_idx = token.i
@@ -314,30 +312,30 @@ class ChunkedDocumentProcessor:
                                 if token_idx != ent.start:
                                     continue
                                 # process the entity only once
-                                canonical_entity_fasttext = self.get_canonical_entity(
+                                canonical_entity_w2v = self.get_canonical_entity(
                                     ent=ent, lemmatize=True
                                 )
                                 canonical_entity_finetune = self.get_canonical_entity(
                                     ent=ent, lemmatize=False
                                 )
-                                sent_tokens_fasttext.append(canonical_entity_fasttext)
+                                sent_tokens_w2v.append(canonical_entity_w2v)
                                 doc_tokens_finetune.append(canonical_entity_finetune)
                                 # skip the rest of the tokens in the entity
                                 for _ in range(ent.end - ent.start - 1):
                                     next(token_iter, None)
                             else:
-                                token_processed_fasttext = self.custom_lemmatize(
+                                token_processed_w2v = self.custom_lemmatize(
                                     token, lemmatize=True
                                 )
-                                sent_tokens_fasttext.append(token_processed_fasttext)
+                                sent_tokens_w2v.append(token_processed_w2v)
                                 token_processed_ft = self.custom_lemmatize(
                                     token, lemmatize=False
                                 )
                                 doc_tokens_finetune.append(token_processed_ft)
 
-                        doc_sentences_fasttext.append(sent_tokens_fasttext)
+                        doc_sentences_w2v.append(sent_tokens_w2v)
 
-                    processed_sentences_fasttext.append(doc_sentences_fasttext)
+                    processed_sentences_w2v.append(doc_sentences_w2v)
                     processed_tokens_finetune.append(doc_tokens_finetune)
                     new_doc_indices.append(doc_idx)
                 except Exception as e:
@@ -345,8 +343,8 @@ class ChunkedDocumentProcessor:
 
                 pbar.update(1)
 
-        self.df["processed_abstracts_fasttext"] = pd.Series(
-            processed_sentences_fasttext, index=new_doc_indices
+        self.df["processed_abstracts_w2v"] = pd.Series(
+            processed_sentences_w2v, index=new_doc_indices
         )
         self.df["processed_abstracts_finetune"] = pd.Series(
             processed_tokens_finetune, index=new_doc_indices
@@ -373,7 +371,7 @@ class ChunkedDocumentProcessor:
         """Exclude punctuation tokens and replace standalone numbers."""
         tqdm.pandas(desc="Cleaning tokens")
 
-        # helper function for fasttext
+        # helper function for w2v
         def clean_sentences(sentences: List[List[str]]) -> List[List[str]]:
             """Clean a list of list of tokens."""
             cleaned_sentences = []
@@ -387,9 +385,9 @@ class ChunkedDocumentProcessor:
                 cleaned_sentences.append(cleaned_sent)
             return cleaned_sentences
 
-        # process fasttext version
-        self.df["processed_abstracts_fasttext"] = self.df[
-            "processed_abstracts_fasttext"
+        # process w2v version
+        self.df["processed_abstracts_w2v"] = self.df[
+            "processed_abstracts_w2v"
         ].progress_apply(clean_sentences)
 
         # process finetune version
@@ -410,7 +408,7 @@ class ChunkedDocumentProcessor:
 
     @time_decorator(print_args=False)
     def selective_casefold(self) -> None:
-        """Selectively casefold the abstracts. Only done for fasttext."""
+        """Selectively casefold the abstracts. Only done for w2v."""
         tqdm.pandas(desc="Casefolding")
 
         # helper function
@@ -424,14 +422,14 @@ class ChunkedDocumentProcessor:
                 casefolded_sentences.append(casefolded_sent)
             return casefolded_sentences
 
-        self.df["processed_abstracts_fasttext"] = self.df[
-            "processed_abstracts_fasttext"
+        self.df["processed_abstracts_w2v"] = self.df[
+            "processed_abstracts_w2v"
         ].progress_apply(casefold_sentences)
 
     @time_decorator(print_args=False)
     def remove_genes(self) -> None:
         """Remove gene symbols from tokens, for future n-gram generation. Only
-        done for fasttext.
+        done for w2v.
         """
         tqdm.pandas(desc="Removing genes")
 
@@ -444,8 +442,8 @@ class ChunkedDocumentProcessor:
                 cleaned_sentences.append(cleaned_sent)
             return cleaned_sentences
 
-        self.df["processed_abstracts_fasttext_nogenes"] = self.df[
-            "processed_abstracts_fasttext"
+        self.df["processed_abstracts_w2v_nogenes"] = self.df[
+            "processed_abstracts_w2v"
         ].progress_apply(remove_genes_from_sentences)
 
     def save_data(self, outpref: str) -> None:
@@ -462,17 +460,17 @@ class ChunkedDocumentProcessor:
                 "processed_abstracts_finetune"
             )  # remove finetune for next save
 
-        if "processed_abstracts_fasttext" in self.df.columns:
-            fasttext_outpref = f"{outpref}_fasttext_chunk_{self.chunk}.pkl"
+        if "processed_abstracts_w2v" in self.df.columns:
+            w2v_outpref = f"{outpref}_w2v_chunk_{self.chunk}.pkl"
             columns_to_save.extend(
-                ("processed_abstracts_fasttext", "processed_abstracts_fasttext_nogenes")
+                ("processed_abstracts_w2v", "processed_abstracts_w2v_nogenes")
             )
-            self.df[columns_to_save].to_pickle(fasttext_outpref)
+            self.df[columns_to_save].to_pickle(w2v_outpref)
             logger.info(f"Saved processed abstracts for chunk {self.chunk}")
 
     @time_decorator(print_args=False)
     def processing_pipeline(self) -> None:
-        """Run the NLP pipeline for both fasttext and BERT fine-tuning."""
+        """Run the NLP pipeline for both w2v and BERT fine-tuning."""
         # setup spaCy pipeline
         logger.info("Setting up spaCy pipeline")
         self.setup_pipeline()
@@ -489,7 +487,7 @@ class ChunkedDocumentProcessor:
         logger.info("Casefolding")
         self.selective_casefold()
 
-        # additional processing for fasttext and finetune
+        # additional processing for w2v and finetune
         logger.info("Removing genes")
         self.remove_genes()
         self.save_data(f"{self.root_dir}/data/processed_abstracts")
