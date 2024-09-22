@@ -6,17 +6,17 @@
 
 
 import argparse
-from datetime import date
 import logging
 import os
+from typing import Any
 
 from gensim.models import Word2Vec  # type: ignore
+from gensim.models.callbacks import CallbackAny2Vec  # type: ignore
 from gensim.models.phrases import Phraser  # type: ignore
 from gensim.models.phrases import Phrases  # type: ignore
 from gensim.models.word2vec import LineSentence  # type: ignore
 import smart_open  # type: ignore
 
-from utils import EpochSaver
 from utils import time_decorator
 
 logging.basicConfig(
@@ -34,6 +34,20 @@ class IterableCorpus:
         with smart_open.open(self.filename, "r", encoding="utf-8") as file:
             for line in file:
                 yield line.rstrip("\n").split()
+
+
+class EpochSaver(CallbackAny2Vec):
+    """Callback to save model after every epoch."""
+
+    def __init__(self, savedir: str):
+        self.epoch = 0
+        self.savedir = savedir
+
+    def on_epoch_end(self, model: Any) -> None:
+        """Save model after every epoch."""
+        print(f"Save model number {self.epoch}.")
+        model.save(f"{self.savedir}/model_epoch{self.epoch}.pkl")
+        self.epoch += 1
 
 
 class Word2VecCorpus:
@@ -79,12 +93,12 @@ class Word2VecCorpus:
         root_dir=args.root_dir,
         abstract_dir=args.abstracts_dir,
         date=date.today(),
-        min_count=5,
-        vector_size=200,
-        window=8,
-        workers=24,
+        min_count=10,
+        vector_size=300,
+        window=12,
+        workers=32,
         sample=0.0001,
-        alpha=0.01,
+        alpha=0.005,
         min_alpha=0.0001,
         negative=15,
         sg=1,
@@ -107,9 +121,9 @@ class Word2VecCorpus:
 
     def __init__(
         self,
-        root_dir: str,
+        model_dir: str,
         abstract_dir: str,
-        date: date,
+        year: int,
         min_count: int,
         vector_size: int,
         window: int,
@@ -123,9 +137,9 @@ class Word2VecCorpus:
         epochs: int,
     ):
         """Initialize the class"""
-        self.root_dir = root_dir
+        self.model_dir = model_dir
         self.abstract_dir = abstract_dir
-        self.date = date
+        self.year = year
         self.min_count = min_count
         self.vector_size = vector_size
         self.window = window
@@ -139,8 +153,18 @@ class Word2VecCorpus:
         self.epochs = epochs
 
         # make directories for saved models
-        for dir in ["models", "w2v"]:
-            os.makedirs(f"{self.root_dir}/{dir}", exist_ok=True)
+        for dir in ["gram_models", "epochs", "data"]:
+            os.makedirs(f"{self.model_dir}/{dir}", exist_ok=True)
+
+        self.gram_dir = f"{self.model_dir}/gram_models"
+        self.epoch_dir = f"{self.model_dir}/epochs"
+        self.data_dir = f"{self.model_dir}/data"
+
+        self.corpus = f"{self.abstract_dir}/processed_abstracts_w2v+{self.year}"
+        self.corpus_nogenes = (
+            f"{self.abstract_dir}/processed_abstracts_w2v_nogenes+{self.year}"
+        )
+        self.corpus_phrased = f"{self.data_dir}/corpus_phrased.txt"
 
     @time_decorator(print_args=False)
     def _gram_generator(
@@ -154,8 +178,8 @@ class Word2VecCorpus:
             minimum:
             score:
         """
-        source_stream = IterableCorpus("without_genes.txt")
-        source_main = IterableCorpus("with_genes.txt")
+        source_stream = IterableCorpus(self.corpus_nogenes)
+        source_main = IterableCorpus(self.corpus)
 
         # generate and train n-gram models
         phrases = Phrases(source_stream, min_count=minimum, threshold=score)
@@ -172,18 +196,12 @@ class Word2VecCorpus:
         )
 
         # save models
-        bigram.save(f"{self.root_dir}/models/gram_models/bigram_model_{self.date}.pkl")
-        trigram.save(
-            f"{self.root_dir}/models/gram_models/trigram_model_{self.date}.pkl"
-        )
-        quintgram.save(
-            f"{self.root_dir}/models/gram_models/quintigram_model_{self.date}.pkl"
-        )
+        bigram.save(f"{self.gram_dir}/bigram_model.pkl")
+        trigram.save(f"{self.gram_dir}/trigram_model.pkl")
+        quintgram.save(f"{self.gram_dir}/quintigram_model.pkl")
 
         # transform corpus and write out to text
-        with open(
-            f"{self.root_dir}/data/corpus_phrased.txt", "w", encoding="utf-8"
-        ) as transformed:
+        with open(self.corpus_phrased, "w", encoding="utf-8") as transformed:
             for sent in source_main:
                 transformed.write(" ".join(quintgram[trigram[bigram[sent]]]) + "\n")
 
@@ -192,9 +210,7 @@ class Word2VecCorpus:
         """Initializes vocab build for corpus, then trains W2v model
         according to parameters set during object instantiation.
         """
-        # avg_len = averageLen(self.gram_corpus_gene_standardized)
-        vocab_corpus = IterableCorpus(f"{self.root_dir}/data/corpus_phrased.txt")
-        corpus = f"{self.root_dir}/data/corpus_phrased.txt"
+        vocab_corpus = IterableCorpus(self.corpus_phrased)
 
         model = Word2Vec(
             **{
@@ -217,17 +233,17 @@ class Word2VecCorpus:
         model.build_vocab(vocab_corpus)  # build vocab
 
         model.train(
-            corpus_file=corpus,
+            corpus_file=self.corpus_phrased,
             total_examples=model.corpus_count,
             total_words=model.corpus_total_words,
             epochs=30,
             report_delay=15,
             compute_loss=True,
-            callbacks=[EpochSaver(savedir=f"{self.root_dir}/models")],
+            callbacks=[EpochSaver(savedir=f"{self.epoch_dir}")],
         )
 
         model.save(
-            f"{self.root_dir}/models/w2v/word2vec_{self.vector_size}_dimensions_{self.date}.model"
+            f"{self.model_dir}/word2vec_{self.vector_size}_dimensions_{self.year}.model"
         )
 
 
@@ -244,20 +260,32 @@ def main() -> None:
         "--abstracts_dir",
         type=str,
         help="Path to abstracts",
-        default="/ocean/projects/bio210019p/stevesho/genomic_nlp/data",
+        default="/ocean/projects/bio210019p/stevesho/genomic_nlp/data/combined",
+    )
+    parser.add_argument(
+        "--model_dir",
+        type=str,
+        help="Path to save models",
+        default="/ocean/projects/bio210019p/stevesho/genomic_nlp/models/w2v",
+    )
+    parser.add_argument(
+        "--year",
+        type=int,
+        required=True,
+        help="Cutoff year. Only abstracts up to and including this year will be processed.",
     )
     args = parser.parse_args()
     print("Arguments parsed. Preparing abstracts...")
 
     # instantiate object
     modelprocessingObj = Word2VecCorpus(
-        root_dir=args.root_dir,
-        abstract_dir=args.abstracts_dir,
-        date=date.today(),
+        model_dir=f"{args.model_dir}/{args.year}",
+        abstract_dir=f"{args.abstracts_dir}/{args.year}",
+        year=args.year,
         min_count=10,
         vector_size=300,
         window=12,
-        workers=32,
+        workers=24,
         sample=0.0001,
         alpha=0.005,
         min_alpha=0.0001,
