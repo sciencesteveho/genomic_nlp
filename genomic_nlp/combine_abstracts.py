@@ -6,7 +6,6 @@
 Word2Vec."""
 
 
-import argparse
 import glob
 import os
 from pathlib import Path
@@ -94,7 +93,7 @@ def write_temporal_abstracts(
     year are included.
     """
 
-    with open(outdir / f"{column}+{year}", "w", encoding="utf-8") as output:
+    with open(outdir / f"{column}_{year}.txt", "w", encoding="utf-8") as output:
 
         # ensure df has the required columns
         if not {"year", column}.issubset(df.columns):
@@ -125,8 +124,8 @@ def main() -> None:
 
     del combined_df
 
-    combined_df = _combine_chunks(working_dir, "processed_abstracts_fasttext_")
-    combined_df.to_pickle(f"{working_dir}/processed_abstracts_fasttext_combined.pkl")
+    combined_df = _combine_chunks(working_dir, "processed_abstracts_w2v_")
+    combined_df.to_pickle(f"{working_dir}/processed_abstracts_w2v_combined.pkl")
 
     # write out abstracts from 2003 to 2023
     for year in range(2003, 2024):
@@ -137,10 +136,10 @@ def main() -> None:
 
         # write out with and without genes
         write_temporal_abstracts(
-            combined_df, year_outdir, year, "processed_abstracts_fasttext"
+            combined_df, year_outdir, year, "processed_abstracts_w2v"
         )
         write_temporal_abstracts(
-            combined_df, year_outdir, year, "processed_abstracts_fasttext_nogenes"
+            combined_df, year_outdir, year, "processed_abstracts_w2v_nogenes"
         )
 
     # parser = argparse.ArgumentParser(
