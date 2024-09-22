@@ -51,7 +51,7 @@ class EpochSaver(CallbackAny2Vec):
 
 
 class Word2VecCorpus:
-    """Object class to process a chunk of abstracts before model training.
+    """Class to handle word2vec training.
 
     Attributes:
         abstracts
@@ -134,7 +134,7 @@ class Word2VecCorpus:
         negative: int,
         sg: int,
         hs: int,
-        epochs: int,
+        epochs: int = 30,
     ):
         """Initialize the class"""
         self.model_dir = model_dir
@@ -236,7 +236,7 @@ class Word2VecCorpus:
             corpus_file=self.corpus_phrased,
             total_examples=model.corpus_count,
             total_words=model.corpus_total_words,
-            epochs=30,
+            epochs=self.epochs,
             report_delay=15,
             compute_loss=True,
             callbacks=[EpochSaver(savedir=f"{self.epoch_dir}")],
