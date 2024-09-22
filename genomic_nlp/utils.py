@@ -28,20 +28,6 @@ from tqdm import tqdm  # type: ignore
 from constants import COPY_GENES
 
 
-class EpochSaver(CallbackAny2Vec):
-    """Callback to save model after every epoch."""
-
-    def __init__(self, savedir: str):
-        self.epoch = 0
-        self.savedir = savedir
-
-    def on_epoch_end(self, model: Any) -> None:
-        """Save model after every epoch."""
-        print(f"Save model number {self.epoch}.")
-        model.save(f"{self.savedir}/model_epoch{self.epoch}.pkl")
-        self.epoch += 1
-
-
 def get_physical_cores() -> int:
     """Return physical core count, subtracted by one to account for the main
     process / overhead.
