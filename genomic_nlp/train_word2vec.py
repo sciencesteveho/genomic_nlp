@@ -10,6 +10,7 @@ import logging
 import os
 from typing import Any
 
+from gensim.models import FastText  # type: ignore
 from gensim.models import Word2Vec  # type: ignore
 from gensim.models.callbacks import CallbackAny2Vec  # type: ignore
 from gensim.models.phrases import Phraser  # type: ignore
