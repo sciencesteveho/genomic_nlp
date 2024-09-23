@@ -282,7 +282,7 @@ def main() -> None:
         model_dir=f"{args.model_dir}/{args.year}",
         abstract_dir=f"{args.abstracts_dir}/{args.year}",
         year=args.year,
-        min_count=10,
+        min_count=8,
         vector_size=300,
         window=12,
         workers=24,
@@ -298,8 +298,8 @@ def main() -> None:
 
     # build gram models
     modelprocessingObj._gram_generator(
-        minimum=5,
-        score=50,
+        minimum=10,
+        score=20,
     )
     print("Grams generated. Training word2vec model...")
 
