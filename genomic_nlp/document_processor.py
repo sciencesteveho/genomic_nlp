@@ -316,7 +316,7 @@ class ChunkedDocumentProcessor:
                                     ent=ent, lemmatize=True
                                 )
                                 sent_tokens_w2v.append(canonical_entity_w2v)
-                                doc_tokens_finetune.append(ent)
+                                doc_tokens_finetune.append(ent.text)
 
                                 # skip the rest of the tokens in the entity
                                 for _ in range(ent.end - ent.start - 1):
