@@ -239,7 +239,7 @@ class ChunkedDocumentProcessor:
             config={
                 "resolve_abbreviations": True,
                 "linker_name": "umls",
-                "threshold": 0.70,
+                "threshold": 0.9,
                 "max_entities_per_mention": 1,
             },
             last=True,
@@ -311,15 +311,13 @@ class ChunkedDocumentProcessor:
                                 ent = token_idx_to_entity[token_idx]
                                 if token_idx != ent.start:
                                     continue
-                                # process the entity only once
+                                # process the entity only once, and only for w2v
                                 canonical_entity_w2v = self.get_canonical_entity(
                                     ent=ent, lemmatize=True
                                 )
-                                canonical_entity_finetune = self.get_canonical_entity(
-                                    ent=ent, lemmatize=False
-                                )
                                 sent_tokens_w2v.append(canonical_entity_w2v)
-                                doc_tokens_finetune.append(canonical_entity_finetune)
+                                doc_tokens_finetune.append(ent)
+
                                 # skip the rest of the tokens in the entity
                                 for _ in range(ent.end - ent.start - 1):
                                     next(token_iter, None)
