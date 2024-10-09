@@ -37,7 +37,7 @@ class BaselineModelVisualizer:
         model_names = list(train_results.keys())
 
         _, axis = self._setup_plot(
-            model_names, "Model Performance on Train and Test Sets", figsize=(3, 3)
+            model_names, "Model Performance on Train and Test Sets"
         )
 
         bar_width = 0.35
@@ -80,7 +80,7 @@ class BaselineModelVisualizer:
         )
 
         _, axis = self._setup_plot(
-            model_names, "Model Performance on Test Set by Source", figsize=(3, 3)
+            model_names, "Model Performance on Test Set by Source"
         )
         bar_width = 0.15
         group_spacing = 0.8
@@ -141,7 +141,7 @@ class BaselineModelVisualizer:
         models = list(bootstrap_stats.keys())
         metrics = list(bootstrap_stats[models[0]].keys())
 
-        fig, axes = plt.subplots(1, len(metrics), figsize=(3, 3), sharey=True)
+        fig, axes = plt.subplots(1, len(metrics), sharey=True)
 
         for i, metric in enumerate(metrics):
             ax = axes[i]
@@ -178,10 +178,10 @@ class BaselineModelVisualizer:
         self.plot_layout_and_save(plt=plt, savename="bootstrap_results")
 
     def _setup_plot(
-        self, model_names: List[str], title: str, figsize: Tuple[int, int] = (3, 3)
+        self, model_names: List[str], title: str
     ) -> Tuple[plt.Figure, plt.Axes]:
         """Set up the plot with common parameters."""
-        fig, axis = plt.subplots(figsize=figsize)
+        fig, axis = plt.subplots()
         axis.set_ylabel("AUC score")
         axis.set_title(title)
         axis.set_xticks(range(len(model_names)))
@@ -224,7 +224,6 @@ class BaselineModelVisualizer:
                 "ytick.labelsize": 7,
                 "legend.fontsize": 7,
                 "figure.dpi": 300,
-                "figure.figsize": (3, 3),
                 "font.sans-serif": "Nimbus Sans",
             }
         )
