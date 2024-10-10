@@ -16,6 +16,7 @@ We download the provenance file with:
 
 
 import csv
+import re
 import time
 from typing import Dict, List
 
@@ -77,7 +78,7 @@ class PubMedYearFetcher:
                                 if match := re.search(
                                     r"\b(19|20)\d{2}\b", medline_date
                                 ):
-                                    year = match.group(0)
+                                    year = match[0]
                                 else:
                                     year = "N/A"
                             else:
