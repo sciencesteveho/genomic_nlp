@@ -74,7 +74,7 @@ class PubMedYearFetcher:
                 return years
             except Exception as e:
                 print(f"Error fetching years for PMIDs {pmids}: {str(e)}")
-                wait_time = (i + 1) * 5
+                wait_time = (i + 1) * 10
                 print(f"Rate limit exceeded. Retrying in {wait_time} seconds...")
                 time.sleep(wait_time)
         # return N/A for all PMIDs if failed
