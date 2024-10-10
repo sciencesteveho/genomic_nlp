@@ -40,7 +40,7 @@ class PubMedYearFetcher:
 
     def get_publication_year(self, pmid: str) -> str:
         """Fetch the publication year for a given PMID with delay and retry."""
-        retries = 5
+        retries = 10
         for i in range(retries):
             try:
                 time.sleep(0.35)
