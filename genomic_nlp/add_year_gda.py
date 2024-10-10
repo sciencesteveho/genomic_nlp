@@ -41,7 +41,7 @@ class PubMedYearFetcher:
         retries = 3
         for i in range(retries):
             try:
-                time.sleep(0.35)
+                time.sleep(0.42)
                 handle = Entrez.efetch(db="pubmed", id=pmid, retmode="xml")
                 records = Entrez.read(handle)
                 return records["PubmedArticle"][0]["MedlineCitation"]["Article"][
