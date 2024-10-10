@@ -58,7 +58,7 @@ class PubMedYearFetcher:
 
     def get_publication_years_batch(self, pmids: List[str]) -> Dict[str, str]:
         """fetch publication years for a list of PMIDs in batch."""
-        retries = 5
+        retries = 10
         for i in range(retries):
             try:
                 time.sleep(0.35)
@@ -74,7 +74,7 @@ class PubMedYearFetcher:
                 return years
             except Exception as e:
                 print(f"Error fetching years for PMIDs {pmids}: {str(e)}")
-                wait_time = (i + 1) * 3
+                wait_time = (i + 1) * 5
                 print(f"Rate limit exceeded. Retrying in {wait_time} seconds...")
                 time.sleep(wait_time)
         # return N/A for all PMIDs if failed
