@@ -51,10 +51,9 @@ class PubMedYearFetcher:
                 ]["JournalIssue"]["PubDate"]["Year"]
             except Exception as e:
                 print(f"Error fetching year for PMID {pmid}: {str(e)}")
-                if "429" in str(e):
-                    wait_time = (i + 1) * 2
-                    print(f"Rate limit exceeded. Retrying in {wait_time} seconds...")
-                    time.sleep(wait_time)
+                wait_time = (i + 1) * 2
+                print(f"Rate limit exceeded. Retrying in {wait_time} seconds...")
+                time.sleep(wait_time)
         return "N/A"
 
 
