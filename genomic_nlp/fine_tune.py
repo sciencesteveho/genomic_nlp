@@ -77,21 +77,6 @@ def custom_gene_tokenizer(
     return tokenizer
 
 
-def _write_abstracts_to_text(abstracts_dir: str, prefix: str) -> None:
-    """Write chunks of abstracts to text, where each newline delimits a full
-    abstract."""
-    filenames = _chunk_locator(abstracts_dir, prefix)
-    with open(f"{abstracts_dir}/combined/{prefix}_combined.txt", "w") as output:
-        for filename in filenames:
-            with open(filename, "rb") as file:
-                abstracts = pickle.load(file)
-                for abstract in abstracts:
-                    line = " ".join(
-                        [" ".join(sentence) for sentence in abstract]
-                    ).strip()
-                    output.write(f"{line}\n")
-
-
 def main() -> None:
     """Main function to fine-tune a transformer model on scientific abstracts."""
     # set some params
