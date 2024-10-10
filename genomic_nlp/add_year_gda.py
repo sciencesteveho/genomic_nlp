@@ -40,10 +40,10 @@ class PubMedYearFetcher:
 
     def get_publication_year(self, pmid: str) -> str:
         """Fetch the publication year for a given PMID with delay and retry."""
-        retries = 3
+        retries = 5
         for i in range(retries):
             try:
-                time.sleep(0.2)
+                time.sleep(0.35)
                 handle = Entrez.efetch(db="pubmed", id=pmid, retmode="xml")
                 records = Entrez.read(handle)
                 return records["PubmedArticle"][0]["MedlineCitation"]["Article"][
