@@ -58,7 +58,7 @@ class PubMedYearFetcher:
 
     def get_publication_years_batch(self, pmids: List[str]) -> Dict[str, str]:
         """fetch publication years for a list of PMIDs in batch."""
-        retries = 10
+        retries = 5
         for i in range(retries):
             try:
                 time.sleep(0.35)
@@ -67,14 +67,37 @@ class PubMedYearFetcher:
                 years = {}
                 for article in records["PubmedArticle"]:
                     pmid = article["MedlineCitation"]["PMID"]
-                    year = article["MedlineCitation"]["Article"]["Journal"][
-                        "JournalIssue"
-                    ]["PubDate"]["Year"]
+                    try:
+                        pub_date = article["MedlineCitation"]["Article"]["Journal"][
+                            "JournalIssue"
+                        ]["PubDate"]
+                        year = pub_date.get("Year")
+                        if not year:
+                            if medline_date := pub_date.get("MedlineDate"):
+                                if match := re.search(
+                                    r"\b(19|20)\d{2}\b", medline_date
+                                ):
+                                    year = match.group(0)
+                                else:
+                                    year = "N/A"
+                            else:
+                                year = "N/A"
+                    except Exception as e:
+                        print(f"Error processing PMID {pmid}: {str(e)}")
+                        year = "N/A"
                     years[str(pmid)] = year
+                # handle PMIDs not returned in the response
+                fetched_pmids = {
+                    str(article["MedlineCitation"]["PMID"])
+                    for article in records["PubmedArticle"]
+                }
+                missing_pmids = set(pmids) - fetched_pmids
+                for missing_pmid in missing_pmids:
+                    years[missing_pmid] = "N/A"
                 return years
             except Exception as e:
                 print(f"Error fetching years for PMIDs {pmids}: {str(e)}")
-                wait_time = (i + 1) * 10
+                wait_time = (i + 1) * 3
                 print(f"Rate limit exceeded. Retrying in {wait_time} seconds...")
                 time.sleep(wait_time)
         # return N/A for all PMIDs if failed
@@ -129,6 +152,7 @@ class GeneDataProcessor:
                         rows = []
                 else:
                     print(f"No PMID found for row: {row}")
+
             # process remaining PMIDs
             if pmids:
                 years = self.year_fetcher.get_publication_years_batch(pmids)
