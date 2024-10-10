@@ -32,16 +32,18 @@ class PubMedYearFetcher:
         Fetch the publication year for a given PMID.
     """
 
-    def __init__(self, email: str) -> None:
+    def __init__(self, email: str, api_key: str) -> None:
         """Initialize the PubMedYearFetcher with an email address."""
-        Entrez.email = email  # type: ignore
+        # Entrez.email = email  # type: ignore
+        if api_key:
+            Entrez.api_key = api_key  # type: ignore
 
     def get_publication_year(self, pmid: str) -> str:
         """Fetch the publication year for a given PMID with delay and retry."""
-        retries = 3
+        retries = 5
         for i in range(retries):
             try:
-                time.sleep(0.42)
+                time.sleep(0.35)
                 handle = Entrez.efetch(db="pubmed", id=pmid, retmode="xml")
                 records = Entrez.read(handle)
                 return records["PubmedArticle"][0]["MedlineCitation"]["Article"][
@@ -49,10 +51,9 @@ class PubMedYearFetcher:
                 ]["JournalIssue"]["PubDate"]["Year"]
             except Exception as e:
                 print(f"Error fetching year for PMID {pmid}: {str(e)}")
-                if "429" in str(e):
-                    wait_time = (i + 1) * 2
-                    print(f"Rate limit exceeded. Retrying in {wait_time} seconds...")
-                    time.sleep(wait_time)
+                wait_time = (i + 1) * 3
+                print(f"Rate limit exceeded. Retrying in {wait_time} seconds...")
+                time.sleep(wait_time)
         return "N/A"
 
 
@@ -101,8 +102,9 @@ def main() -> None:
     input_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/disease/Gene-RD-Provenance_V2.1.txt"
     output_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/disease/Gene-RD-Provenance_V2.1_with_year.txt"
     email = "stevesho@umich.edu"
+    api_key = "9283b8c0bc0a8b00999a65428df421ec5708"
 
-    year_fetcher = PubMedYearFetcher(email)
+    year_fetcher = PubMedYearFetcher(email=email, api_key=api_key)
     processor = GeneDataProcessor(year_fetcher)
     processor.process_file(input_file, output_file)
     print("Years added!")
