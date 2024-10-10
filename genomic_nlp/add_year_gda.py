@@ -40,7 +40,7 @@ class PubMedYearFetcher:
 
     def get_publication_year(self, pmid: str) -> str:
         """Fetch the publication year for a given PMID with delay and retry."""
-        retries = 10
+        retries = 5
         for i in range(retries):
             try:
                 time.sleep(0.35)
@@ -51,7 +51,7 @@ class PubMedYearFetcher:
                 ]["JournalIssue"]["PubDate"]["Year"]
             except Exception as e:
                 print(f"Error fetching year for PMID {pmid}: {str(e)}")
-                wait_time = (i + 1) * 2
+                wait_time = (i + 1) * 3
                 print(f"Rate limit exceeded. Retrying in {wait_time} seconds...")
                 time.sleep(wait_time)
         return "N/A"
