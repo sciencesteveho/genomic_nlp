@@ -274,8 +274,11 @@ class ChunkedDocumentProcessor:
         return "<nUm>" if is_number(token) else token
 
     def selective_casefold_token(self, token: str) -> str:
-        """Selectively casefold tokens, avoding gene symbols."""
-        return token if token in self.genes else token.casefold()
+        """No longer selective casefolding, just normal casefolding. Too many
+        instances of genes made it through, so we casefold everything
+        to avoid loss of information.
+        """
+        return token.casefold()
 
     @time_decorator(print_args=False)
     def tokenize_and_ner(self) -> None:
@@ -494,9 +497,15 @@ class ChunkedDocumentProcessor:
     def _remove_substring_from_token(token: str) -> str:
         """Remove 'gene' which is added to all ULMS genes."""
         if token.endswith(" gene"):
-            return token.rsplit(" ", 1)[0]
+            token = token.rsplit(" ", 1)[0]
         else:
-            return re.sub(r"\s+[\(\[].*?[\)\]]$", "", token)
+            token = re.sub(r"\s+[\(\[].*?[\)\]]$", "", token)
+
+        # remove extra characters
+        for extra in ChunkedDocumentProcessor.extras:
+            token = token.replace(extra, "")
+
+        return token
 
 
 def main() -> None:
@@ -540,6 +549,7 @@ def main() -> None:
     hgnc = hgnc_ncbi_genes(tsv=args.hgnc_genes, hgnc=True)
     ncbi = hgnc_ncbi_genes(tsv=args.ncbi_genes)
     genes = gencode.union(hgnc).union(ncbi)
+    genes = {gene.casefold() for gene in genes}
 
     # instantiate document processor
     documentProcessor = ChunkedDocumentProcessor(

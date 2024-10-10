@@ -93,25 +93,44 @@ def write_temporal_abstracts(
     year are included.
     """
 
-    with open(outdir / f"{column}_{year}.txt", "w", encoding="utf-8") as output:
+    output_file = outdir / f"{column}_{year}.txt"
 
-        # ensure df has the required columns
-        if not {"year", column}.issubset(df.columns):
-            raise ValueError(
-                f"DataFrame must contain columns 'year' and "
-                f"'{column}' to write out abstracts."
-            )
+    # ensure df has the required columns
+    if not {"year", column}.issubset(df.columns):
+        raise ValueError(
+            f"DataFrame must contain columns 'year' and "
+            f"'{column}' to write out abstracts."
+        )
 
-        # temporal split
-        filtered_df = df[df["year"] <= year]
-        print(f" - {len(filtered_df)} abstracts after filtering by year.")
+    # temporal split
+    filtered_df = df[df["year"] <= year]
+    print(f" - {len(filtered_df)} abstracts after filtering by year.")
 
-        for _, row in filtered_df.iterrows():
-            processed_abstract: List[List[str]] = row[column]
-            for sentence in processed_abstract:
-                line = " ".join(sentence)
-                output.write(f"{line}\n")
+    # flatten sentences
+    lines = [
+        " ".join(sentence) for abstract in filtered_df[column] for sentence in abstract
+    ]
+
+    # write out lines
+    with open(output_file, "w", encoding="utf-8") as output:
+        output.write("\n".join(lines) + "\n")
+
     print(f"Writing out abstracts for {year} complete.")
+
+
+def write_finetune_to_text(abstracts_dir: str, prefix: str) -> None:
+    """Write chunks of abstracts to text, where each newline delimits a full
+    abstract."""
+    filenames = _chunk_locator(abstracts_dir, prefix)
+    with open(f"{abstracts_dir}/combined/{prefix}_combined.txt", "w") as output:
+        for filename in filenames:
+            with open(filename, "rb") as file:
+                abstracts = pickle.load(file)
+                for abstract in abstracts:
+                    line = " ".join(
+                        [" ".join(sentence) for sentence in abstract]
+                    ).strip()
+                    output.write(f"{line}\n")
 
 
 def main() -> None:
@@ -141,6 +160,9 @@ def main() -> None:
         write_temporal_abstracts(
             combined_df, year_outdir, year, "processed_abstracts_w2v_nogenes"
         )
+
+    # write out finetune abstracts
+    write_finetune_to_text(working_dir, "processed_abstracts_finetune")
 
     # parser = argparse.ArgumentParser(
     #     description="Combine abstract chunks and write sentences to text files for Word2Vec."
