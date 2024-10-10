@@ -34,7 +34,7 @@ class PubMedYearFetcher:
 
     def __init__(self, email: str, api_key: str) -> None:
         """Initialize the PubMedYearFetcher with an email address."""
-        Entrez.email = email  # type: ignore
+        # Entrez.email = email  # type: ignore
         if api_key:
             Entrez.api_key = api_key  # type: ignore
 
