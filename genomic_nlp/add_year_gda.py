@@ -34,7 +34,7 @@ class PubMedYearFetcher:
 
     def __init__(self, email: str, api_key: str) -> None:
         """Initialize the PubMedYearFetcher with an email address."""
-        # Entrez.email = email  # type: ignore
+        Entrez.email = email  # type: ignore
         if api_key:
             Entrez.api_key = api_key  # type: ignore
 
@@ -56,6 +56,53 @@ class PubMedYearFetcher:
                 time.sleep(wait_time)
         return "N/A"
 
+    def get_publication_years_batch(self, pmids: List[str]) -> Dict[str, str]:
+        """fetch publication years for a list of PMIDs in batch."""
+        retries = 5
+        for i in range(retries):
+            try:
+                time.sleep(0.35)
+                handle = Entrez.efetch(db="pubmed", id=",".join(pmids), retmode="xml")
+                records = Entrez.read(handle)
+                years = {}
+                for article in records["PubmedArticle"]:
+                    pmid = article["MedlineCitation"]["PMID"]
+                    try:
+                        pub_date = article["MedlineCitation"]["Article"]["Journal"][
+                            "JournalIssue"
+                        ]["PubDate"]
+                        year = pub_date.get("Year")
+                        if not year:
+                            if medline_date := pub_date.get("MedlineDate"):
+                                if match := re.search(
+                                    r"\b(19|20)\d{2}\b", medline_date
+                                ):
+                                    year = match.group(0)
+                                else:
+                                    year = "N/A"
+                            else:
+                                year = "N/A"
+                    except Exception as e:
+                        print(f"Error processing PMID {pmid}: {str(e)}")
+                        year = "N/A"
+                    years[str(pmid)] = year
+                # handle PMIDs not returned in the response
+                fetched_pmids = {
+                    str(article["MedlineCitation"]["PMID"])
+                    for article in records["PubmedArticle"]
+                }
+                missing_pmids = set(pmids) - fetched_pmids
+                for missing_pmid in missing_pmids:
+                    years[missing_pmid] = "N/A"
+                return years
+            except Exception as e:
+                print(f"Error fetching years for PMIDs {pmids}: {str(e)}")
+                wait_time = (i + 1) * 3
+                print(f"Rate limit exceeded. Retrying in {wait_time} seconds...")
+                time.sleep(wait_time)
+        # return N/A for all PMIDs if failed
+        return {pmid: "N/A" for pmid in pmids}
+
 
 class GeneDataProcessor:
     """Simple class to fetch publication years for PMIDs using biopython.
@@ -76,6 +123,9 @@ class GeneDataProcessor:
         """Add publication year to each row in the input provenance file using
         batching.
         """
+        batch_size = 200
+        pmids = []
+        rows = []
         with (
             open(input_file, "r") as infile,
             open(output_file, "w", newline="") as outfile,
@@ -89,12 +139,28 @@ class GeneDataProcessor:
 
             for row in reader:
                 if pmid := row[pmid_column].strip():
-                    year = self.year_fetcher.get_publication_year(pmid)
-                    print(f"PMID {pmid}: {year}")
-                    row.append(year)
-                    writer.writerow(row)
+                    pmids.append(pmid)
+                    rows.append(row)
+                    if len(pmids) >= batch_size:
+                        years = self.year_fetcher.get_publication_years_batch(pmids)
+                        for r, p in zip(rows, pmids):
+                            year = years.get(p, "N/A")
+                            print(f"PMID {p}: {year}")
+                            r.append(year)
+                            writer.writerow(r)
+                        pmids = []
+                        rows = []
                 else:
                     print(f"No PMID found for row: {row}")
+
+            # process remaining PMIDs
+            if pmids:
+                years = self.year_fetcher.get_publication_years_batch(pmids)
+                for r, p in zip(rows, pmids):
+                    year = years.get(p, "N/A")
+                    print(f"PMID {p}: {year}")
+                    r.append(year)
+                    writer.writerow(r)
 
 
 def main() -> None:
