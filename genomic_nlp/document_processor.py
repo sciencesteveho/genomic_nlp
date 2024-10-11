@@ -19,6 +19,7 @@ import pybedtools  # type: ignore
 from scispacy.linking import EntityLinker  # type: ignore
 import spacy  # type: ignore
 from spacy.language import Language  # type: ignore
+from spacy.tokens import Doc  # type: ignore
 from spacy.tokens import Span  # type: ignore
 from spacy.tokens import Token  # type: ignore
 from tqdm import tqdm  # type: ignore
@@ -162,6 +163,7 @@ class ChunkedDocumentProcessor:
         ":",
         "©",
         ",",
+        "-",
     }
 
     finetune_extras = {
@@ -228,6 +230,11 @@ class ChunkedDocumentProcessor:
 
         self.nlp = spacy.load(self.spacy_model)
 
+        # add entity ruler for genes
+        ruler = self.nlp.add_pipe("entity_ruler", before="ner")
+        gene_patterns = [{"label": "GENE", "pattern": gene} for gene in self.genes]
+        ruler.add_patterns(gene_patterns)
+
         # customize tokenizer to keep hyphens and underscores within tokens
         infix_re = re.compile(r"""[-~]""")
         self.nlp.tokenizer.infix_finditer = infix_re.finditer
@@ -282,6 +289,50 @@ class ChunkedDocumentProcessor:
         """
         return token.casefold()
 
+    def process_entity(self, ent: Span) -> Tuple[str, str]:
+        """Process an entity span and return tokens for w2v and finetune."""
+        if ent.label_ == "GENE":
+            casefolded_gene = ent.text.casefold()
+            return casefolded_gene, casefolded_gene
+        else:
+            canonical_entity_w2v = self.get_canonical_entity(ent=ent, lemmatize=True)
+            return canonical_entity_w2v.casefold(), ent.text
+
+    def process_token(self, token: Token) -> Tuple[str, str]:
+        """Process a single token and return tokens for w2v and finetune."""
+        token_processed_w2v = self.custom_lemmatize(token, lemmatize=True)
+        token_processed_ft = self.custom_lemmatize(token, lemmatize=False)
+        return token_processed_w2v, token_processed_ft
+
+    def process_document(self, doc_processed: Doc) -> Tuple[List[List[str]], List[str]]:
+        """Process a single spaCy Doc and return tokens for w2v and finetune."""
+        doc_sentences_w2v = []
+        doc_tokens_finetune = []
+
+        for sent in doc_processed.sents:
+            sent_tokens_w2v = []
+            sentence_start = sent.start
+            while sentence_start < sent.end:
+                token = doc_processed[sentence_start]
+                if token.ent_iob_ == "B":
+                    # beginning of an ent
+                    ent = doc_processed[token.i : token.ent_end]
+                    token_w2v, token_ft = self.process_entity(ent)
+                    sent_tokens_w2v.append(token_w2v)
+                    doc_tokens_finetune.append(token_ft)
+                    sentence_start = token.ent_end  # skip to the end of the ent
+                elif token.ent_iob_ == "I":
+                    # inside an ent, already processed
+                    sentence_start += 1
+                else:
+                    # not part of an ent
+                    token_w2v, token_ft = self.process_token(token)
+                    sent_tokens_w2v.append(token_w2v)
+                    doc_tokens_finetune.append(token_ft)
+                    sentence_start += 1
+            doc_sentences_w2v.append(sent_tokens_w2v)
+        return doc_sentences_w2v, doc_tokens_finetune
+
     @time_decorator(print_args=False)
     def tokenize_and_ner(self) -> None:
         """Tokenize the abstracts using spaCy with batch processing and
@@ -302,44 +353,9 @@ class ChunkedDocumentProcessor:
                 self.nlp.pipe(documents, batch_size=self.batch_size, n_process=4),
             ):
                 try:
-                    doc_sentences_w2v = []
-                    doc_tokens_finetune = []
-                    token_idx_to_entity = {}
-                    for ent in doc_processed.ents:
-                        for idx in range(ent.start, ent.end):
-                            token_idx_to_entity[idx] = ent
-
-                    for sent in doc_processed.sents:
-                        sent_tokens_w2v = []
-                        token_iter = iter(sent)
-                        for token in token_iter:
-                            token_idx = token.i
-                            if token_idx in token_idx_to_entity:
-                                ent = token_idx_to_entity[token_idx]
-                                if token_idx != ent.start:
-                                    continue
-                                # process the entity only once, and only for w2v
-                                canonical_entity_w2v = self.get_canonical_entity(
-                                    ent=ent, lemmatize=True
-                                )
-                                sent_tokens_w2v.append(canonical_entity_w2v.casefold())
-                                doc_tokens_finetune.append(ent.text)
-
-                                # skip the rest of the tokens in the entity
-                                for _ in range(ent.end - ent.start - 1):
-                                    next(token_iter, None)
-                            else:
-                                token_processed_w2v = self.custom_lemmatize(
-                                    token, lemmatize=True
-                                )
-                                sent_tokens_w2v.append(token_processed_w2v)
-                                token_processed_ft = self.custom_lemmatize(
-                                    token, lemmatize=False
-                                )
-                                doc_tokens_finetune.append(token_processed_ft)
-
-                        doc_sentences_w2v.append(sent_tokens_w2v)
-
+                    doc_sentences_w2v, doc_tokens_finetune = self.process_document(
+                        doc_processed
+                    )
                     processed_sentences_w2v.append(doc_sentences_w2v)
                     processed_tokens_finetune.append(doc_tokens_finetune)
                     new_doc_indices.append(doc_idx)
@@ -357,6 +373,9 @@ class ChunkedDocumentProcessor:
 
     def get_canonical_entity(self, ent: Span, lemmatize: bool) -> str:
         """Normalize entities in a document using the UMLS term."""
+        if ent.label_ == "GENE":
+            return ent.text.casefold()
+
         if ent._.kb_ents:
             kb_id, score = ent._.kb_ents[0]
             if score >= self.nlp.get_pipe("scispacy_linker").threshold:
@@ -366,35 +385,40 @@ class ChunkedDocumentProcessor:
                     .canonical_name
                 )
                 return self._remove_substring_from_token(canonical_name)
+
         if not lemmatize:
             return "<nUm>" if is_number(ent.text) else ent.text
+
         lemmatized_tokens = [token.lemma_ for token in ent]
         return " ".join(lemmatized_tokens)
 
     @time_decorator(print_args=False)
     def exclude_symbols(self) -> None:
-        """Exclude punctuation tokens and replace standalone numbers."""
+        """Exclude punctuation tokens, replace standalone numbers, and remove double spaces in w2v tokens."""
         tqdm.pandas(desc="Cleaning tokens")
 
         # helper function for w2v
         def clean_sentences(sentences: List[List[str]]) -> List[List[str]]:
-            """Clean a list of list of tokens."""
+            """Clean a list of list of tokens by excluding symbols and removing double spaces."""
             cleaned_sentences = []
             for sent in sentences:
-                cleaned_sent = [
-                    replacement
-                    for token in sent
-                    if (replacement := self.replace_symbol_tokens(token)) is not None
-                ]
+                cleaned_sent = []
+                for token in sent:
+                    replacement = self.replace_symbol_tokens(token)
+                    if replacement is not None:
+                        # remove double spaces
+                        if "  " in replacement:
+                            replacement = replacement.replace("  ", " ")
+                        cleaned_sent.append(replacement)
                 cleaned_sentences.append(cleaned_sent)
             return cleaned_sentences
 
-        # process w2v version
+        # process w2v
         self.df["processed_abstracts_w2v"] = self.df[
             "processed_abstracts_w2v"
         ].progress_apply(clean_sentences)
 
-        # process finetune version
+        # process finetune
         self.df["processed_abstracts_finetune"] = self.df[
             "processed_abstracts_finetune"
         ].progress_apply(

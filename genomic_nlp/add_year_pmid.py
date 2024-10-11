@@ -12,6 +12,10 @@ column 3.
 
 We download the provenance file with:
     wget --content-disposition https://figshare.com/ndownloader/files/25769330
+
+The script was additionally used to add publication years to annotated cancer
+genes with known mechanisms of action and a corresponding PMID. The file was
+downloaded from the Cancer Gene Census (CGC) and NCG.
 """
 
 
@@ -41,7 +45,7 @@ class PubMedYearFetcher:
 
     def get_publication_year(self, pmid: str) -> str:
         """Fetch the publication year for a given PMID with delay and retry."""
-        retries = 5
+        retries = 10
         for i in range(retries):
             try:
                 time.sleep(0.35)
@@ -52,14 +56,14 @@ class PubMedYearFetcher:
                 ]["JournalIssue"]["PubDate"]["Year"]
             except Exception as e:
                 print(f"Error fetching year for PMID {pmid}: {str(e)}")
-                wait_time = (i + 1) * 3
+                wait_time = (i + 1) * 5
                 print(f"Rate limit exceeded. Retrying in {wait_time} seconds...")
                 time.sleep(wait_time)
         return "N/A"
 
     def get_publication_years_batch(self, pmids: List[str]) -> Dict[str, str]:
         """fetch publication years for a list of PMIDs in batch."""
-        retries = 5
+        retries = 10
         for i in range(retries):
             try:
                 time.sleep(0.35)
@@ -98,7 +102,7 @@ class PubMedYearFetcher:
                 return years
             except Exception as e:
                 print(f"Error fetching years for PMIDs {pmids}: {str(e)}")
-                wait_time = (i + 1) * 3
+                wait_time = (i + 1) * 5
                 print(f"Rate limit exceeded. Retrying in {wait_time} seconds...")
                 time.sleep(wait_time)
         # return N/A for all PMIDs if failed
@@ -114,9 +118,10 @@ class GeneDataProcessor:
         Process the input file and add publication year to each row.
     """
 
-    def __init__(self, year_fetcher: PubMedYearFetcher) -> None:
+    def __init__(self, year_fetcher: PubMedYearFetcher, header: bool = True) -> None:
         """Initialize the GeneDataProcessor."""
         self.year_fetcher = year_fetcher
+        self.header = header
 
     def process_file(
         self, input_file: str, output_file: str, pmid_column: int = 2
@@ -134,9 +139,10 @@ class GeneDataProcessor:
             reader = csv.reader(infile, delimiter="\t")
             writer = csv.writer(outfile, delimiter="\t")
 
-            header = next(reader)
-            header.append("Publication Year")
-            writer.writerow(header)
+            if self.header:
+                header = next(reader)
+                header.append("Publication Year")
+                writer.writerow(header)
 
             for row in reader:
                 if pmid := row[pmid_column].strip():
@@ -166,14 +172,18 @@ class GeneDataProcessor:
 
 def main() -> None:
     """Main function to add publication year to gene-disease associations."""
-    input_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/disease/Gene-RD-Provenance_V2.1.txt"
-    output_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/disease/Gene-RD-Provenance_V2.1_with_year.txt"
+    # input_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/disease/Gene-RD-Provenance_V2.1.txt"
+    # output_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/disease/Gene-RD-Provenance_V2.1_with_year.txt"
+    input_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/cancer/cancer_drivers_pmid.txt"
+    output_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/cancer/cancer_drivers_pmid_with_year.txt"
     email = "stevesho@umich.edu"
     api_key = "9283b8c0bc0a8b00999a65428df421ec5708"
 
     year_fetcher = PubMedYearFetcher(email=email, api_key=api_key)
-    processor = GeneDataProcessor(year_fetcher)
-    processor.process_file(input_file, output_file)
+    processor = GeneDataProcessor(year_fetcher, header=False)
+    processor.process_file(
+        input_file=input_file, output_file=output_file, pmid_column=1
+    )
     print("Years added!")
 
 
