@@ -14,6 +14,7 @@ import logging
 import re
 from typing import List, Set, Tuple, Union
 
+import ahocorasick  # type: ignore
 import pandas as pd  # type: ignore
 import pybedtools  # type: ignore
 from scispacy.linking import EntityLinker  # type: ignore
@@ -205,13 +206,19 @@ class ChunkedDocumentProcessor:
         """Initialize the ChunkedDocumentProcessor object."""
         self.root_dir = root_dir
         self.chunk = chunk
-        self.genes = genes
         self.batch_size = batch_size
+        self.genes = {gene.lower() for gene in genes}
 
         self.df = abstracts[["cleaned_abstracts", "year"]]
 
         self.nlp: Language = None
         self.spacy_model: str = ""
+
+        # for efficient gene matching
+        self.automaton = ahocorasick.Automaton()
+        for gene in self.genes:
+            self.automaton.add_word(gene, gene)
+        self.automaton.make_automaton()
 
     def _make_directories(self) -> None:
         """Make directories for processing"""
@@ -372,8 +379,13 @@ class ChunkedDocumentProcessor:
 
     def get_canonical_entity(self, ent: Span, lemmatize: bool) -> str:
         """Normalize entities in a document using the UMLS term."""
+        # check if the entity text is a number
+        if is_number(ent.text):
+            return "<nUm>"
+
+        # don't lemmatize or canonicalize gemes
         if ent.label_ == "GENE":
-            return ent.text.casefold()
+            return ent.text
 
         if ent._.kb_ents:
             kb_id, score = ent._.kb_ents[0]
@@ -383,10 +395,18 @@ class ChunkedDocumentProcessor:
                     .kb.cui_to_entity[kb_id]
                     .canonical_name
                 )
-                return self._remove_substring_from_token(canonical_name)
+                canonical_name = self._remove_substring_from_token(
+                    canonical_name
+                ).casefold()
 
+                for _, gene in self.automaton.iter(canonical_name):
+                    return gene
+
+                return canonical_name
+
+        # lemmatize
         if not lemmatize:
-            return "<nUm>" if is_number(ent.text) else ent.text
+            return ent.text
 
         lemmatized_tokens = [token.lemma_ for token in ent]
         return " ".join(lemmatized_tokens)
@@ -502,7 +522,7 @@ class ChunkedDocumentProcessor:
         # remove extra characters
         # ner specific issues
         replacements = [
-            " -",
+            "-",
             ",",
             "[",
             " ] )",
