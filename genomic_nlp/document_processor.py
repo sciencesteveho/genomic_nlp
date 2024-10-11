@@ -31,7 +31,7 @@ from utils import is_number
 from utils import time_decorator
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
         logging.FileHandler("document_processor_debug.log"),
@@ -208,6 +208,8 @@ class ChunkedDocumentProcessor:
         self.chunk = chunk
         self.batch_size = batch_size
         self.genes = {gene.lower() for gene in genes}
+        for gene in ["mice", "bad", "insulin", "camp", "plasminogen", "ski"]:
+            self.genes.remove(gene)
 
         self.df = abstracts[["cleaned_abstracts", "year"]]
 
