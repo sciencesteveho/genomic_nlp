@@ -264,7 +264,7 @@ class ChunkedDocumentProcessor:
         """Custom token processing. Only lemmatize tokens that are not
         recognized as entities via NER.
         """
-        if token.ent_type_ == "ENTITY":
+        if token.ent_type_ in ["ENTITY", "GENE"]:
             return token.text
         else:
             return token.lemma_ if lemmatize else token.text
@@ -309,27 +309,26 @@ class ChunkedDocumentProcessor:
         doc_sentences_w2v = []
         doc_tokens_finetune = []
 
+        # create a mapping from entity start index to the entity Span
+        entities = {ent.start: ent for ent in doc_processed.ents}
+
         for sent in doc_processed.sents:
             sent_tokens_w2v = []
             sentence_start = sent.start
-            while sentence_start < sent.end:
-                token = doc_processed[sentence_start]
-                if token.ent_iob_ == "B":
-                    # beginning of an ent
-                    ent = doc_processed[token.i : token.ent_end]
+            sentence_end = sent.end
+
+            current = sentence_start
+            while current < sentence_end:
+                token = doc_processed[current]
+                if current in entities:
+                    ent = entities[current]
                     token_w2v, token_ft = self.process_entity(ent)
-                    sent_tokens_w2v.append(token_w2v)
-                    doc_tokens_finetune.append(token_ft)
-                    sentence_start = token.ent_end  # skip to the end of the ent
-                elif token.ent_iob_ == "I":
-                    # inside an ent, already processed
-                    sentence_start += 1
+                    current = ent.end  # skip the entire entity span
                 else:
-                    # not part of an ent
                     token_w2v, token_ft = self.process_token(token)
-                    sent_tokens_w2v.append(token_w2v)
-                    doc_tokens_finetune.append(token_ft)
-                    sentence_start += 1
+                    current += 1
+                doc_tokens_finetune.append(token_ft)
+                sent_tokens_w2v.append(token_w2v)
             doc_sentences_w2v.append(sent_tokens_w2v)
         return doc_sentences_w2v, doc_tokens_finetune
 
