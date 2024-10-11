@@ -162,7 +162,7 @@ def main() -> None:
         )
 
     # write out finetune abstracts
-    write_finetune_to_text(working_dir, "processed_abstracts_finetune")
+    write_finetune_to_text(working_dir, "processed_abstracts_finetune_")
 
     # parser = argparse.ArgumentParser(
     #     description="Combine abstract chunks and write sentences to text files for Word2Vec."
