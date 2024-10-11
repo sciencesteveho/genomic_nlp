@@ -339,6 +339,54 @@ class ChunkedDocumentProcessor:
             doc_sentences_w2v.append(sent_tokens_w2v)
         return doc_sentences_w2v, doc_tokens_finetune
 
+    def get_canonical_entity(self, ent: Span, lemmatize: bool) -> str:
+        """Normalize entities in a document using the UMLS term."""
+        # check if the entity text is a number
+        if is_number(ent.text):
+            return "<nUm>"
+
+        # don't lemmatize or canonicalize genes
+        if ent.label_ == "GENE":
+            return ent.text
+
+        if ent._.kb_ents:
+            kb_id, score = ent._.kb_ents[0]
+            if score >= self.nlp.get_pipe("scispacy_linker").threshold:
+                canonical_name = (
+                    self.nlp.get_pipe("scispacy_linker")
+                    .kb.cui_to_entity[kb_id]
+                    .canonical_name
+                )
+                canonical_name = self._remove_substring_from_token(
+                    canonical_name
+                ).casefold()
+
+                # iterate over matches
+                for end_index, gene in self.automaton.iter(canonical_name):
+                    start_index = end_index - len(gene) + 1
+
+                    # boundary check to only match full words
+                    if (
+                        start_index == 0
+                        or not canonical_name[start_index - 1].isalnum()
+                    ) and (
+                        end_index + 1 == len(canonical_name)
+                        or not canonical_name[end_index + 1].isalnum()
+                    ):
+                        logger.debug(
+                            f"Matched gene '{gene}' in canonical name '{canonical_name}'"
+                        )
+                        return gene
+
+                return canonical_name
+
+        # lemmatize
+        if not lemmatize:
+            return ent.text
+
+        lemmatized_tokens = [token.lemma_ for token in ent]
+        return " ".join(lemmatized_tokens)
+
     @time_decorator(print_args=False)
     def tokenize_and_ner(self) -> None:
         """Tokenize the abstracts using spaCy with batch processing and
@@ -376,40 +424,6 @@ class ChunkedDocumentProcessor:
         self.df["processed_abstracts_finetune"] = pd.Series(
             processed_tokens_finetune, index=new_doc_indices
         )
-
-    def get_canonical_entity(self, ent: Span, lemmatize: bool) -> str:
-        """Normalize entities in a document using the UMLS term."""
-        # check if the entity text is a number
-        if is_number(ent.text):
-            return "<nUm>"
-
-        # don't lemmatize or canonicalize gemes
-        if ent.label_ == "GENE":
-            return ent.text
-
-        if ent._.kb_ents:
-            kb_id, score = ent._.kb_ents[0]
-            if score >= self.nlp.get_pipe("scispacy_linker").threshold:
-                canonical_name = (
-                    self.nlp.get_pipe("scispacy_linker")
-                    .kb.cui_to_entity[kb_id]
-                    .canonical_name
-                )
-                canonical_name = self._remove_substring_from_token(
-                    canonical_name
-                ).casefold()
-
-                for _, gene in self.automaton.iter(canonical_name):
-                    return gene
-
-                return canonical_name
-
-        # lemmatize
-        if not lemmatize:
-            return ent.text
-
-        lemmatized_tokens = [token.lemma_ for token in ent]
-        return " ".join(lemmatized_tokens)
 
     @time_decorator(print_args=False)
     def exclude_symbols(self) -> None:
