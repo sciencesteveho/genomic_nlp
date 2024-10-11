@@ -12,7 +12,7 @@ from collections import defaultdict
 import csv
 import logging
 import re
-from typing import List, Set, Tuple, Union
+from typing import Callable, List, Set, Tuple, Union
 
 import ahocorasick  # type: ignore
 import pandas as pd  # type: ignore
@@ -39,49 +39,6 @@ logging.basicConfig(
     ],
 )
 logger = logging.getLogger(__name__)
-
-
-def gene_symbol_from_gencode(gencode_ref: pybedtools.BedTool) -> Set[str]:
-    """Returns deduped set of genes from a gencode gtf. Written for the gencode
-    45 and avoids header"""
-    return {
-        line[8].split('gene_name "')[1].split('";')[0]
-        for line in gencode_ref
-        if not line[0].startswith("#") and "gene_name" in line[8]
-    }
-
-
-def gencode_genes(gtf: str) -> Set[str]:
-    """Get gene symbols from a gencode gtf file."""
-    logger.info("Grabbing genes from GTF")
-    gtf = pybedtools.BedTool(gtf)
-    genes = list(gene_symbol_from_gencode(gtf))
-
-    for key in COPY_GENES:
-        genes.remove(key)
-        genes.append(COPY_GENES[key])
-    return set(genes)
-
-
-def hgnc_ncbi_genes(tsv: str, hgnc: bool = False) -> Set[str]:
-    """Get gene symbols and names from HGNC file"""
-    gene_symbols, gene_names = [], []
-    with open(tsv, newline="") as file:
-        reader = csv.reader(file, delimiter="\t")
-        next(reader)  # skip header
-        for row in reader:
-            if hgnc:
-                gene_symbols.append(row[1])
-                gene_names.append(row[2])
-            else:
-                gene_symbols.append(row[0])
-                gene_names.append(row[1])
-
-    gene_names = [
-        name.replace("(", "").replace(")", "").replace(" ", "_").replace(",", "")
-        for name in gene_names
-    ]
-    return set(gene_symbols + gene_names)
 
 
 class ChunkedDocumentProcessor:
@@ -238,15 +195,12 @@ class ChunkedDocumentProcessor:
         logger.info(f"Loading spaCy model: {self.spacy_model}")
 
         self.nlp = spacy.load(self.spacy_model)
+        self.nlp.tokenizer = self._custom_tokenizer(self.nlp)
 
         # add entity ruler for genes
         ruler = self.nlp.add_pipe("entity_ruler", before="ner")
         gene_patterns = [{"label": "GENE", "pattern": gene} for gene in self.genes]
         ruler.add_patterns(gene_patterns)
-
-        # customize tokenizer to keep hyphens and underscores within tokens
-        infix_re = re.compile(r"""[-~]""")
-        self.nlp.tokenizer.infix_finditer = infix_re.finditer
 
         # add sentencizer if not present
         if "sentencizer" not in self.nlp.pipe_names:
@@ -552,6 +506,86 @@ class ChunkedDocumentProcessor:
             token = token.replace(extra, "")
 
         return token
+
+    @staticmethod
+    def _custom_tokenizer(nlp: Language) -> Callable[[str], Doc]:
+        """Add few custom rules to tokenizer."""
+        default_tokenizer = nlp.tokenizer
+
+        def custom_tokenizer_func(text: str) -> Doc:
+            text = gene_specific_tokenization(text)
+            return default_tokenizer(text)
+
+        return custom_tokenizer_func
+
+
+def gene_symbol_from_gencode(gencode_ref: pybedtools.BedTool) -> Set[str]:
+    """Returns deduped set of genes from a gencode gtf. Written for the gencode
+    45 and avoids header"""
+    return {
+        line[8].split('gene_name "')[1].split('";')[0]
+        for line in gencode_ref
+        if not line[0].startswith("#") and "gene_name" in line[8]
+    }
+
+
+def gencode_genes(gtf: str) -> Set[str]:
+    """Get gene symbols from a gencode gtf file."""
+    logger.info("Grabbing genes from GTF")
+    gtf = pybedtools.BedTool(gtf)
+    genes = list(gene_symbol_from_gencode(gtf))
+
+    for key in COPY_GENES:
+        genes.remove(key)
+        genes.append(COPY_GENES[key])
+    return set(genes)
+
+
+def hgnc_ncbi_genes(tsv: str, hgnc: bool = False) -> Set[str]:
+    """Get gene symbols and names from HGNC file"""
+    gene_symbols, gene_names = [], []
+    with open(tsv, newline="") as file:
+        reader = csv.reader(file, delimiter="\t")
+        next(reader)  # skip header
+        for row in reader:
+            if hgnc:
+                gene_symbols.append(row[1])
+                gene_names.append(row[2])
+            else:
+                gene_symbols.append(row[0])
+                gene_names.append(row[1])
+
+    gene_names = [
+        name.replace("(", "").replace(")", "").replace(" ", "_").replace(",", "")
+        for name in gene_names
+    ]
+    return set(gene_symbols + gene_names)
+
+
+def gene_specific_tokenization(text: str) -> str:
+    """Various hand-crafted rules for tokenization of gene names."""
+    # replace various dash-like characters
+    text = re.sub(r"[−–—]", "-", text)
+
+    #'p53/p73' -> 'p53 p73' (split on '/')
+    text = re.sub(r"([A-Za-z0-9]+)\/([A-Za-z0-9]+)", r"\1 \2", text)
+
+    #'p53(+/+)' and 'p53(-/-)' -> 'p53'
+    text = re.sub(r"([A-Za-z0-9]+)\([\+\-]\/[\+\-]\)", r"\1", text)
+
+    #'p53-/-' and 'trp53+/' -> 'p53', 'trp53'
+    text = re.sub(r"([A-Za-z0-9]+)[\+\-]?\/[\+\-]?", r"\1", text)
+
+    # remove '+' and '-' suffixes from 'p53+' or 'p53-'
+    text = re.sub(r"([A-Za-z0-9]+)[\+\-]", r"\1", text)
+
+    # remove standalone '+' or '-' tokens
+    text = re.sub(r"\b[\+\-]\b", "", text)
+
+    # remove extra spaces
+    text = re.sub(r"\s+", " ", text).strip()
+
+    return text
 
 
 def main() -> None:
