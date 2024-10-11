@@ -570,6 +570,13 @@ def main() -> None:
         genes=genes,
     )
 
+    # do a quick check of the abstracts
+    test_text = "The RAS oncogene is involved in cancer."
+    doc = documentProcessor.nlp(test_text)
+    doc_sentences_w2v, doc_tokens_finetune = documentProcessor.process_document(doc)
+    print("W2V Sentences:", doc_sentences_w2v)
+    print("Finetune Tokens:", doc_tokens_finetune)
+
     # run processing pipeline
     documentProcessor.processing_pipeline()
 
