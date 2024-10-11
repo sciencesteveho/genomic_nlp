@@ -159,6 +159,9 @@ class ChunkedDocumentProcessor:
         "**",
         "â",
         "Å",
+        ":",
+        "©",
+        ",",
     }
 
     finetune_extras = {
@@ -237,9 +240,8 @@ class ChunkedDocumentProcessor:
         self.nlp.add_pipe(
             "scispacy_linker",
             config={
-                "resolve_abbreviations": True,
                 "linker_name": "umls",
-                "threshold": 0.9,
+                "threshold": 0.95,
                 "max_entities_per_mention": 1,
             },
             last=True,
@@ -260,10 +262,10 @@ class ChunkedDocumentProcessor:
         else:
             return token.lemma_ if lemmatize else token.text
 
-    def replace_number_symbol_tokens(
+    def replace_symbol_tokens(
         self, token: str, finetune: bool = False
     ) -> Union[str, None]:
-        """Replace numbers with a number based symbol, and symbols with None."""
+        """Replace numbers with a number based symbol, and symbols with an empty string."""
         if (
             not finetune
             and token in self.extras
@@ -271,7 +273,7 @@ class ChunkedDocumentProcessor:
             and token in self.finetune_extras
         ):
             return None
-        return "<nUm>" if is_number(token) else token
+        return token
 
     def selective_casefold_token(self, token: str) -> str:
         """No longer selective casefolding, just normal casefolding. Too many
@@ -282,7 +284,9 @@ class ChunkedDocumentProcessor:
 
     @time_decorator(print_args=False)
     def tokenize_and_ner(self) -> None:
-        """Tokenize the abstracts using spaCy with batch processing and standardize entities."""
+        """Tokenize the abstracts using spaCy with batch processing and
+        standardize entities.
+        """
         documents = self.df["cleaned_abstracts"].tolist()
         doc_indices = self.df.index.tolist()
 
@@ -318,7 +322,7 @@ class ChunkedDocumentProcessor:
                                 canonical_entity_w2v = self.get_canonical_entity(
                                     ent=ent, lemmatize=True
                                 )
-                                sent_tokens_w2v.append(canonical_entity_w2v)
+                                sent_tokens_w2v.append(canonical_entity_w2v.casefold())
                                 doc_tokens_finetune.append(ent.text)
 
                                 # skip the rest of the tokens in the entity
@@ -363,12 +367,12 @@ class ChunkedDocumentProcessor:
                 )
                 return self._remove_substring_from_token(canonical_name)
         if not lemmatize:
-            return ent.text
+            return "<nUm>" if is_number(ent.text) else ent.text
         lemmatized_tokens = [token.lemma_ for token in ent]
         return " ".join(lemmatized_tokens)
 
     @time_decorator(print_args=False)
-    def exclude_punctuation_replace_standalone_numbers(self) -> None:
+    def exclude_symbols(self) -> None:
         """Exclude punctuation tokens and replace standalone numbers."""
         tqdm.pandas(desc="Cleaning tokens")
 
@@ -380,8 +384,7 @@ class ChunkedDocumentProcessor:
                 cleaned_sent = [
                     replacement
                     for token in sent
-                    if (replacement := self.replace_number_symbol_tokens(token))
-                    is not None
+                    if (replacement := self.replace_symbol_tokens(token)) is not None
                 ]
                 cleaned_sentences.append(cleaned_sent)
             return cleaned_sentences
@@ -398,34 +401,10 @@ class ChunkedDocumentProcessor:
             lambda tokens: [
                 replacement
                 for token in tokens
-                if (
-                    replacement := self.replace_number_symbol_tokens(
-                        token, finetune=True
-                    )
-                )
+                if (replacement := self.replace_symbol_tokens(token, finetune=True))
                 is not None
             ]
         )
-
-    @time_decorator(print_args=False)
-    def selective_casefold(self) -> None:
-        """Selectively casefold the abstracts. Only done for w2v."""
-        tqdm.pandas(desc="Casefolding")
-
-        # helper function
-        def casefold_sentences(sentences: List[List[str]]) -> List[List[str]]:
-            """Casefold a list of list of tokens."""
-            casefolded_sentences = []
-            for sent in sentences:
-                casefolded_sent = [
-                    self.selective_casefold_token(token) for token in sent
-                ]
-                casefolded_sentences.append(casefolded_sent)
-            return casefolded_sentences
-
-        self.df["processed_abstracts_w2v"] = self.df[
-            "processed_abstracts_w2v"
-        ].progress_apply(casefold_sentences)
 
     @time_decorator(print_args=False)
     def remove_genes(self) -> None:
@@ -482,11 +461,7 @@ class ChunkedDocumentProcessor:
 
         # exclude punctuation and replace standalone numbers
         logger.info("Excluding punctuation and replacing standalone numbers")
-        self.exclude_punctuation_replace_standalone_numbers()
-
-        # casefolding
-        logger.info("Casefolding")
-        self.selective_casefold()
+        self.exclude_symbols()
 
         # additional processing for w2v and finetune
         logger.info("Removing genes")
@@ -502,6 +477,19 @@ class ChunkedDocumentProcessor:
             token = re.sub(r"\s+[\(\[].*?[\)\]]$", "", token)
 
         # remove extra characters
+        # ner specific issues
+        replacements = [
+            " -",
+            ",",
+            "[",
+            " ] )",
+            " '",
+            "( ",
+            " )",
+        ]
+
+        for replacement in replacements:
+            token = token.replace(replacement, " ")
         for extra in ChunkedDocumentProcessor.extras:
             token = token.replace(extra, "")
 
