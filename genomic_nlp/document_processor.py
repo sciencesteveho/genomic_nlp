@@ -12,13 +12,15 @@ from collections import defaultdict
 import csv
 import logging
 import re
-from typing import List, Set, Tuple, Union
+from typing import Callable, List, Set, Tuple, Union
 
+import ahocorasick  # type: ignore
 import pandas as pd  # type: ignore
 import pybedtools  # type: ignore
 from scispacy.linking import EntityLinker  # type: ignore
 import spacy  # type: ignore
 from spacy.language import Language  # type: ignore
+from spacy.tokens import Doc  # type: ignore
 from spacy.tokens import Span  # type: ignore
 from spacy.tokens import Token  # type: ignore
 from tqdm import tqdm  # type: ignore
@@ -29,7 +31,7 @@ from utils import is_number
 from utils import time_decorator
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
         logging.FileHandler("document_processor_debug.log"),
@@ -37,49 +39,6 @@ logging.basicConfig(
     ],
 )
 logger = logging.getLogger(__name__)
-
-
-def gene_symbol_from_gencode(gencode_ref: pybedtools.BedTool) -> Set[str]:
-    """Returns deduped set of genes from a gencode gtf. Written for the gencode
-    45 and avoids header"""
-    return {
-        line[8].split('gene_name "')[1].split('";')[0]
-        for line in gencode_ref
-        if not line[0].startswith("#") and "gene_name" in line[8]
-    }
-
-
-def gencode_genes(gtf: str) -> Set[str]:
-    """Get gene symbols from a gencode gtf file."""
-    logger.info("Grabbing genes from GTF")
-    gtf = pybedtools.BedTool(gtf)
-    genes = list(gene_symbol_from_gencode(gtf))
-
-    for key in COPY_GENES:
-        genes.remove(key)
-        genes.append(COPY_GENES[key])
-    return set(genes)
-
-
-def hgnc_ncbi_genes(tsv: str, hgnc: bool = False) -> Set[str]:
-    """Get gene symbols and names from HGNC file"""
-    gene_symbols, gene_names = [], []
-    with open(tsv, newline="") as file:
-        reader = csv.reader(file, delimiter="\t")
-        next(reader)  # skip header
-        for row in reader:
-            if hgnc:
-                gene_symbols.append(row[1])
-                gene_names.append(row[2])
-            else:
-                gene_symbols.append(row[0])
-                gene_names.append(row[1])
-
-    gene_names = [
-        name.replace("(", "").replace(")", "").replace(" ", "_").replace(",", "")
-        for name in gene_names
-    ]
-    return set(gene_symbols + gene_names)
 
 
 class ChunkedDocumentProcessor:
@@ -162,6 +121,7 @@ class ChunkedDocumentProcessor:
         ":",
         "©",
         ",",
+        "-",
     }
 
     finetune_extras = {
@@ -203,13 +163,21 @@ class ChunkedDocumentProcessor:
         """Initialize the ChunkedDocumentProcessor object."""
         self.root_dir = root_dir
         self.chunk = chunk
-        self.genes = genes
         self.batch_size = batch_size
+        self.genes = {gene.lower() for gene in genes}
+        for gene in ["mice", "bad", "insulin", "camp", "plasminogen", "ski"]:
+            self.genes.remove(gene)
 
         self.df = abstracts[["cleaned_abstracts", "year"]]
 
         self.nlp: Language = None
         self.spacy_model: str = ""
+
+        # for efficient gene matching
+        self.automaton = ahocorasick.Automaton()
+        for gene in self.genes:
+            self.automaton.add_word(gene, gene)
+        self.automaton.make_automaton()
 
     def _make_directories(self) -> None:
         """Make directories for processing"""
@@ -227,10 +195,12 @@ class ChunkedDocumentProcessor:
         logger.info(f"Loading spaCy model: {self.spacy_model}")
 
         self.nlp = spacy.load(self.spacy_model)
+        self.nlp.tokenizer = self._custom_tokenizer(self.nlp)
 
-        # customize tokenizer to keep hyphens and underscores within tokens
-        infix_re = re.compile(r"""[-~]""")
-        self.nlp.tokenizer.infix_finditer = infix_re.finditer
+        # add entity ruler for genes
+        ruler = self.nlp.add_pipe("entity_ruler", before="ner")
+        gene_patterns = [{"label": "GENE", "pattern": gene} for gene in self.genes]
+        ruler.add_patterns(gene_patterns)
 
         # add sentencizer if not present
         if "sentencizer" not in self.nlp.pipe_names:
@@ -248,7 +218,7 @@ class ChunkedDocumentProcessor:
         )
 
         # disable unnecessary pipeline components
-        disable_pipes = ["parser", "tagger"]
+        disable_pipes = ["parser"]
         self.nlp.disable_pipes(*disable_pipes)
 
         logger.info(f"Pipeline components: {self.nlp.pipe_names}")
@@ -257,7 +227,7 @@ class ChunkedDocumentProcessor:
         """Custom token processing. Only lemmatize tokens that are not
         recognized as entities via NER.
         """
-        if token.ent_type_ == "ENTITY":
+        if token.ent_type_ in ["ENTITY", "GENE"]:
             return token.text
         else:
             return token.lemma_ if lemmatize else token.text
@@ -265,15 +235,14 @@ class ChunkedDocumentProcessor:
     def replace_symbol_tokens(
         self, token: str, finetune: bool = False
     ) -> Union[str, None]:
-        """Replace numbers with a number based symbol, and symbols with an empty string."""
-        if (
-            not finetune
-            and token in self.extras
-            or finetune
-            and token in self.finetune_extras
+        """Replace symbols with an empty string. Replace standalone numbers with
+        '<nUm>' only for w2v.
+        """
+        if (not finetune and token in self.extras) or (
+            finetune and token in self.finetune_extras
         ):
             return None
-        return token
+        return "<nUm>" if not finetune and is_number(token) else token
 
     def selective_casefold_token(self, token: str) -> str:
         """No longer selective casefolding, just normal casefolding. Too many
@@ -281,6 +250,97 @@ class ChunkedDocumentProcessor:
         to avoid loss of information.
         """
         return token.casefold()
+
+    def process_entity(self, ent: Span) -> Tuple[str, str]:
+        """Process an entity span and return tokens for w2v and finetune."""
+        if ent.label_ == "GENE":
+            casefolded_gene = ent.text.casefold()
+            return casefolded_gene, casefolded_gene
+        else:
+            canonical_entity_w2v = self.get_canonical_entity(ent=ent, lemmatize=True)
+            return canonical_entity_w2v.casefold(), ent.text
+
+    def process_token(self, token: Token) -> Tuple[str, str]:
+        """Process a single token and return tokens for w2v and finetune."""
+        token_processed_w2v = self.custom_lemmatize(token, lemmatize=True)
+        token_processed_ft = self.custom_lemmatize(token, lemmatize=False)
+        return token_processed_w2v, token_processed_ft
+
+    def process_document(self, doc_processed: Doc) -> Tuple[List[List[str]], List[str]]:
+        """Process a single spaCy Doc and return tokens for w2v and finetune."""
+        doc_sentences_w2v = []
+        doc_tokens_finetune = []
+
+        # create a mapping from entity start index to the entity Span
+        entities = {ent.start: ent for ent in doc_processed.ents}
+
+        for sent in doc_processed.sents:
+            sent_tokens_w2v = []
+            sentence_start = sent.start
+            sentence_end = sent.end
+
+            current = sentence_start
+            while current < sentence_end:
+                token = doc_processed[current]
+                if current in entities:
+                    ent = entities[current]
+                    token_w2v, token_ft = self.process_entity(ent)
+                    current = ent.end  # skip the entire entity span
+                else:
+                    token_w2v, token_ft = self.process_token(token)
+                    current += 1
+                doc_tokens_finetune.append(token_ft)
+                sent_tokens_w2v.append(token_w2v)
+            doc_sentences_w2v.append(sent_tokens_w2v)
+        return doc_sentences_w2v, doc_tokens_finetune
+
+    def get_canonical_entity(self, ent: Span, lemmatize: bool) -> str:
+        """Normalize entities in a document using the UMLS term."""
+        # check if the entity text is a number
+        if is_number(ent.text):
+            return "<nUm>"
+
+        # don't lemmatize or canonicalize genes
+        if ent.label_ == "GENE":
+            return ent.text
+
+        if ent._.kb_ents:
+            kb_id, score = ent._.kb_ents[0]
+            if score >= self.nlp.get_pipe("scispacy_linker").threshold:
+                canonical_name = (
+                    self.nlp.get_pipe("scispacy_linker")
+                    .kb.cui_to_entity[kb_id]
+                    .canonical_name
+                )
+                canonical_name = self._remove_substring_from_token(
+                    canonical_name
+                ).casefold()
+
+                # iterate over matches
+                for end_index, gene in self.automaton.iter(canonical_name):
+                    start_index = end_index - len(gene) + 1
+
+                    # boundary check to only match full words
+                    if (
+                        start_index == 0
+                        or not canonical_name[start_index - 1].isalnum()
+                    ) and (
+                        end_index + 1 == len(canonical_name)
+                        or not canonical_name[end_index + 1].isalnum()
+                    ):
+                        logger.debug(
+                            f"Matched gene '{gene}' in canonical name '{canonical_name}'"
+                        )
+                        return gene
+
+                return canonical_name
+
+        # lemmatize
+        if not lemmatize:
+            return ent.text
+
+        lemmatized_tokens = [token.lemma_ for token in ent]
+        return " ".join(lemmatized_tokens)
 
     @time_decorator(print_args=False)
     def tokenize_and_ner(self) -> None:
@@ -302,44 +362,9 @@ class ChunkedDocumentProcessor:
                 self.nlp.pipe(documents, batch_size=self.batch_size, n_process=4),
             ):
                 try:
-                    doc_sentences_w2v = []
-                    doc_tokens_finetune = []
-                    token_idx_to_entity = {}
-                    for ent in doc_processed.ents:
-                        for idx in range(ent.start, ent.end):
-                            token_idx_to_entity[idx] = ent
-
-                    for sent in doc_processed.sents:
-                        sent_tokens_w2v = []
-                        token_iter = iter(sent)
-                        for token in token_iter:
-                            token_idx = token.i
-                            if token_idx in token_idx_to_entity:
-                                ent = token_idx_to_entity[token_idx]
-                                if token_idx != ent.start:
-                                    continue
-                                # process the entity only once, and only for w2v
-                                canonical_entity_w2v = self.get_canonical_entity(
-                                    ent=ent, lemmatize=True
-                                )
-                                sent_tokens_w2v.append(canonical_entity_w2v.casefold())
-                                doc_tokens_finetune.append(ent.text)
-
-                                # skip the rest of the tokens in the entity
-                                for _ in range(ent.end - ent.start - 1):
-                                    next(token_iter, None)
-                            else:
-                                token_processed_w2v = self.custom_lemmatize(
-                                    token, lemmatize=True
-                                )
-                                sent_tokens_w2v.append(token_processed_w2v)
-                                token_processed_ft = self.custom_lemmatize(
-                                    token, lemmatize=False
-                                )
-                                doc_tokens_finetune.append(token_processed_ft)
-
-                        doc_sentences_w2v.append(sent_tokens_w2v)
-
+                    doc_sentences_w2v, doc_tokens_finetune = self.process_document(
+                        doc_processed
+                    )
                     processed_sentences_w2v.append(doc_sentences_w2v)
                     processed_tokens_finetune.append(doc_tokens_finetune)
                     new_doc_indices.append(doc_idx)
@@ -355,46 +380,33 @@ class ChunkedDocumentProcessor:
             processed_tokens_finetune, index=new_doc_indices
         )
 
-    def get_canonical_entity(self, ent: Span, lemmatize: bool) -> str:
-        """Normalize entities in a document using the UMLS term."""
-        if ent._.kb_ents:
-            kb_id, score = ent._.kb_ents[0]
-            if score >= self.nlp.get_pipe("scispacy_linker").threshold:
-                canonical_name = (
-                    self.nlp.get_pipe("scispacy_linker")
-                    .kb.cui_to_entity[kb_id]
-                    .canonical_name
-                )
-                return self._remove_substring_from_token(canonical_name)
-        if not lemmatize:
-            return "<nUm>" if is_number(ent.text) else ent.text
-        lemmatized_tokens = [token.lemma_ for token in ent]
-        return " ".join(lemmatized_tokens)
-
     @time_decorator(print_args=False)
     def exclude_symbols(self) -> None:
-        """Exclude punctuation tokens and replace standalone numbers."""
+        """Exclude punctuation tokens, replace standalone numbers, and remove double spaces in w2v tokens."""
         tqdm.pandas(desc="Cleaning tokens")
 
         # helper function for w2v
         def clean_sentences(sentences: List[List[str]]) -> List[List[str]]:
-            """Clean a list of list of tokens."""
+            """Clean a list of list of tokens by excluding symbols and removing double spaces."""
             cleaned_sentences = []
             for sent in sentences:
-                cleaned_sent = [
-                    replacement
-                    for token in sent
-                    if (replacement := self.replace_symbol_tokens(token)) is not None
-                ]
+                cleaned_sent = []
+                for token in sent:
+                    replacement = self.replace_symbol_tokens(token)
+                    if replacement is not None:
+                        # remove double spaces
+                        if "  " in replacement:
+                            replacement = replacement.replace("  ", " ")
+                        cleaned_sent.append(replacement)
                 cleaned_sentences.append(cleaned_sent)
             return cleaned_sentences
 
-        # process w2v version
+        # process w2v
         self.df["processed_abstracts_w2v"] = self.df[
             "processed_abstracts_w2v"
         ].progress_apply(clean_sentences)
 
-        # process finetune version
+        # process finetune
         self.df["processed_abstracts_finetune"] = self.df[
             "processed_abstracts_finetune"
         ].progress_apply(
@@ -479,7 +491,7 @@ class ChunkedDocumentProcessor:
         # remove extra characters
         # ner specific issues
         replacements = [
-            " -",
+            "-",
             ",",
             "[",
             " ] )",
@@ -494,6 +506,86 @@ class ChunkedDocumentProcessor:
             token = token.replace(extra, "")
 
         return token
+
+    @staticmethod
+    def _custom_tokenizer(nlp: Language) -> Callable[[str], Doc]:
+        """Add few custom rules to tokenizer."""
+        default_tokenizer = nlp.tokenizer
+
+        def custom_tokenizer_func(text: str) -> Doc:
+            text = gene_specific_tokenization(text)
+            return default_tokenizer(text)
+
+        return custom_tokenizer_func
+
+
+def gene_symbol_from_gencode(gencode_ref: pybedtools.BedTool) -> Set[str]:
+    """Returns deduped set of genes from a gencode gtf. Written for the gencode
+    45 and avoids header"""
+    return {
+        line[8].split('gene_name "')[1].split('";')[0]
+        for line in gencode_ref
+        if not line[0].startswith("#") and "gene_name" in line[8]
+    }
+
+
+def gencode_genes(gtf: str) -> Set[str]:
+    """Get gene symbols from a gencode gtf file."""
+    logger.info("Grabbing genes from GTF")
+    gtf = pybedtools.BedTool(gtf)
+    genes = list(gene_symbol_from_gencode(gtf))
+
+    for key in COPY_GENES:
+        genes.remove(key)
+        genes.append(COPY_GENES[key])
+    return set(genes)
+
+
+def hgnc_ncbi_genes(tsv: str, hgnc: bool = False) -> Set[str]:
+    """Get gene symbols and names from HGNC file"""
+    gene_symbols, gene_names = [], []
+    with open(tsv, newline="") as file:
+        reader = csv.reader(file, delimiter="\t")
+        next(reader)  # skip header
+        for row in reader:
+            if hgnc:
+                gene_symbols.append(row[1])
+                gene_names.append(row[2])
+            else:
+                gene_symbols.append(row[0])
+                gene_names.append(row[1])
+
+    gene_names = [
+        name.replace("(", "").replace(")", "").replace(" ", "_").replace(",", "")
+        for name in gene_names
+    ]
+    return set(gene_symbols + gene_names)
+
+
+def gene_specific_tokenization(text: str) -> str:
+    """Various hand-crafted rules for tokenization of gene names."""
+    # replace various dash-like characters
+    text = re.sub(r"[−–—]", "-", text)
+
+    #'p53/p73' -> 'p53 p73' (split on '/')
+    text = re.sub(r"([A-Za-z0-9]+)\/([A-Za-z0-9]+)", r"\1 \2", text)
+
+    #'p53(+/+)' and 'p53(-/-)' -> 'p53'
+    text = re.sub(r"([A-Za-z0-9]+)\([\+\-]\/[\+\-]\)", r"\1", text)
+
+    #'p53-/-' and 'trp53+/' -> 'p53', 'trp53'
+    text = re.sub(r"([A-Za-z0-9]+)[\+\-]?\/[\+\-]?", r"\1", text)
+
+    # remove '+' and '-' suffixes from 'p53+' or 'p53-'
+    text = re.sub(r"([A-Za-z0-9]+)[\+\-]", r"\1", text)
+
+    # remove standalone '+' or '-' tokens
+    text = re.sub(r"\b[\+\-]\b", "", text)
+
+    # remove extra spaces
+    text = re.sub(r"\s+", " ", text).strip()
+
+    return text
 
 
 def main() -> None:
