@@ -258,7 +258,14 @@ class ChunkedDocumentProcessor:
         disable_pipes = ["parser", "tagger"]
         self.nlp.disable_pipes(*disable_pipes)
 
-        logger.info(f"Pipeline components: {self.nlp.pipe_names}")
+        # ensure morphologizer
+        if "morphologizer" not in self.nlp.pipe_names:
+            self.nlp.add_pipe("morphologizer", after="attribute_ruler")
+            logger.info("Added 'morphologizer' to the pipeline.")
+        else:
+            logger.info("'morphologizer' is already active in the pipeline.")
+
+            logger.info(f"Pipeline components: {self.nlp.pipe_names}")
 
     def custom_lemmatize(self, token: Token, lemmatize: bool = True) -> str:
         """Custom token processing. Only lemmatize tokens that are not

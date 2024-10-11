@@ -25,7 +25,6 @@ import time
 from typing import Dict, List
 
 from Bio import Entrez
-import requests  # type: ignore
 
 
 class PubMedYearFetcher:
@@ -70,6 +69,7 @@ class PubMedYearFetcher:
                 handle = Entrez.efetch(db="pubmed", id=",".join(pmids), retmode="xml")
                 records = Entrez.read(handle)
                 years = {}
+
                 for article in records["PubmedArticle"]:
                     pmid = article["MedlineCitation"]["PMID"]
                     try:
@@ -91,6 +91,7 @@ class PubMedYearFetcher:
                         print(f"Error processing PMID {pmid}: {str(e)}")
                         year = "N/A"
                     years[str(pmid)] = year
+
                 # handle PMIDs not returned in the response
                 fetched_pmids = {
                     str(article["MedlineCitation"]["PMID"])
@@ -100,11 +101,13 @@ class PubMedYearFetcher:
                 for missing_pmid in missing_pmids:
                     years[missing_pmid] = "N/A"
                 return years
+
             except Exception as e:
                 print(f"Error fetching years for PMIDs {pmids}: {str(e)}")
                 wait_time = (i + 1) * 5
                 print(f"Rate limit exceeded. Retrying in {wait_time} seconds...")
                 time.sleep(wait_time)
+
         # return N/A for all PMIDs if failed
         return {pmid: "N/A" for pmid in pmids}
 
@@ -168,6 +171,23 @@ class GeneDataProcessor:
                     print(f"PMID {p}: {year}")
                     r.append(year)
                     writer.writerow(r)
+
+
+def dedupe_cancer_drivers(input_file: str, output_file: str) -> None:
+    """Dedupe the cancer drivers file by keeping the earliest year for each
+    gene.
+    """
+    genes: Dict[str, int] = {}
+    with open(input_file, "r") as f:
+        for line in f:
+            columns = line.strip().split("\t")
+            gene, year = columns[0], int(columns[2])
+            if gene not in genes or year < genes[gene]:
+                genes[gene] = year
+
+    with open(output_file, "w") as f:
+        for gene, year in genes.items():
+            f.write(f"{gene}\t{year}\n")
 
 
 def main() -> None:
