@@ -281,15 +281,14 @@ class ChunkedDocumentProcessor:
     def replace_symbol_tokens(
         self, token: str, finetune: bool = False
     ) -> Union[str, None]:
-        """Replace numbers with a number based symbol, and symbols with an empty string."""
-        if (
-            not finetune
-            and token in self.extras
-            or finetune
-            and token in self.finetune_extras
+        """Replace symbols with an empty string. Replace standalone numbers with
+        '<nUm>' only for w2v.
+        """
+        if (not finetune and token in self.extras) or (
+            finetune and token in self.finetune_extras
         ):
             return None
-        return token
+        return "<nUm>" if not finetune and is_number(token) else token
 
     def selective_casefold_token(self, token: str) -> str:
         """No longer selective casefolding, just normal casefolding. Too many
