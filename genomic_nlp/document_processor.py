@@ -564,25 +564,28 @@ def hgnc_ncbi_genes(tsv: str, hgnc: bool = False) -> Set[str]:
 
 def gene_specific_tokenization(text: str) -> str:
     """Various hand-crafted rules for tokenization of gene names."""
-    # replace various dash-like characters
+    # Replace various dash-like characters with '-'
     text = re.sub(r"[−–—]", "-", text)
 
-    #'p53/p73' -> 'p53 p73' (split on '/')
+    # Split on hyphens by replacing '-' with space
+    text = re.sub(r"-", " ", text)
+
+    # Split on '/' by replacing '/' with space
     text = re.sub(r"([A-Za-z0-9]+)\/([A-Za-z0-9]+)", r"\1 \2", text)
 
-    #'p53(+/+)' and 'p53(-/-)' -> 'p53'
+    # Remove patterns like 'p53(+/+)' and 'p53(-/-)' -> 'p53'
     text = re.sub(r"([A-Za-z0-9]+)\([\+\-]\/[\+\-]\)", r"\1", text)
 
-    #'p53-/-' and 'trp53+/' -> 'p53', 'trp53'
+    # Remove patterns like 'p53-/-' and 'trp53+/' -> 'p53', 'trp53'
     text = re.sub(r"([A-Za-z0-9]+)[\+\-]?\/[\+\-]?", r"\1", text)
 
-    # remove '+' and '-' suffixes from 'p53+' or 'p53-'
+    # Remove '+' and '-' suffixes from words like 'p53+' or 'p53-'
     text = re.sub(r"([A-Za-z0-9]+)[\+\-]", r"\1", text)
 
-    # remove standalone '+' or '-' tokens
+    # Remove standalone '+' or '-' tokens
     text = re.sub(r"\b[\+\-]\b", "", text)
 
-    # remove extra spaces
+    # Remove extra spaces
     text = re.sub(r"\s+", " ", text).strip()
 
     return text
