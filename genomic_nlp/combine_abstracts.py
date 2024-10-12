@@ -118,19 +118,15 @@ def write_temporal_abstracts(
     print(f"Writing out abstracts for {year} complete.")
 
 
-def write_finetune_to_text(abstracts_dir: str, prefix: str) -> None:
+def write_finetune_to_text(abstracts_dir: str, prefix: str, combined_abs: str) -> None:
     """Write chunks of abstracts to text, where each newline delimits a full
     abstract."""
-    filenames = _chunk_locator(abstracts_dir, prefix)
     with open(f"{abstracts_dir}/combined/{prefix}_combined.txt", "w") as output:
-        for filename in filenames:
-            with open(filename, "rb") as file:
-                abstracts = pickle.load(file)
-                for abstract in abstracts:
-                    line = " ".join(
-                        [" ".join(sentence) for sentence in abstract]
-                    ).strip()
-                    output.write(f"{line}\n")
+        with open(combined_abs, "rb") as file:
+            abstracts = pickle.load(file)
+            for abstract in abstracts:
+                line = " ".join([" ".join(sentence) for sentence in abstract]).strip()
+                output.write(f"{line}\n")
 
 
 def main() -> None:
@@ -138,31 +134,35 @@ def main() -> None:
     working_dir = "/ocean/projects/bio210019p/stevesho/genomic_nlp/data"
     outdir = Path(working_dir) / "combined"
 
-    combined_df = _combine_chunks(working_dir, "processed_abstracts_finetune_")
-    combined_df.to_pickle(f"{working_dir}/processed_abstracts_finetune_combined.pkl")
+    # combined_df = _combine_chunks(working_dir, "processed_abstracts_finetune_")
+    # combined_df.to_pickle(f"{working_dir}/processed_abstracts_finetune_combined.pkl")
 
-    del combined_df
+    # del combined_df
 
-    combined_df = _combine_chunks(working_dir, "processed_abstracts_w2v_")
-    combined_df.to_pickle(f"{working_dir}/processed_abstracts_w2v_combined.pkl")
+    # combined_df = _combine_chunks(working_dir, "processed_abstracts_w2v_")
+    # combined_df.to_pickle(f"{working_dir}/processed_abstracts_w2v_combined.pkl")
 
-    # write out abstracts from 2003 to 2023
-    for year in range(2003, 2024):
+    # # write out abstracts from 2003 to 2023
+    # for year in range(2003, 2024):
 
-        # set up directory
-        year_outdir = outdir / str(year)
-        os.makedirs(year_outdir, exist_ok=True)
+    #     # set up directory
+    #     year_outdir = outdir / str(year)
+    #     os.makedirs(year_outdir, exist_ok=True)
 
-        # write out with and without genes
-        write_temporal_abstracts(
-            combined_df, year_outdir, year, "processed_abstracts_w2v"
-        )
-        write_temporal_abstracts(
-            combined_df, year_outdir, year, "processed_abstracts_w2v_nogenes"
-        )
+    #     # write out with and without genes
+    #     write_temporal_abstracts(
+    #         combined_df, year_outdir, year, "processed_abstracts_w2v"
+    #     )
+    #     write_temporal_abstracts(
+    #         combined_df, year_outdir, year, "processed_abstracts_w2v_nogenes"
+    #     )
 
     # write out finetune abstracts
-    write_finetune_to_text(working_dir, "processed_abstracts_finetune_")
+    write_finetune_to_text(
+        working_dir,
+        "processed_abstracts_finetune",
+        f"{working_dir}/processed_abstracts_finetune_combined.pkl",
+    )
 
     # parser = argparse.ArgumentParser(
     #     description="Combine abstract chunks and write sentences to text files for Word2Vec."
