@@ -118,17 +118,37 @@ def write_temporal_abstracts(
     print(f"Writing out abstracts for {year} complete.")
 
 
+# def write_finetune_to_text(abstracts_dir: str, prefix: str, combined_abs: str) -> None:
+#     """Write chunks of abstracts to text, where each newline delimits a full
+#     abstract."""
+#     output_path = f"{abstracts_dir}/combined/{prefix}_combined.txt"
+
+#     with open(output_path, "w") as output:
+#         abstracts_df = pd.read_pickle(combined_abs)
+#         for abstract in abstracts_df["processed_abstracts_finetune"]:
+#             line = " ".join(abstract).strip()
+#             output.write(f"{line}\n")
+
+#     print(f"Abstracts successfully written to {output_path}")
+
+
 def write_finetune_to_text(abstracts_dir: str, prefix: str, combined_abs: str) -> None:
     """Write chunks of abstracts to text, where each newline delimits a full
-    abstract."""
+    abstract. If the token is a standalone period or comma, removes the space
+    that precedes it.
+    """
     output_path = f"{abstracts_dir}/combined/{prefix}_combined.txt"
-
     with open(output_path, "w") as output:
         abstracts_df = pd.read_pickle(combined_abs)
         for abstract in abstracts_df["processed_abstracts_finetune"]:
-            line = " ".join(abstract).strip()
+            line = ""
+            for token in abstract:
+                if token in [".", ","]:
+                    line = line.rstrip() + token
+                else:
+                    line += " " + token if line else token
+            line = line.strip()
             output.write(f"{line}\n")
-
     print(f"Abstracts successfully written to {output_path}")
 
 
