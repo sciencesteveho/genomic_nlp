@@ -119,18 +119,24 @@ def write_temporal_abstracts(
 
 
 def write_finetune_to_text(abstracts_dir: str, prefix: str, combined_abs: str) -> None:
-    """Write chunks of abstracts to text, where each newline delimits a full
-    abstract."""
+    """Write chunks of abstracts to text, ensuring each sentence ends with a
+    period. Each abstract is written on a new line in the output text file.
+    """
     output_path = f"{abstracts_dir}/combined/{prefix}_combined.txt"
 
     with open(output_path, "w") as output:
         abstracts_df = pd.read_pickle(combined_abs)
+
         for abstract in abstracts_df["processed_abstracts_finetune"]:
-            processed_sentences = [
-                sentence if sentence.endswith(".") else f"{sentence}."
+            sentences = [
+                (
+                    " ".join(sentence).strip()
+                    if sentence[-1].endswith(".")
+                    else " ".join(sentence).strip() + "."
+                )
                 for sentence in abstract
             ]
-            line = " ".join(processed_sentences).strip()
+            line = " ".join(sentences).strip()
             output.write(f"{line}\n")
 
     print(f"Abstracts successfully written to {output_path}")
