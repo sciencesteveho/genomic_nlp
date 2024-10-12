@@ -242,7 +242,16 @@ class ChunkedDocumentProcessor:
             finetune and token in self.finetune_extras
         ):
             return None
-        return "<nUm>" if not finetune and is_number(token) else token
+
+        # check if the token contains letters
+        if re.search("[a-zA-Z]", token):
+            return token
+
+        # check if there are numbers
+        if re.search("[0-9]", token):
+            return token if finetune else "<nUm>"
+
+        return None
 
     def selective_casefold_token(self, token: str) -> str:
         """No longer selective casefolding, just normal casefolding. Too many
