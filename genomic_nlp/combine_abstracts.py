@@ -119,24 +119,14 @@ def write_temporal_abstracts(
 
 
 def write_finetune_to_text(abstracts_dir: str, prefix: str, combined_abs: str) -> None:
-    """Write chunks of abstracts to text, ensuring each sentence ends with a
-    period. Each abstract is written on a new line in the output text file.
-    """
+    """Write chunks of abstracts to text, where each newline delimits a full
+    abstract."""
     output_path = f"{abstracts_dir}/combined/{prefix}_combined.txt"
 
     with open(output_path, "w") as output:
         abstracts_df = pd.read_pickle(combined_abs)
-
         for abstract in abstracts_df["processed_abstracts_finetune"]:
-            sentences = [
-                (
-                    " ".join(sentence).strip()
-                    if sentence[-1].endswith(".")
-                    else " ".join(sentence).strip() + "."
-                )
-                for sentence in abstract
-            ]
-            line = " ".join(sentences).strip()
+            line = " ".join(abstract).strip()
             output.write(f"{line}\n")
 
     print(f"Abstracts successfully written to {output_path}")
@@ -147,10 +137,10 @@ def main() -> None:
     working_dir = "/ocean/projects/bio210019p/stevesho/genomic_nlp/data"
     outdir = Path(working_dir) / "combined"
 
-    # combined_df = _combine_chunks(working_dir, "processed_abstracts_finetune_")
-    # combined_df.to_pickle(f"{working_dir}/processed_abstracts_finetune_combined.pkl")
+    combined_df = _combine_chunks(working_dir, "processed_abstracts_finetune_")
+    combined_df.to_pickle(f"{working_dir}/processed_abstracts_finetune_combined.pkl")
 
-    # del combined_df
+    del combined_df
 
     # combined_df = _combine_chunks(working_dir, "processed_abstracts_w2v_")
     # combined_df.to_pickle(f"{working_dir}/processed_abstracts_w2v_combined.pkl")
