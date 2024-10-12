@@ -126,7 +126,11 @@ def write_finetune_to_text(abstracts_dir: str, prefix: str, combined_abs: str) -
     with open(output_path, "w") as output:
         abstracts_df = pd.read_pickle(combined_abs)
         for abstract in abstracts_df["processed_abstracts_finetune"]:
-            line = " ".join(abstract).strip()
+            processed_sentences = [
+                sentence if sentence.endswith(".") else f"{sentence}."
+                for sentence in abstract
+            ]
+            line = " ".join(processed_sentences).strip()
             output.write(f"{line}\n")
 
     print(f"Abstracts successfully written to {output_path}")
