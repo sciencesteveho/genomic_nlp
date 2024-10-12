@@ -243,6 +243,10 @@ class ChunkedDocumentProcessor:
         ):
             return None
 
+        # For finetune, keep periods and commas
+        if finetune and token in {".", ","}:
+            return token
+
         # check if the token contains letters
         if re.search("[a-zA-Z]", token):
             return token
@@ -266,8 +270,13 @@ class ChunkedDocumentProcessor:
             casefolded_gene = ent.text.casefold()
             return casefolded_gene, casefolded_gene
         else:
-            canonical_entity_w2v = self.get_canonical_entity(ent=ent, lemmatize=True)
-            return canonical_entity_w2v.casefold(), ent.text
+            canonical_entity_w2v = self.get_canonical_entity(
+                ent=ent, lemmatize=True, finetune=False
+            )
+            canonical_entity_ft = self.get_canonical_entity(
+                ent=ent, lemmatize=False, finetune=True
+            )
+            return canonical_entity_w2v.casefold(), canonical_entity_ft
 
     def process_token(self, token: Token) -> Tuple[str, str]:
         """Process a single token and return tokens for w2v and finetune."""
@@ -275,16 +284,18 @@ class ChunkedDocumentProcessor:
         token_processed_ft = self.custom_lemmatize(token, lemmatize=False)
         return token_processed_w2v, token_processed_ft
 
-    def process_document(self, doc_processed: Doc) -> Tuple[List[List[str]], List[str]]:
+    def process_document(
+        self, doc_processed: Doc
+    ) -> Union[Tuple[List[List[str]], List[str]], Tuple[None, List[str]]]:
         """Process a single spaCy Doc and return tokens for w2v and finetune."""
-        doc_sentences_w2v = []
+        # doc_sentences_w2v = []
         doc_tokens_finetune = []
 
         # create a mapping from entity start index to the entity Span
         entities = {ent.start: ent for ent in doc_processed.ents}
 
         for sent in doc_processed.sents:
-            sent_tokens_w2v = []
+            # sent_tokens_w2v = []
             sentence_start = sent.start
             sentence_end = sent.end
 
@@ -293,17 +304,22 @@ class ChunkedDocumentProcessor:
                 token = doc_processed[current]
                 if current in entities:
                     ent = entities[current]
-                    token_w2v, token_ft = self.process_entity(ent)
+                    # token_w2v, token_ft = self.process_entity(ent)
+                    _, token_ft = self.process_entity(ent)
                     current = ent.end  # skip the entire entity span
                 else:
-                    token_w2v, token_ft = self.process_token(token)
+                    # token_w2v, token_ft = self.process_token(token)
+                    _, token_ft = self.process_token(token)
                     current += 1
                 doc_tokens_finetune.append(token_ft)
-                sent_tokens_w2v.append(token_w2v)
-            doc_sentences_w2v.append(sent_tokens_w2v)
-        return doc_sentences_w2v, doc_tokens_finetune
+                # sent_tokens_w2v.append(token_w2v)
+            # doc_sentences_w2v.append(sent_tokens_w2v)
+        # return doc_sentences_w2v, doc_tokens_finetune
+        return None, doc_tokens_finetune
 
-    def get_canonical_entity(self, ent: Span, lemmatize: bool) -> str:
+    def get_canonical_entity(
+        self, ent: Span, lemmatize: bool, finetune: bool = False
+    ) -> str:
         """Normalize entities in a document using the UMLS term."""
         # check if the entity text is a number
         if is_number(ent.text):
@@ -322,7 +338,7 @@ class ChunkedDocumentProcessor:
                     .canonical_name
                 )
                 canonical_name = self._remove_substring_from_token(
-                    canonical_name
+                    canonical_name, finetune=finetune
                 ).casefold()
 
                 # iterate over matches
@@ -359,7 +375,7 @@ class ChunkedDocumentProcessor:
         documents = self.df["cleaned_abstracts"].tolist()
         doc_indices = self.df.index.tolist()
 
-        processed_sentences_w2v = []
+        # processed_sentences_w2v = []
         processed_tokens_finetune = []
         new_doc_indices = []
 
@@ -371,10 +387,11 @@ class ChunkedDocumentProcessor:
                 self.nlp.pipe(documents, batch_size=self.batch_size, n_process=4),
             ):
                 try:
-                    doc_sentences_w2v, doc_tokens_finetune = self.process_document(
-                        doc_processed
-                    )
-                    processed_sentences_w2v.append(doc_sentences_w2v)
+                    # doc_sentences_w2v, doc_tokens_finetune = self.process_document(
+                    #     doc_processed
+                    # )
+                    _, doc_tokens_finetune = self.process_document(doc_processed)
+                    # processed_sentences_w2v.append(doc_sentences_w2v)
                     processed_tokens_finetune.append(doc_tokens_finetune)
                     new_doc_indices.append(doc_idx)
                 except Exception as e:
@@ -382,9 +399,9 @@ class ChunkedDocumentProcessor:
 
                 pbar.update(1)
 
-        self.df["processed_abstracts_w2v"] = pd.Series(
-            processed_sentences_w2v, index=new_doc_indices
-        )
+        # self.df["processed_abstracts_w2v"] = pd.Series(
+        #     processed_sentences_w2v, index=new_doc_indices
+        # )
         self.df["processed_abstracts_finetune"] = pd.Series(
             processed_tokens_finetune, index=new_doc_indices
         )
@@ -395,25 +412,20 @@ class ChunkedDocumentProcessor:
         tqdm.pandas(desc="Cleaning tokens")
 
         # helper function for w2v
-        def clean_sentences(sentences: List[List[str]]) -> List[List[str]]:
-            """Clean a list of list of tokens by excluding symbols and removing double spaces."""
-            cleaned_sentences = []
-            for sent in sentences:
-                cleaned_sent = []
-                for token in sent:
-                    replacement = self.replace_symbol_tokens(token)
-                    if replacement is not None:
-                        # remove double spaces
-                        if "  " in replacement:
-                            replacement = replacement.replace("  ", " ")
-                        cleaned_sent.append(replacement)
-                cleaned_sentences.append(cleaned_sent)
-            return cleaned_sentences
-
-        # process w2v
-        self.df["processed_abstracts_w2v"] = self.df[
-            "processed_abstracts_w2v"
-        ].progress_apply(clean_sentences)
+        # def clean_sentences(sentences: List[List[str]]) -> List[List[str]]:
+        #     """Clean a list of list of tokens by excluding symbols and removing double spaces."""
+        #     cleaned_sentences = []
+        #     for sent in sentences:
+        #         cleaned_sent = []
+        #         for token in sent:
+        #             replacement = self.replace_symbol_tokens(token)
+        #             if replacement is not None:
+        #                 # remove double spaces
+        #                 if "  " in replacement:
+        #                     replacement = replacement.replace("  ", " ")
+        #                 cleaned_sent.append(replacement)
+        #         cleaned_sentences.append(cleaned_sent)
+        #     return cleaned_sentences
 
         # process finetune
         self.df["processed_abstracts_finetune"] = self.df[
@@ -427,26 +439,6 @@ class ChunkedDocumentProcessor:
             ]
         )
 
-    @time_decorator(print_args=False)
-    def remove_genes(self) -> None:
-        """Remove gene symbols from tokens, for future n-gram generation. Only
-        done for w2v.
-        """
-        tqdm.pandas(desc="Removing genes")
-
-        # helper function
-        def remove_genes_from_sentences(sentences: List[List[str]]) -> List[List[str]]:
-            """Remove gene symbols from a list of list of tokens."""
-            cleaned_sentences = []
-            for sent in sentences:
-                cleaned_sent = [token for token in sent if token not in self.genes]
-                cleaned_sentences.append(cleaned_sent)
-            return cleaned_sentences
-
-        self.df["processed_abstracts_w2v_nogenes"] = self.df[
-            "processed_abstracts_w2v"
-        ].progress_apply(remove_genes_from_sentences)
-
     def save_data(self, outpref: str) -> None:
         """Save final copies of abstracts with cleaned, processed, and year
         columns.
@@ -457,21 +449,21 @@ class ChunkedDocumentProcessor:
             finetune_outpref = f"{outpref}_finetune_chunk_{self.chunk}.pkl"
             columns_to_save.append("processed_abstracts_finetune")
             self.df[columns_to_save].to_pickle(finetune_outpref)
-            columns_to_save.remove(
-                "processed_abstracts_finetune"
-            )  # remove finetune for next save
+            # columns_to_save.remove(
+            #     "processed_abstracts_finetune"
+            # )  # remove finetune for next save
 
-        if "processed_abstracts_w2v" in self.df.columns:
-            w2v_outpref = f"{outpref}_w2v_chunk_{self.chunk}.pkl"
-            columns_to_save.extend(
-                ("processed_abstracts_w2v", "processed_abstracts_w2v_nogenes")
-            )
-            self.df[columns_to_save].to_pickle(w2v_outpref)
-            logger.info(f"Saved processed abstracts for chunk {self.chunk}")
+        # if "processed_abstracts_w2v" in self.df.columns:
+        #     w2v_outpref = f"{outpref}_w2v_chunk_{self.chunk}.pkl"
+        #     columns_to_save.extend(
+        #         ("processed_abstracts_w2v", "processed_abstracts_w2v_nogenes")
+        #     )
+        #     self.df[columns_to_save].to_pickle(w2v_outpref)
+        #     logger.info(f"Saved processed abstracts for chunk {self.chunk}")
 
     @time_decorator(print_args=False)
     def processing_pipeline(self) -> None:
-        """Run the NLP pipeline for both w2v and BERT fine-tuning."""
+        """Run the NLP pipeline for finetuning."""
         # setup spaCy pipeline
         logger.info("Setting up spaCy pipeline")
         self.setup_pipeline()
@@ -484,13 +476,10 @@ class ChunkedDocumentProcessor:
         logger.info("Excluding punctuation and replacing standalone numbers")
         self.exclude_symbols()
 
-        # additional processing for w2v and finetune
-        logger.info("Removing genes")
-        self.remove_genes()
         self.save_data(f"{self.root_dir}/data/processed_abstracts")
 
     @staticmethod
-    def _remove_substring_from_token(token: str) -> str:
+    def _remove_substring_from_token(token: str, finetune: bool = False) -> str:
         """Remove 'gene' which is added to all ULMS genes."""
         if token.endswith(" gene"):
             token = token.rsplit(" ", 1)[0]
@@ -501,19 +490,23 @@ class ChunkedDocumentProcessor:
         # ner specific issues
         replacements = [
             "-",
-            ",",
             "[",
             " ] )",
             " '",
             "( ",
             " )",
         ]
+        if not finetune:
+            replacements.append(",")
 
         for replacement in replacements:
             token = token.replace(replacement, " ")
-        for extra in ChunkedDocumentProcessor.extras:
-            token = token.replace(extra, "")
-
+        if finetune:
+            for extra in ChunkedDocumentProcessor.finetune_extras:
+                token = token.replace(extra, "")
+        else:
+            for extra in ChunkedDocumentProcessor.extras:
+                token = token.replace(extra, "")
         return token
 
     @staticmethod
