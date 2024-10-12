@@ -121,12 +121,15 @@ def write_temporal_abstracts(
 def write_finetune_to_text(abstracts_dir: str, prefix: str, combined_abs: str) -> None:
     """Write chunks of abstracts to text, where each newline delimits a full
     abstract."""
-    with open(f"{abstracts_dir}/combined/{prefix}_combined.txt", "w") as output:
-        with open(combined_abs, "rb") as file:
-            abstracts = pickle.load(file)
-            for abstract in abstracts:
-                line = " ".join([" ".join(sentence) for sentence in abstract]).strip()
-                output.write(f"{line}\n")
+    output_path = f"{abstracts_dir}/combined/{prefix}_combined.txt"
+
+    with open(output_path, "w") as output:
+        abstracts_df = pd.read_pickle(combined_abs)
+        for abstract in abstracts_df["processed_abstracts_finetune"]:
+            line = " ".join(abstract).strip()
+            output.write(f"{line}\n")
+
+    print(f"Abstracts successfully written to {output_path}")
 
 
 def main() -> None:
