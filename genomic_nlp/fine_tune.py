@@ -14,9 +14,7 @@ custom tokenizer that adds gene names to the vocabulary."""
 import argparse
 import json
 import logging
-import os
-import pickle
-from typing import Set, Union
+from typing import Set
 
 import deepspeed  # type: ignore
 import torch
@@ -24,14 +22,12 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
 from tqdm import tqdm  # type: ignore
-from transformers import AdamW  # type: ignore
 from transformers import DataCollatorForLanguageModeling  # type: ignore
 from transformers import DebertaV2ForMaskedLM  # type: ignore
 from transformers import DebertaV2TokenizerFast  # type: ignore
 from transformers import get_linear_schedule_with_warmup  # type: ignore
 
 from streaming_corpus import StreamingCorpus
-from utils import _chunk_locator
 
 logging.basicConfig(level=logging.INFO)
 
@@ -105,7 +101,7 @@ def main() -> None:
     )
     args = parser.parse_args()
     abstracts_dir = f"{args.root_dir}/data"
-    abstracts = f"{abstracts_dir}/combined/tokens_cleaned_abstracts_casefold_finetune_combined.txt"
+    abstracts = f"{abstracts_dir}/combined/processed_abstracts_finetune_combined.txt"
     model_out = f"{args.root_dir}/models/deberta"
 
     # get val needed for total steps calculation
