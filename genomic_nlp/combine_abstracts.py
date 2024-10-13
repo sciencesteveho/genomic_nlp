@@ -157,10 +157,10 @@ def main() -> None:
     working_dir = "/ocean/projects/bio210019p/stevesho/genomic_nlp/data"
     outdir = Path(working_dir) / "combined"
 
-    combined_df = _combine_chunks(working_dir, "processed_abstracts_finetune_")
-    combined_df.to_pickle(f"{working_dir}/processed_abstracts_finetune_combined.pkl")
+    # combined_df = _combine_chunks(working_dir, "processed_abstracts_finetune_")
+    # combined_df.to_pickle(f"{working_dir}/processed_abstracts_finetune_combined.pkl")
 
-    del combined_df
+    # del combined_df
 
     # combined_df = _combine_chunks(working_dir, "processed_abstracts_w2v_")
     # combined_df.to_pickle(f"{working_dir}/processed_abstracts_w2v_combined.pkl")
