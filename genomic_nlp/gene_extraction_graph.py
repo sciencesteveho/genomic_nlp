@@ -6,13 +6,10 @@
 if genes appear in the same abstract, an edge is created between genes."""
 
 
-import argparse
-import csv
 import multiprocessing as mp
 import pickle
-from typing import Any, Dict, List, Set, Tuple
+from typing import Dict, List, Set, Tuple
 
-import pybedtools  # type: ignore
 from tqdm import tqdm  # type: ignore
 
 from utils import gencode_genes
