@@ -117,11 +117,11 @@ def extract_gene_edges_from_abstracts(
 def main() -> None:
     """Main function"""
     genes = gencode_genes(
-        "/ocean/projects/bio210019p/stevesho/genomic_nlp/data/gencode.v45.basic.annotation.gtf"
+        "/ocean/projects/bio210019p/stevesho/genomic_nlp/reference_files/gencode.v45.basic.annotation.gtf"
     )
 
     with open(
-        "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_synonyms_nocasefold.pkl",
+        "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_synonyms.pkl",
         "rb",
     ) as file:
         hgnc_synonyms = pickle.load(file)
@@ -140,3 +140,32 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# unique_genes = {gene for edge in gene_edges for gene in edge}
+# len(unique_genes)  # 20785
+
+# # load gene uniq gene edges to check for overlap
+# gene_edges_uniq = set()
+# with open("text_extracted_gene_edges.tsv", "r") as file:
+#     reader = csv.reader(file, delimiter="\t")
+#     for line in reader:
+#         gene_edges_uniq.add(line[0])
+#         gene_edges_uniq.add(line[1])
+
+# # load gene edges
+# with open("text_extracted_gene_edges.tsv", "r") as file:
+#     reader = csv.reader(file, delimiter="\t")
+#     gene_edges = {(line[0], line[1]) for line in reader}
+
+# ppi = _load_ppi("HI-union.tsv")
+# unique_proteins = {gene for edge in ppi for gene in edge}
+# with open("uniq_proteins.txt", "w") as file:
+#     for protein in unique_proteins:
+#         file.write(f"{protein}\n")
+
+# reference = _load_reference("biomart_ppi.txt")
+# mapped_ppi = _map_proteins_to_gene_symbols(ppi, reference)
+
+# unique_mapped_proteins = {gene for edge in mapped_ppi for gene in edge}
+# huri_only = mapped_ppi - gene_edges
