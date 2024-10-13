@@ -101,7 +101,7 @@ def main() -> None:
     )
     args = parser.parse_args()
     abstracts_dir = f"{args.root_dir}/data"
-    abstracts = f"{abstracts_dir}/combined/tokens_cleaned_abstracts_casefold_finetune_combined.txt"
+    abstracts = f"{abstracts_dir}/combined/processed_abstracts_finetune_combined.txt"
     model_out = f"{args.root_dir}/models/deberta"
 
     # get val needed for total steps calculation
