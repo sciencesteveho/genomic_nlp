@@ -48,7 +48,6 @@ def formatter(name: str, casefold: bool = True) -> Union[str, List[str]]:
         ",": "",
         '"': "",
         "/": "_",
-        " ": "_",
     }
 
     name = name.casefold() if casefold else name

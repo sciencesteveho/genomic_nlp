@@ -6,13 +6,11 @@
 if genes appear in the same abstract, an edge is created between genes."""
 
 
-import argparse
-import csv
 import multiprocessing as mp
 import pickle
-from typing import Any, Dict, List, Set, Tuple
+from typing import Dict, List, Set, Tuple
 
-import pybedtools  # type: ignore
+import pandas as pd
 from tqdm import tqdm  # type: ignore
 
 from utils import gencode_genes
@@ -45,24 +43,25 @@ def create_alias_to_gene_mapping(gene_aliases: Dict[str, Set[str]]) -> Dict[str,
 
 
 def gene_mentions_per_abstract(
-    abstracts: List[List[str]], alias_to_gene: Dict[str, str]
+    abstracts: pd.DataFrame, alias_to_gene: Dict[str, str]
 ) -> List[Set[str]]:
     """Loop through tokenized abstracts and create a sublist of mentioned genes
     within the abstract. Gene mentions are based on tokens that either map to
     the gene symbol or synonyms from the HGNC complete set.
     """
-    gene_relations = []
+    alias = set(alias_to_gene.keys())
 
-    for abstract in abstracts:
-        gene_mentions: Set[str] = set()
-        for sentence in abstract:
-            for token in sentence:
-                if token in alias_to_gene:
-                    gene_mentions.add(alias_to_gene[token])
-        if len(gene_mentions) > 2:
-            gene_relations.append(gene_mentions)
+    def process_abstract(abstract_sentences: List[List[str]]) -> Set[str]:
+        """Vectorized matching"""
+        tokens = [
+            token for sentence in abstract_sentences for token in sentence
+        ]  # flatten the list of sentences
+        matches = set(tokens) & alias
+        gene_mentions = {alias_to_gene[token] for token in matches}
+        return gene_mentions if len(gene_mentions) > 2 else set()
 
-    return gene_relations
+    gene_relations = abstracts["processed_abstracts_w2v"].apply(process_abstract)
+    return [genes for genes in gene_relations if genes]
 
 
 def collect_gene_edges(gene_sets: List[Set[str]]) -> Set[Tuple[str, str]]:
@@ -86,11 +85,9 @@ def write_gene_edges_to_file(edge_set: Set[Tuple[str, str]], filename: str) -> N
 def process_abstract_file(args: Tuple[int, Dict[str, str]]) -> Set[Tuple[str, str]]:
     """Process a single abstract file and return gene edges."""
     num, alias_to_gene = args
-    with open(
-        f"/ocean/projects/bio210019p/stevesho/genomic_nlp/data/processed_abstracts_w2v_chunk_{num}.pkl",
-        "rb",
-    ) as f:
-        abstracts = pickle.load(f)
+    abstracts = pd.read_pickle(
+        f"/ocean/projects/bio210019p/stevesho/genomic_nlp/data/processed_abstracts_w2v_chunk_{num}.pkl"
+    )
     gene_relationships = gene_mentions_per_abstract(abstracts, alias_to_gene)
     return collect_gene_edges(gene_relationships)
 
@@ -120,11 +117,11 @@ def extract_gene_edges_from_abstracts(
 def main() -> None:
     """Main function"""
     genes = gencode_genes(
-        "/ocean/projects/bio210019p/stevesho/genomic_nlp/data/gencode.v45.basic.annotation.gtf"
+        "/ocean/projects/bio210019p/stevesho/genomic_nlp/reference_files/gencode.v45.basic.annotation.gtf"
     )
 
     with open(
-        "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_synonyms_nocasefold.pkl",
+        "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_synonyms.pkl",
         "rb",
     ) as file:
         hgnc_synonyms = pickle.load(file)
@@ -143,3 +140,32 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# unique_genes = {gene for edge in gene_edges for gene in edge}
+# len(unique_genes)  # 20785
+
+# # load gene uniq gene edges to check for overlap
+# gene_edges_uniq = set()
+# with open("text_extracted_gene_edges.tsv", "r") as file:
+#     reader = csv.reader(file, delimiter="\t")
+#     for line in reader:
+#         gene_edges_uniq.add(line[0])
+#         gene_edges_uniq.add(line[1])
+
+# # load gene edges
+# with open("text_extracted_gene_edges.tsv", "r") as file:
+#     reader = csv.reader(file, delimiter="\t")
+#     gene_edges = {(line[0], line[1]) for line in reader}
+
+# ppi = _load_ppi("HI-union.tsv")
+# unique_proteins = {gene for edge in ppi for gene in edge}
+# with open("uniq_proteins.txt", "w") as file:
+#     for protein in unique_proteins:
+#         file.write(f"{protein}\n")
+
+# reference = _load_reference("biomart_ppi.txt")
+# mapped_ppi = _map_proteins_to_gene_symbols(ppi, reference)
+
+# unique_mapped_proteins = {gene for edge in mapped_ppi for gene in edge}
+# huri_only = mapped_ppi - gene_edges
