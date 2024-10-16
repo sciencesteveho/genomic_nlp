@@ -147,20 +147,51 @@ class InteractionDataPreprocessor:
         """Filter the gene pairs into two sets: those with prior knowledge, and
         those without. Gene pairs with prior knowledge are those that exist in the
         text_edges set, which contains edges extracted from the literature.
+
+        There's a large imbalance between the number of test / train examples,
+        so we additionally split the positive pairs (test set) 50% and ensure it
+        is split without gene leakage.
         """
-        pos_train = []
-        pos_test = []
+        pos_train: List[Tuple[str, str]] = []
+        pos_test: List[Tuple[str, str]] = []
+        prior_knowledge_pairs = []
+        no_prior_knowledge_pairs = []
 
         print(f"Total positive pairs: {len(self.positive_pairs)}")
 
+        # separate pairs with and without prior knowledge
         for pair in self.positive_pairs:
             if pair in self.text_edges or (pair[1], pair[0]) in self.text_edges:
-                pos_train.append(pair)
+                prior_knowledge_pairs.append(pair)
             else:
+                no_prior_knowledge_pairs.append(pair)
+
+        print(f"Positive pairs with prior knowledge: {len(prior_knowledge_pairs)}")
+        print(
+            f"Positive pairs without prior knowledge: {len(no_prior_knowledge_pairs)}"
+        )
+
+        # get gene list
+        genes: Set[str] = set()
+        for pair in prior_knowledge_pairs:
+            genes.add(pair[0])
+            genes.add(pair[1])
+
+        # split genes into disjoint sets
+        train_genes, test_genes = self.randomly_split_gene_list(list(genes))
+
+        # assign pairs to train or test based on gene sets
+        # exclude pairs with genes in both sets
+        for pair in no_prior_knowledge_pairs:
+            if pair[0] in train_genes and pair[1] in train_genes:
+                pos_train.append(pair)
+            elif pair[0] in test_genes and pair[1] in test_genes:
                 pos_test.append(pair)
 
-        print(f"Positive pairs with prior knowledge: {len(pos_train)}")
-        print(f"Positive pairs without prior knowledge: {len(pos_test)}")
+        pos_train.extend(prior_knowledge_pairs)
+        print(f"Total training positive pairs after splitting: {len(pos_train)}")
+        print(f"Total testing positive pairs after splitting: {len(pos_test)}")
+
         return pos_train, pos_test
 
     def split_negative_pairs(
@@ -213,6 +244,13 @@ class InteractionDataPreprocessor:
                 filtered_negative_pairs, len(filtered_positive_pairs)
             )
         return filtered_positive_pairs, filtered_negative_pairs
+
+    @staticmethod
+    def randomly_split_gene_list(genes: List[str]) -> Tuple[List[str], List[str]]:
+        """Randomly split a list of genes into two distinct sets."""
+        random.shuffle(genes)
+        split_index = len(genes) // 2
+        return genes[:split_index], genes[split_index:]
 
 
 def _load_pickle(pickle_file: Any) -> Any:
