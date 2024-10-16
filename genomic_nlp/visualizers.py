@@ -223,7 +223,8 @@ class BaselineModelVisualizer:
                 "xtick.labelsize": 7,
                 "ytick.labelsize": 7,
                 "legend.fontsize": 7,
-                "figure.dpi": 300,
+                "figure.titlesize": 7,
+                "figure.dpi": 450,
                 "font.sans-serif": "Nimbus Sans",
             }
         )
