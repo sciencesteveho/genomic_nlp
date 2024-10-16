@@ -140,7 +140,7 @@ def evaluate_and_rank_validated_predictions(
     pos_edge_loader: torch_geometric.data.DataLoader,
     neg_edge_loader: torch_geometric.data.DataLoader,
     device: torch.device,
-) -> Tuple[float, float, List[Tuple[int, int, float]]]:
+) -> Tuple[float, float, List[Tuple[int, int, float]], np.ndarray, np.ndarray]:
     """Evaluate the model on experimentally validated edges and rank them."""
     model.eval()
     model = model.to(device)
@@ -181,6 +181,7 @@ def evaluate_and_rank_validated_predictions(
     sorted_indices = torch.argsort(all_scores, descending=True)  # type: ignore
     ranked_edges = all_edges[sorted_indices].tolist()
     ranked_scores = all_scores[sorted_indices].tolist()
+    sorted_labels = y_true[sorted_indices].numpy()
 
     # combine edges and scores
     ranked_predictions = [
@@ -194,7 +195,7 @@ def evaluate_and_rank_validated_predictions(
     auc = roc_auc_score(labels, scores)
     ap = average_precision_score(labels, scores)
 
-    return auc, ap, ranked_predictions
+    return auc, ap, ranked_predictions, sorted_labels, np.array(ranked_scores)
 
 
 @torch.no_grad()
@@ -231,9 +232,7 @@ def evaluate_predictions(
     test_edges = set(map(tuple, test_pos_edges.t().tolist()))
 
     # calculate precision@k and recall@k
-    true_positives = sum(
-        1 for edge in predictions[:k] if (edge[0], edge[1]) in test_edges
-    )
+    true_positives = sum((edge[0], edge[1]) in test_edges for edge in predictions[:k])
     precision = true_positives / k
     recall = true_positives / len(test_edges)
 
@@ -353,57 +352,61 @@ def main() -> None:
         optimizer, mode="max", factor=0.5, patience=5, verbose=True
     )
 
-    # training loop
-    best_auc = float("-inf")
-    patience_counter = 0
-    losses = []
+    # # training loop
+    # best_auc = float("-inf")
+    # patience_counter = 0
+    # losses = []
 
-    for epoch in range(EPOCHS):
-        loss = train_model(
-            model=model,
-            optimizer=optimizer,
-            data=data,
-            pos_edge_loader=train_pos_loader,
-            neg_edge_loader=train_neg_loader,
-            device=device,
-            epoch=epoch,
-        )
-        losses.append(loss)
-        auc = evaluate_model(
-            model=model,
-            data=data,
-            pos_edge_loader=val_pos_loader,
-            neg_edge_loader=val_neg_loader,
-            device=device,
-        )
-        scheduler.step(auc)
-        print(f"Epoch: {epoch:03d}, Loss: {loss:.4f}, AUC: {auc:.4f}")
+    # for epoch in range(EPOCHS):
+    #     loss = train_model(
+    #         model=model,
+    #         optimizer=optimizer,
+    #         data=data,
+    #         pos_edge_loader=train_pos_loader,
+    #         neg_edge_loader=train_neg_loader,
+    #         device=device,
+    #         epoch=epoch,
+    #     )
+    #     losses.append(loss)
+    #     auc = evaluate_model(
+    #         model=model,
+    #         data=data,
+    #         pos_edge_loader=val_pos_loader,
+    #         neg_edge_loader=val_neg_loader,
+    #         device=device,
+    #     )
+    #     scheduler.step(auc)
+    #     print(f"Epoch: {epoch:03d}, Loss: {loss:.4f}, AUC: {auc:.4f}")
 
-        if auc > best_auc:
-            best_auc = auc
-            torch.save(model.state_dict(), "best_model.pth")
-            patience_counter = 0
-        else:
-            patience_counter += 1
+    #     if auc > best_auc:
+    #         best_auc = auc
+    #         torch.save(model.state_dict(), "best_model.pth")
+    #         patience_counter = 0
+    #     else:
+    #         patience_counter += 1
 
-        if patience_counter >= PATIENCE:
-            print(f"Early stopping triggered after {epoch + 1} epochs")
-            break
+    #     if patience_counter >= PATIENCE:
+    #         print(f"Early stopping triggered after {epoch + 1} epochs")
+    #         break
 
-    print(f"Best AUC: {best_auc:.4f}")
-    save_loss_data(losses, save_dir)  # save loss data
+    # print(f"Best AUC: {best_auc:.4f}")
+    # save_loss_data(losses, save_dir)  # save loss data
 
     # load the best model for final evaluation
-    model.load_state_dict(torch.load("best_model.pth"))
+    model.load_state_dict(torch.load(f"{save_dir}/best_model.pth"))
 
     # evaluate on test set
-    auc, ap, ranked_predictions = evaluate_and_rank_validated_predictions(
-        model=model,
-        data=data,
-        pos_edge_loader=test_pos_loader,
-        neg_edge_loader=test_neg_loader,
-        device=device,
+    auc, ap, ranked_predictions, y_true_sorted, y_scores_sorted = (
+        evaluate_and_rank_validated_predictions(
+            model=model,
+            data=data,
+            pos_edge_loader=test_pos_loader,
+            neg_edge_loader=test_neg_loader,
+            device=device,
+        )
     )
+
+    save_roc_data(y_true_sorted, y_scores_sorted, save_dir)
 
     print("Final Evaluation:")
     print(f"AUC: {auc:.4f}")
@@ -416,11 +419,6 @@ def main() -> None:
     with open(save_dir / "ranked_validated_predictions.txt", "w") as f:
         for node1, node2, score in ranked_predictions:
             f.write(f"{node1}\t{node2}\t{score:.4f}\n")
-
-    # save ROC curve data
-    y_true = [1] * len(test_pos_loader.dataset) + [0] * len(test_neg_loader.dataset)
-    y_scores = [score for _, _, score in ranked_predictions]
-    save_roc_data(np.array(y_true), np.array(y_scores), save_dir)
 
     # save model and performance
     save_model_and_performance(
