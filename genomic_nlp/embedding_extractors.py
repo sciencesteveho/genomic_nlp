@@ -7,7 +7,7 @@
 
 import math
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Set, Tuple, Union
 
 from gensim.models import Word2Vec  # type: ignore
 import h5py  # type: ignore
@@ -33,34 +33,31 @@ class Word2VecEmbeddingExtractor:
     ) -> None:
         """Initialize the embedding extractor class."""
         self.model_path = model_path
-        # self.data_path = data_path
-        if synonyms:
-            self.synonyms = synonyms
+        self.synonyms = synonyms if synonyms is not None else {}
 
-        # load model
-        self.model = Word2Vec.load(model_path)
+        self.model: Word2Vec = Word2Vec.load(model_path)
 
     def extract_embeddings(
         self, genes: List[str]
     ) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
         """Extract embeddings from natural language processing models."""
-        embeddings = {}
-        synonym_embeddings = {}
+        embeddings: Dict[str, np.ndarray] = {}
+        synonym_embeddings: Dict[str, np.ndarray] = {}
 
         for gene in genes:
             gene_vector = self._get_gene_vector(gene)
-            embeddings[gene] = gene_vector
-            synonym_embeddings[gene] = self._get_synonym_embedding(gene, gene_vector)
+            if gene_vector is not None:
+                embeddings[gene] = gene_vector
+                synonym_embedding = self._get_synonym_embedding(gene, gene_vector)
+                synonym_embeddings[gene] = synonym_embedding
+            else:
+                print(f"Warning: Gene '{gene}' not in vocabulary. Skipping.")
 
         return embeddings, synonym_embeddings
 
-    def _get_gene_vector(self, gene: str) -> np.ndarray:
+    def _get_gene_vector(self, gene: str) -> Optional[np.ndarray]:
         """Get the embedding vector for a gene."""
-        try:
-            return self.model.wv[gene]
-        except KeyError:
-            print(f"Warning: gene {gene} not in vocabulary. Populating with zeros.")
-            return np.zeros(self.model.vector_size)
+        return self.model.wv[gene] if gene in self.model.wv else None
 
     def _get_synonym_embedding(self, gene: str, gene_vector: np.ndarray) -> np.ndarray:
         """Get the synonym-enhanced embedding for a gene by average over the
@@ -209,3 +206,89 @@ class DeBERTaEmbeddingExtractor:
     def _rename_state_dict_keys(self, state_dict: Dict[str, Any]) -> Dict[str, Any]:
         """Rename state dict keys to remove the 'module.' prefix."""
         return {k.replace("module.", ""): v for k, v in state_dict.items()}
+
+
+# def gene_symbol_from_gencode(gencode_ref: pybedtools.BedTool) -> Set[str]:
+#     """Returns deduped set of genes from a gencode gtf. Written for the gencode
+#     45 and avoids header"""
+#     return {
+#         line[8].split('gene_name "')[1].split('";')[0]
+#         for line in gencode_ref
+#         if not line[0].startswith("#") and "gene_name" in line[8]
+#     }
+
+
+# def gencode_genes(gtf: str) -> Set[str]:
+#     """Get gene symbols from a gencode gtf file."""
+#     gtf = pybedtools.BedTool(gtf)
+#     genes = list(gene_symbol_from_gencode(gtf))
+#     return set(genes)
+
+
+# def hgnc_ncbi_genes(tsv: str, hgnc: bool = False) -> Set[str]:
+#     """Get gene symbols and names from HGNC file"""
+#     gene_symbols, gene_names = [], []
+#     with open(tsv, newline="") as file:
+#         reader = csv.reader(file, delimiter="\t")
+#         next(reader)  # skip header
+#         for row in reader:
+#             if hgnc:
+#                 gene_symbols.append(row[1])
+#                 gene_names.append(row[2])
+#             else:
+#                 gene_symbols.append(row[0])
+#                 gene_names.append(row[1])
+
+#     gene_names = [
+#         name.replace("(", "").replace(")", "").replace(" ", "_").replace(",", "")
+#         for name in gene_names
+#     ]
+#     return set(gene_symbols + gene_names)
+
+
+# gencode = gencode_genes(gtf="/ocean/projects/bio210019p/stevesho/genomic_nlp/reference_files/gencode.v45.basic.annotation.gtf")
+# hgnc = hgnc_ncbi_genes("/ocean/projects/bio210019p/stevesho/genomic_nlp/reference_files/hgnc_complete_set.txt", hgnc=True)
+# ncbi = hgnc_ncbi_genes("/ocean/projects/bio210019p/stevesho/genomic_nlp/reference_files/ncbi_genes.tsv")
+# genes = gencode.union(hgnc).union(ncbi)
+# genes = {gene.casefold() for gene in genes}
+
+
+# model_path = '/ocean/projects/bio210019p/stevesho/genomic_nlp/models/w2v/2023/word2vec_300_dimensions_2023.model'
+# synonyms_file = '/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_synonyms.pkl'
+# with open(synonyms_file, 'rb') as f:
+#     gene_synonyms = pickle.load(f)
+
+# extractor = Word2VecEmbeddingExtractor(model_path=model_path, synonyms=gene_synonyms)
+
+# emb, syn_emb = extractor.extract_embeddings(genes=genes)
+
+
+# def create_random_embeddings(
+#     embeddings: Dict[str, np.ndarray]
+# ) -> Dict[str, np.ndarray]:
+#     """
+#     Create a new dictionary with the same keys as the input embedding dictionary,
+#     but with randomized embeddings using Xavier initialization.
+
+#     Args:
+#         embeddings (Dict[str, np.ndarray]): Original embeddings dictionary.
+
+#     Returns:
+#         Dict[str, np.ndarray]: New dictionary with Xavier-initialized embeddings.
+#     """
+#     random_embeddings = {}
+#     for gene, vector in embeddings.items():
+#         # Create a 2D tensor with shape (1, embedding_dim) for Xavier initialization
+#         random_vector = torch.empty(1, vector.shape[0])
+
+#         # Apply Xavier uniform initialization
+#         torch.nn.init.xavier_uniform_(random_vector)
+
+#         # Reshape back to 1D and convert to numpy
+#         random_embeddings[gene] = random_vector.view(-1).numpy()
+
+#     return random_embeddings
+
+# # Example usage
+# # Assume `emb` is your original embedding dictionary
+# random_emb = create_random_embeddings(emb)

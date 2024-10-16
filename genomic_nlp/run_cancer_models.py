@@ -17,7 +17,6 @@ from typing import Any, Callable, Dict, List, Tuple
 
 import numpy as np
 from sklearn.metrics import roc_auc_score  # type: ignore
-from sklearn.metrics import roc_curve  # type: ignore
 from sklearn.model_selection import StratifiedKFold  # type: ignore
 
 from cancer_models import CancerBaseModel
@@ -54,13 +53,16 @@ class CancerGenePrediction:
         self.model_name = model_name
         self.model_dir = model_dir
 
-    def perform_cross_validation(self, n_splits: int = 5, **kwargs) -> List[float]:
+    def perform_cross_validation(
+        self, n_splits: int = 5, **kwargs
+    ) -> Tuple[List[float], List[np.ndarray], List[CancerBaseModel]]:
         """Perform stratified 5-fold cross-validation and return F1 scores and thresholds."""
         folds = StratifiedKFold(
             n_splits=n_splits, shuffle=True, random_state=RANDOM_STATE
         )
         cv_scores = []
-        cv_data = []
+        cv_val_probabilities = []
+        trained_models = []
 
         for train_index, val_index in folds.split(X=self.features, y=self.targets):
             train_features, val_features = (
@@ -81,34 +83,37 @@ class CancerGenePrediction:
 
             probabilities = model.predict_probability(val_features)
             cv_scores.append(roc_auc_score(val_targets, probabilities))
-            cv_data.append((val_targets, probabilities))
+            cv_val_probabilities.append(probabilities)
+            trained_models.append(model)
             print(f"Fold ROC AUC: {cv_scores[-1]:.4f}")
 
-        self.save_data(cv_data, "cv")
-        return cv_scores
+        self.save_data(cv_scores, "cv_scores")
+        self.save_data(cv_val_probabilities, "cv_val_probabilities")
+        self.save_data(trained_models, "trained_models")
+        return cv_scores, cv_val_probabilities, trained_models
 
-    def train_and_evaluate_model(self) -> CancerBaseModel:
-        """Train a model using 5-fold CV and return the final model."""
-        print(f"\nTraining and evaluating {self.model_name}:")
+    # def train_and_evaluate_model(self) -> CancerBaseModel:
+    #     """Train a model using 5-fold CV and return the final model."""
+    #     print(f"\nTraining and evaluating {self.model_name}:")
 
-        # perform 5-fold CV
-        cv_scores = self.perform_cross_validation(n_splits=5)
-        mean_cv_auc = np.mean(cv_scores)
-        std_cv_auc = np.std(cv_scores)
-        print(
-            f"Cross-validation Mean ROC AUC: {mean_cv_auc:.4f} (+/- {std_cv_auc:.4f})"
-        )
+    #     # perform 5-fold CV
+    #     cv_scores = self.perform_cross_validation(n_splits=5)
+    #     mean_cv_auc = np.mean(cv_scores)
+    #     std_cv_auc = np.std(cv_scores)
+    #     print(
+    #         f"Cross-validation Mean ROC AUC: {mean_cv_auc:.4f} (+/- {std_cv_auc:.4f})"
+    #     )
 
-        # train final model on entire dataset
-        final_model = self.train_model(self.model_class, self.features, self.targets)
-        final_probas = final_model.predict_probability(self.features)
-        final_auc = roc_auc_score(self.targets, final_probas)
-        self.save_data([(self.targets, final_probas)], "final_roc")
-        print(f"Final model ROC AUC on entire dataset: {final_auc:.4f}")
+    #     # train final model on entire dataset
+    #     final_model = self.train_model(self.model_class, self.features, self.targets)
+    #     final_probas = final_model.predict_probability(self.features)
+    #     final_auc = roc_auc_score(self.targets, final_probas)
+    #     self.save_data([(self.targets, final_probas)], "final_roc")
+    #     print(f"Final model ROC AUC on entire dataset: {final_auc:.4f}")
 
-        # save model
-        self.save_data(final_model, "model")
-        return final_model
+    #     # save model
+    #     self.save_data(final_model, "model")
+    #     return final_model
 
     def predict_all_genes(self, model: CancerBaseModel) -> Dict[str, float]:
         """Infer cancer relatedness for all gene embeddings."""
@@ -142,6 +147,32 @@ class CancerGenePrediction:
             print(f"Error saving {data_type} for {self.model_name}: {str(e)}")
 
 
+def prepare_data(
+    args: argparse.Namespace,
+) -> Tuple[
+    np.ndarray, np.ndarray, Path, Dict[str, np.ndarray], CancerGeneDataPreprocessor
+]:
+    """Prepare data and directories for model training."""
+    preprocessor = CancerGeneDataPreprocessor(args)
+    features, targets = preprocessor.preprocess_data()
+    save_dir = (
+        Path("/ocean/projects/bio210019p/stevesho/genomic_nlp/models/cancer")
+        / args.save_str
+    )
+    os.makedirs(save_dir, exist_ok=True)
+    return features, targets, save_dir, preprocessor.gene_embeddings, preprocessor
+
+
+def define_models() -> Dict[str, Callable[..., CancerBaseModel]]:
+    """Define the models to be used in the ensemble."""
+    return {
+        "logistic_regression": LogisticRegressionModel,
+        "xgboost": XGBoost,
+        "svm": SVM,
+        "mlp": MLP,
+    }
+
+
 def main() -> None:
     """Main function to run cancer gene prediction models."""
     # prep training data
@@ -153,21 +184,19 @@ def main() -> None:
     )
     parser.add_argument("--save_str", type=str, help="String to save the model with.")
     args = parser.parse_args()
-    preprocessor = CancerGeneDataPreprocessor(args)
-    features, targets = preprocessor.preprocess_data()
-    save_dir = Path("/ocean/projects/bio210019p/stevesho/genomic_nlp/models/cancer")
-    save_dir = save_dir / args.save_str
-    os.makedirs(save_dir, exist_ok=True)
+
+    # prepare data
+    features, targets, save_dir, gene_embeddings, preprocessor = prepare_data(args)
 
     # define models
-    models = {
-        "logistic_regression": LogisticRegressionModel,
-        "xgboost": XGBoost,
-        "svm": SVM,
-        "mlp": MLP,
-    }
+    models = define_models()
+
+    # initialize vars for 5-fold cv and soft voting ensemble
+    ensemble_val_probabilities = np.zeros(len(targets))
+    ensemble_final_probabilities = np.zeros(len(preprocessor.gene_embeddings))
 
     print("Running models.")
+
     for name, model_class in models.items():
         print(f"\nRunning {name} model.")
         trainer = CancerGenePrediction(
@@ -179,15 +208,48 @@ def main() -> None:
             model_dir=save_dir,
         )
 
-        # final model on all train data
-        final_model = trainer.train_and_evaluate_model()
+        # perform cross-validation
+        _, cv_val_probs, trained_models = trainer.perform_cross_validation(n_splits=5)
 
-        # predict cancer relatedness for all genes
-        all_gene_predictions = trainer.predict_all_genes(final_model)
-        print(f"Predicted cancer relatedness for genes in model {name}.")
+        # assign cross-validated probabilities
+        ensemble_val_probabilities += np.array(cv_val_probs).mean(axis=0)
 
-        # save the predictions
-        trainer.save_data(all_gene_predictions, "predictions")
+        # predict on the entire dataset
+        model_predictions = np.zeros(len(preprocessor.gene_embeddings))
+        for fold, model in enumerate(trained_models, 1):
+            probas = model.predict_probability(features)
+            model_predictions += probas
+            print(f"  Fold {fold} prediction completed for ensemble.")
+
+        # soft vote
+        model_predictions /= len(trained_models)
+        ensemble_final_probabilities += model_predictions
+        trainer.save_data(cv_val_probs, "cv_val_probabilities")
+        trainer.save_data(model_predictions, "ensemble_final_probas")
+
+    # average votes
+    num_models = len(models)
+    ensemble_val_probabilities /= num_models
+    ensemble_final_probabilities /= num_models
+
+    # evaluate ensemble
+    ensemble_cv_auc = roc_auc_score(targets, ensemble_val_probabilities)
+    print(f"\nEnsemble Cross-validation ROC AUC: {ensemble_cv_auc:.4f}")
+
+    # predict cancer relatedness for all genes using ensemble
+    all_genes = list(preprocessor.gene_embeddings.keys())
+    ensemble_final_predictions = dict(zip(all_genes, ensemble_final_probabilities))
+
+    # save probas and predictions
+    ensemble_cv_path = save_dir / "ensemble_cv_probabilities.pkl"
+    with open(ensemble_cv_path, "wb") as f:
+        pickle.dump(ensemble_val_probabilities, f)
+    print(f"Ensemble cross-validation probabilities saved to {ensemble_cv_path}")
+
+    ensemble_predictions_path = save_dir / "ensemble_final_predictions.pkl"
+    with open(ensemble_predictions_path, "wb") as f:
+        pickle.dump(ensemble_final_predictions, f)
+    print(f"Ensemble final predictions saved to {ensemble_predictions_path}")
 
 
 if __name__ == "__main__":
