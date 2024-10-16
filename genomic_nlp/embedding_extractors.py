@@ -208,59 +208,80 @@ class DeBERTaEmbeddingExtractor:
         return {k.replace("module.", ""): v for k, v in state_dict.items()}
 
 
-# def gene_symbol_from_gencode(gencode_ref: pybedtools.BedTool) -> Set[str]:
-#     """Returns deduped set of genes from a gencode gtf. Written for the gencode
-#     45 and avoids header"""
-#     return {
-#         line[8].split('gene_name "')[1].split('";')[0]
-#         for line in gencode_ref
-#         if not line[0].startswith("#") and "gene_name" in line[8]
-#     }
+def gene_symbol_from_gencode(gencode_ref: pybedtools.BedTool) -> Set[str]:
+    """Returns deduped set of genes from a gencode gtf. Written for the gencode
+    45 and avoids header"""
+    return {
+        line[8].split('gene_name "')[1].split('";')[0]
+        for line in gencode_ref
+        if not line[0].startswith("#") and "gene_name" in line[8]
+    }
 
 
-# def gencode_genes(gtf: str) -> Set[str]:
-#     """Get gene symbols from a gencode gtf file."""
-#     gtf = pybedtools.BedTool(gtf)
-#     genes = list(gene_symbol_from_gencode(gtf))
-#     return set(genes)
+def gencode_genes(gtf: str) -> Set[str]:
+    """Get gene symbols from a gencode gtf file."""
+    gtf = pybedtools.BedTool(gtf)
+    genes = list(gene_symbol_from_gencode(gtf))
+    return set(genes)
 
 
-# def hgnc_ncbi_genes(tsv: str, hgnc: bool = False) -> Set[str]:
-#     """Get gene symbols and names from HGNC file"""
-#     gene_symbols, gene_names = [], []
-#     with open(tsv, newline="") as file:
-#         reader = csv.reader(file, delimiter="\t")
-#         next(reader)  # skip header
-#         for row in reader:
-#             if hgnc:
-#                 gene_symbols.append(row[1])
-#                 gene_names.append(row[2])
-#             else:
-#                 gene_symbols.append(row[0])
-#                 gene_names.append(row[1])
+def hgnc_ncbi_genes(tsv: str, hgnc: bool = False) -> Set[str]:
+    """Get gene symbols and names from HGNC file"""
+    gene_symbols, gene_names = [], []
+    with open(tsv, newline="") as file:
+        reader = csv.reader(file, delimiter="\t")
+        next(reader)  # skip header
+        for row in reader:
+            if hgnc:
+                gene_symbols.append(row[1])
+                gene_names.append(row[2])
+            else:
+                gene_symbols.append(row[0])
+                gene_names.append(row[1])
 
-#     gene_names = [
-#         name.replace("(", "").replace(")", "").replace(" ", "_").replace(",", "")
-#         for name in gene_names
-#     ]
-#     return set(gene_symbols + gene_names)
-
-
-# gencode = gencode_genes(gtf="/ocean/projects/bio210019p/stevesho/genomic_nlp/reference_files/gencode.v45.basic.annotation.gtf")
-# hgnc = hgnc_ncbi_genes("/ocean/projects/bio210019p/stevesho/genomic_nlp/reference_files/hgnc_complete_set.txt", hgnc=True)
-# ncbi = hgnc_ncbi_genes("/ocean/projects/bio210019p/stevesho/genomic_nlp/reference_files/ncbi_genes.tsv")
-# genes = gencode.union(hgnc).union(ncbi)
-# genes = {gene.casefold() for gene in genes}
+    gene_names = [
+        name.replace("(", "").replace(")", "").replace(" ", "_").replace(",", "")
+        for name in gene_names
+    ]
+    return set(gene_symbols + gene_names)
 
 
-# model_path = '/ocean/projects/bio210019p/stevesho/genomic_nlp/models/w2v/2023/word2vec_300_dimensions_2023.model'
-# synonyms_file = '/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_synonyms.pkl'
-# with open(synonyms_file, 'rb') as f:
-#     gene_synonyms = pickle.load(f)
+gencode = gencode_genes(
+    gtf="/ocean/projects/bio210019p/stevesho/genomic_nlp/reference_files/gencode.v45.basic.annotation.gtf"
+)
+hgnc = hgnc_ncbi_genes(
+    "/ocean/projects/bio210019p/stevesho/genomic_nlp/reference_files/hgnc_complete_set.txt",
+    hgnc=True,
+)
+ncbi = hgnc_ncbi_genes(
+    "/ocean/projects/bio210019p/stevesho/genomic_nlp/reference_files/ncbi_genes.tsv"
+)
+genes = gencode.union(hgnc).union(ncbi)
+genes = {gene.casefold() for gene in genes}
 
-# extractor = Word2VecEmbeddingExtractor(model_path=model_path, synonyms=gene_synonyms)
 
-# emb, syn_emb = extractor.extract_embeddings(genes=genes)
+for year in range(2003, 2023):
+    print(f"Starting extraction for {year}")
+    model_path = f"/ocean/projects/bio210019p/stevesho/genomic_nlp/models/w2v/{year}/word2vec_300_dimensions_{year}.model"
+    synonyms_file = (
+        "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_synonyms.pkl"
+    )
+    with open(synonyms_file, "rb") as f:
+        gene_synonyms = pickle.load(f)
+
+    extractor = Word2VecEmbeddingExtractor(
+        model_path=model_path, synonyms=gene_synonyms
+    )
+
+    savedir = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/w2v"
+    emb, syn_emb = extractor.extract_embeddings(genes=genes)
+    with open(f"{savedir}/w2v_filtered_{year}_embeddings.pkl", "wb") as f:
+        pickle.dump(emb, f)
+
+    with open(f"{savedir}/w2v_filtered_{year}_synonym_embeddings.pkl", "wb") as f:
+        pickle.dump(syn_emb, f)
+
+    print(f"Finished extraction for {year}")
 
 
 # def create_random_embeddings(
@@ -288,6 +309,7 @@ class DeBERTaEmbeddingExtractor:
 #         random_embeddings[gene] = random_vector.view(-1).numpy()
 
 #     return random_embeddings
+
 
 # # Example usage
 # # Assume `emb` is your original embedding dictionary
