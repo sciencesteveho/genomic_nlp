@@ -5,6 +5,8 @@
 """Classes to handle plotting of model performances."""
 
 
+import os
+import pickle
 from typing import Dict, List, Optional, Tuple
 
 import matplotlib.colors as mcolors  # type: ignore
@@ -121,9 +123,16 @@ class BaselineModelVisualizer:
         """Plot ROC curves for all models."""
         for model_name, model in models.items():
             y_pred = model.predict_probability(test_features)
-            fpr, tpr, _ = roc_curve(test_labels, y_pred)
+            fpr, tpr, thresholds = roc_curve(test_labels, y_pred)
             auc = roc_auc_score(test_labels, y_pred)
             plt.plot(fpr, tpr, label=f"{model_name} (AUC = {auc:.2f})")
+
+            # Save the ROC curve data to the save directory
+            roc_data = {"fpr": fpr, "tpr": tpr, "thresholds": thresholds}
+            roc_data_path = os.path.join(self.output_path, f"{model_name}_roc_data.pkl")
+            with open(roc_data_path, "wb") as f:
+                pickle.dump(roc_data, f)
+            print(f"ROC data for {model_name} saved to {roc_data_path}")
 
         plt.plot([0, 1], [0, 1], color="black", linestyle="--")
         plt.xlabel("False positive rate")
