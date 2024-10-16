@@ -393,7 +393,7 @@ def main() -> None:
     # save_loss_data(losses, save_dir)  # save loss data
 
     # load the best model for final evaluation
-    model.load_state_dict(torch.load(f"{save_dir}/best_model.pth"))
+    model.load_state_dict(torch.load(f"{save_dir}/best_model.pth", map_location=device))
 
     # evaluate on test set
     auc, ap, ranked_predictions, y_true_sorted, y_scores_sorted = (
