@@ -5,7 +5,6 @@
 """Abstract dataframe concatenation and cleaning with regular expressions."""
 
 
-import argparse
 import contextlib
 import re
 from typing import Callable, Set, Union
@@ -31,7 +30,8 @@ class AbstractCleaner:
         clean_abstracts: Process abstracts with regex.
 
     # Helpers
-        GENE_REPLACEMENTS -- A dictionary of gene replacements for genes that look like names.
+        GENE_REPLACEMENTS -- A dictionary of gene replacements for genes that
+        look like names.
         SUBLIST
     """
 
