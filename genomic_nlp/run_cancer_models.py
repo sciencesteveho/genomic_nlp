@@ -65,7 +65,6 @@ class CancerGenePrediction:
         cv_scores = []
         cv_val_probabilities = np.zeros(len(self.targets))
         trained_models = []
-        all_val_indices = np.array([], dtype=int)
 
         for fold_num, (train_index, val_index) in enumerate(
             folds.split(self.features, self.targets), 1
@@ -87,16 +86,14 @@ class CancerGenePrediction:
             )
 
             probabilities = model.predict_probability(val_features)
-            cv_scores.append(roc_auc_score(val_targets, probabilities))
             cv_val_probabilities[val_index] = probabilities
+            auc_score = roc_auc_score(val_targets, probabilities)
+            cv_scores.append(auc_score)
             trained_models.append(model)
-            all_val_indices = np.concatenate([all_val_indices, val_index])
-            print(f"Fold {fold_num} ROC AUC: {cv_scores[-1]:.4f}")
+            print(f"Fold {fold_num} ROC AUC: {auc_score:.4f}")
 
-        # Save the ROC curve data
-        fpr, tpr, thresholds = roc_curve(
-            self.targets[all_val_indices], cv_val_probabilities[all_val_indices]
-        )
+        # Save the ROC curve data for this model
+        fpr, tpr, thresholds = roc_curve(self.targets, cv_val_probabilities)
         roc_data = {"fpr": fpr, "tpr": tpr, "thresholds": thresholds}
         self.save_data(roc_data, "roc_curve_data")
 
@@ -128,12 +125,22 @@ class CancerGenePrediction:
     #     self.save_data(final_model, "model")
     #     return final_model
 
-    def predict_all_genes(self, model: CancerBaseModel) -> Dict[str, float]:
-        """Infer cancer relatedness for all gene embeddings."""
+    def predict_all_genes(
+        self, trained_models: List[CancerBaseModel]
+    ) -> Dict[str, float]:
+        """Predict cancer relatedness for all gene embeddings using models from each fold."""
         all_genes = list(self.gene_embeddings.keys())
         all_embeddings = np.array([self.gene_embeddings[gene] for gene in all_genes])
-        probabilities = model.predict_probability(all_embeddings)  # inference
-        return dict(zip(all_genes, probabilities))
+        predictions = np.zeros(len(all_genes))
+
+        for fold_num, model in enumerate(trained_models, 1):
+            probas = model.predict_probability(all_embeddings)
+            predictions += probas
+            print(f"  Fold {fold_num} prediction completed.")
+
+        # Average the predictions across folds
+        predictions /= len(trained_models)
+        return dict(zip(all_genes, predictions))
 
     @staticmethod
     def train_model(
@@ -221,64 +228,22 @@ def main() -> None:
             model_dir=save_dir,
         )
 
-        # perform cross-validation
-        _, cv_val_probs, trained_models = trainer.perform_cross_validation(n_splits=5)
-
-        # Soft voting on the training labels
-        ensemble_val_probabilities += cv_val_probs
-
-        # predict on the entire dataset
-        all_genes = list(preprocessor.gene_embeddings.keys())
-        all_embeddings = np.array(
-            [preprocessor.gene_embeddings[gene] for gene in all_genes]
+        # Perform cross-validation
+        cv_scores, cv_val_probs, trained_models = trainer.perform_cross_validation(
+            n_splits=5
         )
-        model_predictions = np.zeros(len(all_genes))
 
-        for model in trained_models:
-            probas = model.predict_probability(all_embeddings)
-            model_predictions += probas
+        # Predict on all gene embeddings using models from each fold and average the predictions
+        final_predictions = trainer.predict_all_genes(trained_models)
 
-        # soft vote
-        model_predictions /= len(trained_models)
-        ensemble_final_probabilities += model_predictions
-        trainer.save_data(model_predictions, f"{name}_final_probas")
+        # Save the final predictions per model
+        trainer.save_data(final_predictions, "final_predictions")
 
-    # average votes
-    num_models = len(models)
-    ensemble_val_probabilities /= num_models
-    ensemble_final_probabilities /= num_models
+        # Print overall ROC AUC for the model on cross-validation
+        overall_auc = roc_auc_score(targets, cv_val_probs)
+        print(f"{name} model Cross-validation ROC AUC: {overall_auc:.4f}")
 
-    # evaluate ensemble
-    ensemble_cv_auc = roc_auc_score(targets, ensemble_val_probabilities)
-    print(f"\nEnsemble Cross-validation ROC AUC: {ensemble_cv_auc:.4f}")
-
-    # Save the ensemble ROC curve data
-    ensemble_fpr, ensemble_tpr, ensemble_thresholds = roc_curve(
-        targets, ensemble_val_probabilities
-    )
-    ensemble_roc_data = {
-        "fpr": ensemble_fpr,
-        "tpr": ensemble_tpr,
-        "thresholds": ensemble_thresholds,
-    }
-    ensemble_roc_path = save_dir / "ensemble_roc_curve_data.pkl"
-    with open(ensemble_roc_path, "wb") as f:
-        pickle.dump(ensemble_roc_data, f)
-    print(f"Ensemble ROC curve data saved to {ensemble_roc_path}")
-
-    # predict cancer relatedness for all genes using ensemble
-    ensemble_final_predictions = dict(zip(all_genes, ensemble_final_probabilities))
-
-    # save probas and predictions
-    ensemble_cv_path = save_dir / "ensemble_cv_probabilities.pkl"
-    with open(ensemble_cv_path, "wb") as f:
-        pickle.dump(ensemble_val_probabilities, f)
-    print(f"Ensemble cross-validation probabilities saved to {ensemble_cv_path}")
-
-    ensemble_predictions_path = save_dir / "ensemble_final_predictions.pkl"
-    with open(ensemble_predictions_path, "wb") as f:
-        pickle.dump(ensemble_final_predictions, f)
-    print(f"Ensemble final predictions saved to {ensemble_predictions_path}")
+    print("\nAll models have been processed.")
 
 
 if __name__ == "__main__":
