@@ -174,7 +174,7 @@ def main() -> None:
     parser.add_argument(
         "--filename_prefix",
         type=str,
-        default="abstracts_with_normalized_entities_tfidf_40000_chunk_part",
+        default="abstracts_logistic_classified_tfidf_40000_chunk_part",
         help="Prefix for the output filename.",
     )
     parser.add_argument(
