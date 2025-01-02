@@ -2,17 +2,14 @@
 # -*- coding: utf-8 -*-
 
 
-"""Chunk abstracts."""
+"""Chunk abstracts into smaller parts for parallel processing."""
 
 
 import argparse
 from math import ceil
 import pickle
-from typing import List
 
-import more_itertools  # type: ignore
 import pandas as pd  # type: ignore
-from tqdm import tqdm  # type: ignore
 
 
 def _get_relevant_abstracts(abstract_file: str) -> pd.DataFrame:
