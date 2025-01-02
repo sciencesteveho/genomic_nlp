@@ -191,6 +191,8 @@ def main() -> None:
     # define input and output file paths
     input_file = f"{args.path}/{args.filename_prefix}_{args.file_idx}.pkl"
     output_file = f"{args.path}/abstracts_with_normalized_entities_{args.file_idx}.pkl"
+    print(f"Processing file {input_file}...")
+    print(f"And saving to {output_file}...")
 
     # process abstracts
     abstracts = load_abstracts(input_file)
