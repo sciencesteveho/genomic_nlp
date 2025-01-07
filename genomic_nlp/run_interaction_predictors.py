@@ -14,23 +14,22 @@ import os
 import pickle
 from typing import Any, Callable, Dict, List
 
+from model_data_preprocessor import InteractionDataPreprocessor
 import numpy as np
 import psutil  # type: ignore
 from scipy import stats  # type: ignore
 from sklearn.metrics import average_precision_score  # type: ignore
 from sklearn.metrics import roc_auc_score  # type: ignore
 from sklearn.model_selection import StratifiedKFold  # type: ignore
-
-# from baseline_models import CosineSimilarity
-from constants import RANDOM_STATE
-from interaction_models import BaselineModel
-from interaction_models import LogisticRegressionModel
-from interaction_models import MLP
-from interaction_models import SVM
-from interaction_models import XGBoost
-from model_data_preprocessor import InteractionDataPreprocessor
 from utils import get_physical_cores
-from visualizers import BaselineModelVisualizer
+
+from genomic_nlp.models.interaction_models import BaselineModel
+from genomic_nlp.models.interaction_models import LogisticRegressionModel
+from genomic_nlp.models.interaction_models import MLP
+from genomic_nlp.models.interaction_models import SVM
+from genomic_nlp.models.interaction_models import XGBoost
+from genomic_nlp.utils.constants import RANDOM_STATE
+from genomic_nlp.visualization.visualizers import BaselineModelVisualizer
 
 
 class GeneInterationPredictions:

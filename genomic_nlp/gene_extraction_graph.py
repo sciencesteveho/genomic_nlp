@@ -13,7 +13,7 @@ from typing import Dict, List, Set, Tuple
 import pandas as pd
 from tqdm import tqdm  # type: ignore
 
-from utils import gencode_genes
+from genomic_nlp.utils.common import gencode_genes
 
 
 def combine_synonyms(
