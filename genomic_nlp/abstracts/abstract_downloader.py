@@ -2,19 +2,19 @@
 # -*- coding: utf-8 -*-
 
 
-"""Mine abstracts from scopus API"""
+"""Mine abstracts from scopus API."""
 
 
 import argparse
 from pathlib import Path
-from typing import List, Tuple, Union
+from typing import Union
 
 import pandas as pd
 from pybliometrics.scopus import ScopusSearch  # type: ignore
 
-from constants import GENERAL_SEARCH_TERMS
-from constants import TEST_SET_JOURNALS
-from utils import dir_check_make
+from genomic_nlp.utils.common import dir_check_make
+from genomic_nlp.utils.constants import GENERAL_SEARCH_TERMS
+from genomic_nlp.utils.constants import TEST_SET_JOURNALS
 
 
 def create_scopus_search(

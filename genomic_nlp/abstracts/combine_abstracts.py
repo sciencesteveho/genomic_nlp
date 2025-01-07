@@ -6,6 +6,7 @@
 Word2Vec."""
 
 
+import argparse
 import glob
 import os
 from pathlib import Path
@@ -118,20 +119,6 @@ def write_temporal_abstracts(
     print(f"Writing out abstracts for {year} complete.")
 
 
-# def write_finetune_to_text(abstracts_dir: str, prefix: str, combined_abs: str) -> None:
-#     """Write chunks of abstracts to text, where each newline delimits a full
-#     abstract."""
-#     output_path = f"{abstracts_dir}/combined/{prefix}_combined.txt"
-
-#     with open(output_path, "w") as output:
-#         abstracts_df = pd.read_pickle(combined_abs)
-#         for abstract in abstracts_df["processed_abstracts_finetune"]:
-#             line = " ".join(abstract).strip()
-#             output.write(f"{line}\n")
-
-#     print(f"Abstracts successfully written to {output_path}")
-
-
 def write_finetune_to_text(abstracts_dir: str, prefix: str, combined_abs: str) -> None:
     """Write chunks of abstracts to text, where each newline delimits a full
     abstract. If the token is a standalone period or comma, removes the space
@@ -154,31 +141,45 @@ def write_finetune_to_text(abstracts_dir: str, prefix: str, combined_abs: str) -
 
 def main() -> None:
     """Main execution flow."""
-    working_dir = "/ocean/projects/bio210019p/stevesho/genomic_nlp/data"
+    parser = argparse.ArgumentParser(
+        description="Combine abstract chunks and write sentences to text files for Word2Vec."
+    )
+    parser.add_argument(
+        "--working_dir",
+        type=str,
+        help="Directory containing abstract chunks.",
+        default="/ocean/projects/bio210019p/stevesho/genomic_nlp/data",
+    )
+    args = parser.parse_args()
+
+    working_dir = args.working_dir
     outdir = Path(working_dir) / "combined"
 
-    # combined_df = _combine_chunks(working_dir, "processed_abstracts_finetune_")
-    # combined_df.to_pickle(f"{working_dir}/processed_abstracts_finetune_combined.pkl")
+    # combine finetune abstracts
+    combined_df = _combine_chunks(working_dir, "processed_abstracts_finetune_")
+    combined_df.to_pickle(f"{working_dir}/processed_abstracts_finetune_combined.pkl")
 
-    # del combined_df
+    # delete combined_df to free up memory
+    del combined_df
 
-    # combined_df = _combine_chunks(working_dir, "processed_abstracts_w2v_")
-    # combined_df.to_pickle(f"{working_dir}/processed_abstracts_w2v_combined.pkl")
+    # combine w2v abstracts
+    combined_df = _combine_chunks(working_dir, "processed_abstracts_w2v_")
+    combined_df.to_pickle(f"{working_dir}/processed_abstracts_w2v_combined.pkl")
 
-    # # write out abstracts from 2003 to 2023
-    # for year in range(2003, 2024):
+    # write out abstracts from 2003 to 2023
+    for year in range(2003, 2024):
 
-    #     # set up directory
-    #     year_outdir = outdir / str(year)
-    #     os.makedirs(year_outdir, exist_ok=True)
+        # set up directory
+        year_outdir = outdir / str(year)
+        os.makedirs(year_outdir, exist_ok=True)
 
-    #     # write out with and without genes
-    #     write_temporal_abstracts(
-    #         combined_df, year_outdir, year, "processed_abstracts_w2v"
-    #     )
-    #     write_temporal_abstracts(
-    #         combined_df, year_outdir, year, "processed_abstracts_w2v_nogenes"
-    #     )
+        # write out with and without genes
+        write_temporal_abstracts(
+            combined_df, year_outdir, year, "processed_abstracts_w2v"
+        )
+        write_temporal_abstracts(
+            combined_df, year_outdir, year, "processed_abstracts_w2v_nogenes"
+        )
 
     # write out finetune abstracts
     write_finetune_to_text(
@@ -186,23 +187,6 @@ def main() -> None:
         "processed_abstracts_finetune",
         f"{working_dir}/processed_abstracts_finetune_combined.pkl",
     )
-
-    # parser = argparse.ArgumentParser(
-    #     description="Combine abstract chunks and write sentences to text files for Word2Vec."
-    # )
-    # parser.add_argument(
-    #   working_dir",
-    #     type=str,
-    #     help="Directory containing abstract chunks.",
-    #     default="/ocean/projects/bio210019p/stevesho/genomic_nlp/data",
-    # )
-    # parser.add_argument(
-    #     "--year",
-    #     type=int,
-    #     required=True,
-    #     help="Cutoff year. Only abstracts up to and including this year will be processed.",
-    # )
-    # args = parser.parse_args()
 
 
 if __name__ == "__main__":

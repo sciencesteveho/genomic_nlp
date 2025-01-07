@@ -17,7 +17,7 @@ from gensim.models.phrases import Phrases  # type: ignore
 from gensim.models.word2vec import LineSentence  # type: ignore
 import smart_open  # type: ignore
 
-from utils import time_decorator
+from genomic_nlp.utils.common import time_decorator
 
 logging.basicConfig(
     format="%(asctime)s : %(levelname)s : %(message)s", level=logging.INFO
@@ -228,7 +228,7 @@ class Word2VecCorpus:
                     "hs",
                 ]
             }
-        )  # init word2vec class with alpha values from Tshitoyan et al.
+        )
 
         model.build_vocab(vocab_corpus)  # build vocab
 

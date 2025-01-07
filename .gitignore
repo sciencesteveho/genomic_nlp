@@ -6,3 +6,4 @@ genomic_nlp/__pycache__
 data/abstracts
 data/plots
 data/embeddings
+genomic_nlp.egg-info/

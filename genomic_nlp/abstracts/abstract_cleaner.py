@@ -12,11 +12,11 @@ from typing import Callable, Set, Union
 import pandas as pd
 from tqdm import tqdm  # type: ignore
 
-from constants import SUBLIST
-from constants import SUBLIST_INITIAL
-from constants import SUBLIST_POST
-from constants import SUBLIST_TOKEN_ONE
-from constants import SUBLIST_TOKEN_ZERO
+from genomic_nlp.utils.constants import SUBLIST
+from genomic_nlp.utils.constants import SUBLIST_INITIAL
+from genomic_nlp.utils.constants import SUBLIST_POST
+from genomic_nlp.utils.constants import SUBLIST_TOKEN_ONE
+from genomic_nlp.utils.constants import SUBLIST_TOKEN_ZERO
 
 
 class AbstractCleaner:

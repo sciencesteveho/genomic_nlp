@@ -1,0 +1,5 @@
+setup.py
+genomic_nlp.egg-info/PKG-INFO
+genomic_nlp.egg-info/SOURCES.txt
+genomic_nlp.egg-info/dependency_links.txt
+genomic_nlp.egg-info/top_level.txt
