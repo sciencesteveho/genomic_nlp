@@ -6,6 +6,7 @@
 relationships."""
 
 
+import argparse
 import gc
 import gzip
 from pathlib import Path
@@ -36,12 +37,34 @@ class EpochSaver(CallbackAny2Vec):
 
 def main() -> None:
     """Load the graph and train embeddings."""
-    edge_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/ppi/text_extracted_gene_edges_syns.tsv"
-    model_dir = "/ocean/projects/bio210019p/stevesho/genomic_nlp/models/n2v"
-    output_dir = Path("/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings")
+    parser = argparse.ArgumentParser(description="Train node2vec embeddings.")
+    parser.add_argument(
+        "--edge_file",
+        type=str,
+        required=True,
+        help="Path to the text extracted gene edges.",
+        default="/ocean/projects/bio210019p/stevesho/genomic_nlp/ppi/text_extracted_gene_edges_syns.tsv",
+    )
+    parser.add_argument(
+        "--model_dir",
+        type=str,
+        required=True,
+        help="Directory to save the model.",
+        default="/ocean/projects/bio210019p/stevesho/genomic_nlp/models/n2v",
+    )
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        required=True,
+        help="Directory to save the embeddings.",
+        default="/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings",
+    )
+    args = parser.parse_args()
 
     # load edges
-    edges = pd.read_csv(edge_file, sep="\t", header=None, names=["source", "target"])
+    edges = pd.read_csv(
+        args.edge_file, sep="\t", header=None, names=["source", "target"]
+    )
     edges = edges.drop_duplicates()
 
     # create graph
@@ -61,13 +84,13 @@ def main() -> None:
         window=10,
         min_count=1,
         batch_words=4,
-        callbacks=[EpochSaver(model_dir)],
+        callbacks=[EpochSaver(args.model_dir)],
     )
 
     # try and clear memory before saving
     gc.collect()
 
-    model.save(str(output_dir / "node2vec.model"))
+    model.save(str(args.output_dir / "node2vec.model"))
 
 
 if __name__ == "__main__":

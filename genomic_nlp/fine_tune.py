@@ -17,7 +17,7 @@ import logging
 from typing import Set
 
 import deepspeed  # type: ignore
-import torch
+import torch  # type: ignore
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
@@ -27,7 +27,7 @@ from transformers import DebertaV2ForMaskedLM  # type: ignore
 from transformers import DebertaV2TokenizerFast  # type: ignore
 from transformers import get_linear_schedule_with_warmup  # type: ignore
 
-from streaming_corpus import StreamingCorpus
+from genomic_nlp.utils.streaming_corpus import StreamingCorpus
 
 logging.basicConfig(level=logging.INFO)
 

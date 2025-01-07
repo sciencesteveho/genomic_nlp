@@ -32,8 +32,8 @@ from torch_geometric.data import Data  # type: ignore
 from torch_geometric.loader import DataLoader  # type: ignore
 from tqdm import tqdm  # type: ignore
 
-from interaction_models_gnn import LinkPredictionGNN
-from model_data_preprocessor_gnn import GNNDataPreprocessor
+from genomic_nlp.model_data_preprocessor_gnn import GNNDataPreprocessor
+from genomic_nlp.models.interaction_models_gnn import LinkPredictionGNN
 
 # helpers
 EPOCHS = 100
@@ -352,45 +352,45 @@ def main() -> None:
         optimizer, mode="max", factor=0.5, patience=5, verbose=True
     )
 
-    # # training loop
-    # best_auc = float("-inf")
-    # patience_counter = 0
-    # losses = []
+    # training loop
+    best_auc = float("-inf")
+    patience_counter = 0
+    losses = []
 
-    # for epoch in range(EPOCHS):
-    #     loss = train_model(
-    #         model=model,
-    #         optimizer=optimizer,
-    #         data=data,
-    #         pos_edge_loader=train_pos_loader,
-    #         neg_edge_loader=train_neg_loader,
-    #         device=device,
-    #         epoch=epoch,
-    #     )
-    #     losses.append(loss)
-    #     auc = evaluate_model(
-    #         model=model,
-    #         data=data,
-    #         pos_edge_loader=val_pos_loader,
-    #         neg_edge_loader=val_neg_loader,
-    #         device=device,
-    #     )
-    #     scheduler.step(auc)
-    #     print(f"Epoch: {epoch:03d}, Loss: {loss:.4f}, AUC: {auc:.4f}")
+    for epoch in range(EPOCHS):
+        loss = train_model(
+            model=model,
+            optimizer=optimizer,
+            data=data,
+            pos_edge_loader=train_pos_loader,
+            neg_edge_loader=train_neg_loader,
+            device=device,
+            epoch=epoch,
+        )
+        losses.append(loss)
+        auc = evaluate_model(
+            model=model,
+            data=data,
+            pos_edge_loader=val_pos_loader,
+            neg_edge_loader=val_neg_loader,
+            device=device,
+        )
+        scheduler.step(auc)
+        print(f"Epoch: {epoch:03d}, Loss: {loss:.4f}, AUC: {auc:.4f}")
 
-    #     if auc > best_auc:
-    #         best_auc = auc
-    #         torch.save(model.state_dict(), "best_model.pth")
-    #         patience_counter = 0
-    #     else:
-    #         patience_counter += 1
+        if auc > best_auc:
+            best_auc = auc
+            torch.save(model.state_dict(), "best_model.pth")
+            patience_counter = 0
+        else:
+            patience_counter += 1
 
-    #     if patience_counter >= PATIENCE:
-    #         print(f"Early stopping triggered after {epoch + 1} epochs")
-    #         break
+        if patience_counter >= PATIENCE:
+            print(f"Early stopping triggered after {epoch + 1} epochs")
+            break
 
-    # print(f"Best AUC: {best_auc:.4f}")
-    # save_loss_data(losses, save_dir)  # save loss data
+    print(f"Best AUC: {best_auc:.4f}")
+    save_loss_data(losses, save_dir)  # save loss data
 
     # load the best model for final evaluation
     model.load_state_dict(torch.load(f"{save_dir}/best_model.pth", map_location=device))

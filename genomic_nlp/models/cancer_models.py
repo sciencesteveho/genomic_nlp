@@ -26,7 +26,7 @@ from sklearn.neural_network import MLPClassifier  # type: ignore
 from sklearn.svm import SVC  # type: ignore
 from xgboost import XGBClassifier
 
-from constants import RANDOM_STATE
+from genomic_nlp.utils.constants import RANDOM_STATE
 
 
 class CancerBaseModel(BaseEstimator, ClassifierMixin):

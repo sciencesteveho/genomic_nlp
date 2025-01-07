@@ -20,15 +20,13 @@ from sklearn.metrics import roc_auc_score  # type: ignore
 from sklearn.metrics import roc_curve  # type: ignore
 from sklearn.model_selection import StratifiedKFold  # type: ignore
 
-from cancer_models import CancerBaseModel
-from cancer_models import LogisticRegressionModel
-from cancer_models import MLP
-from cancer_models import SVM
-from cancer_models import XGBoost
-from constants import RANDOM_STATE
-from model_data_preprocessor import CancerGeneDataPreprocessor
-
-# from utils import get_physical_cores
+from genomic_nlp.model_data_preprocessor import CancerGeneDataPreprocessor
+from genomic_nlp.models.cancer_models import CancerBaseModel
+from genomic_nlp.models.cancer_models import LogisticRegressionModel
+from genomic_nlp.models.cancer_models import MLP
+from genomic_nlp.models.cancer_models import SVM
+from genomic_nlp.models.cancer_models import XGBoost
+from genomic_nlp.utils.constants import RANDOM_STATE
 
 
 class CancerGenePrediction:
@@ -101,29 +99,6 @@ class CancerGenePrediction:
         self.save_data(cv_val_probabilities, "cv_val_probabilities")
         self.save_data(trained_models, "trained_models")
         return cv_scores, cv_val_probabilities, trained_models
-
-    # def train_and_evaluate_model(self) -> CancerBaseModel:
-    #     """Train a model using 5-fold CV and return the final model."""
-    #     print(f"\nTraining and evaluating {self.model_name}:")
-
-    #     # perform 5-fold CV
-    #     cv_scores = self.perform_cross_validation(n_splits=5)
-    #     mean_cv_auc = np.mean(cv_scores)
-    #     std_cv_auc = np.std(cv_scores)
-    #     print(
-    #         f"Cross-validation Mean ROC AUC: {mean_cv_auc:.4f} (+/- {std_cv_auc:.4f})"
-    #     )
-
-    #     # train final model on entire dataset
-    #     final_model = self.train_model(self.model_class, self.features, self.targets)
-    #     final_probas = final_model.predict_probability(self.features)
-    #     final_auc = roc_auc_score(self.targets, final_probas)
-    #     self.save_data([(self.targets, final_probas)], "final_roc")
-    #     print(f"Final model ROC AUC on entire dataset: {final_auc:.4f}")
-
-    #     # save model
-    #     self.save_data(final_model, "model")
-    #     return final_model
 
     def predict_all_genes(
         self, trained_models: List[CancerBaseModel]

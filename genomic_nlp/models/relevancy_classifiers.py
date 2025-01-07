@@ -43,9 +43,9 @@ from sklearn.model_selection import GridSearchCV  # type: ignore
 from sklearn.neural_network import MLPClassifier  # type: ignore
 from sklearn.utils import resample  # type: ignore
 
-from abstract_cleaner import AbstractCleaner
-from utils import _abstract_retrieval_concat
-from utils import get_physical_cores
+from genomic_nlp.abstracts.abstract_cleaner import AbstractCleaner
+from genomic_nlp.utils.common import _abstract_retrieval_concat
+from genomic_nlp.utils.common import get_physical_cores
 
 RANDOM_SEED = 42
 
