@@ -579,10 +579,17 @@ def _parse_args() -> argparse.Namespace:
 
 def define_classifier(
     classifier: str,
+    num_features: int,
 ) -> Tuple[
     Union[LogisticRegression, MLPClassifier], Union[LogisticRegression, MLPClassifier]
 ]:
     """Define pretrain and finetune classifiers."""
+    mlp_feats = {
+        10000: (10,),
+        20000: (16,),
+        40000: (24,),
+    }
+
     if classifier == "logistic":
         pretrain_classifier = LogisticRegression(
             C=20, max_iter=100, random_state=RANDOM_SEED
@@ -595,7 +602,7 @@ def define_classifier(
             solver="adam",
             alpha=0.001,
             max_iter=200,
-            hidden_layer_sizes=(16,),
+            hidden_layer_sizes=mlp_feats[num_features],
             random_state=RANDOM_SEED,
             early_stopping=True,
         )
@@ -603,7 +610,7 @@ def define_classifier(
             solver="adam",
             alpha=0.01,
             max_iter=200,
-            hidden_layer_sizes=(16,),
+            hidden_layer_sizes=mlp_feats[num_features],
             random_state=RANDOM_SEED,
             early_stopping=True,
         )
@@ -649,7 +656,10 @@ def main() -> None:
     )
 
     # get classifier
-    pretrain_classifier, finetuned_classifier = define_classifier(args.classifier)
+    pretrain_classifier, finetuned_classifier = define_classifier(
+        classifier=args.classifier,
+        num_features=num,
+    )
 
     # get vectorizer and selector
     vectorizer = get_vectorizer()
