@@ -25,7 +25,7 @@ import psutil  # type: ignore
 import pybedtools  # type: ignore
 from tqdm import tqdm  # type: ignore
 
-from constants import COPY_GENES
+from genomic_nlp.utils.constants import COPY_GENES
 
 
 def get_physical_cores() -> int:
