@@ -595,7 +595,7 @@ def define_classifier(
             solver="adam",
             alpha=0.001,
             max_iter=200,
-            hidden_layer_sizes=(32,),
+            hidden_layer_sizes=(16,),
             random_state=RANDOM_SEED,
             early_stopping=True,
         )
@@ -603,7 +603,7 @@ def define_classifier(
             solver="adam",
             alpha=0.01,
             max_iter=200,
-            hidden_layer_sizes=(32,),
+            hidden_layer_sizes=(16,),
             random_state=RANDOM_SEED,
             early_stopping=True,
         )
