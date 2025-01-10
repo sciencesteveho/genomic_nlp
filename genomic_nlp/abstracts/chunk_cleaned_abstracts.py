@@ -13,9 +13,9 @@ import pandas as pd  # type: ignore
 
 
 def _get_relevant_abstracts(abstract_file: str) -> pd.DataFrame:
-    """Get abstracts classified as relevant"""
+    """Get abstracts classified as relevant and reset the index."""
     abstracts_df = pd.read_pickle(abstract_file)
-    return abstracts_df.loc[abstracts_df["predictions"] == 1]
+    return abstracts_df.loc[abstracts_df["predictions"] == 1].reset_index(drop=True)
 
 
 def chunk_corpus(corpus: pd.DataFrame, parts: int, output_base_path: str) -> None:
