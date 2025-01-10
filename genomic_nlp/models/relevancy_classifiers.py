@@ -40,6 +40,7 @@ from sklearn.metrics import roc_auc_score  # type: ignore
 from sklearn.metrics import roc_curve  # type: ignore
 from sklearn.model_selection import cross_val_score  # type: ignore
 from sklearn.model_selection import GridSearchCV  # type: ignore
+from sklearn.model_selection import StratifiedKFold  # type: ignore
 from sklearn.neural_network import MLPClassifier  # type: ignore
 from sklearn.utils import resample  # type: ignore
 
@@ -282,7 +283,10 @@ def pretrain_and_finetune_classifier(
     savepath: Path,
     grid_search: bool = False,
 ) -> Tuple[
-    Union[LogisticRegression, MLPClassifier, None], TfidfVectorizer, SelectKBest
+    Union[LogisticRegression, MLPClassifier, None],
+    Union[LogisticRegression, MLPClassifier, None],
+    TfidfVectorizer,
+    SelectKBest,
 ]:
     """Pre-trains a classifier on abstracts stratified by journal type as a
     proxy for relevancy before fine-tuning on manually annotated abstracts.
@@ -298,7 +302,7 @@ def pretrain_and_finetune_classifier(
     )
 
     if pretrained_model is None:
-        return None, fitted_vectorizer, fitted_selector
+        return None, None, fitted_vectorizer, fitted_selector
 
     finetuned_model = finetune_model(
         finetune_abstracts=finetune_abstracts,
@@ -311,23 +315,58 @@ def pretrain_and_finetune_classifier(
         grid_search=grid_search,
     )
 
-    return finetuned_model, fitted_vectorizer, fitted_selector
+    return pretrained_model, finetuned_model, fitted_vectorizer, fitted_selector
 
 
 def evaluate_model(
-    model: BaseEstimator,
+    pretrained_model: BaseEstimator,
+    finetuned_classifier: BaseEstimator,
     features: np.ndarray,
     labels: np.ndarray,
     n_bootstrap: int = 1000,
 ) -> Dict[str, Union[float, Tuple[float, float]]]:
-    """Perform cross-validation and bootstrap sampling to evaluate the model."""
-    cv_scores = cross_val_score(model, features, labels, cv=5, scoring="f1")
+    """Perform cross-validation and bootstrap sampling to evaluate the model. To
+    avoid leakage, we take the pretrained model and re-finetune it on a CV split
+    before evaluation.
+    """
+    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_SEED)
+
+    cv_scores = []
+    for train_idx, test_idx in skf.split(features, labels):
+        X_train, y_train = features[train_idx], labels[train_idx]
+        X_test, y_test = features[test_idx], labels[test_idx]
+
+        fold_model = clone(finetuned_classifier)
+        fold_model = share_model_params(pretrained_model, fold_model)
+
+        if hasattr(fold_model, "learning_rate_init"):
+            fold_model.learning_rate_init *= 0.1
+
+        # fit on training fold
+        fold_model.fit(X_train, y_train)
+
+        # evaluate
+        y_pred = fold_model.predict(X_test)
+        f1 = f1_score(y_test, y_pred)
+        cv_scores.append(f1)
+
+    print(f"Fold scores: {cv_scores}")
 
     # bootstrap sampling
     bootstrap_scores: List[float] = []
     for _ in range(n_bootstrap):
-        features_boot, labels_boot = resample(features, labels, n_samples=len(labels))
-        model_boot = clone(model).fit(features_boot, labels_boot)
+        resample_features, resample_labels = resample(
+            features, labels, n_samples=len(labels), random_state=None
+        )
+
+        model_boot = clone(finetuned_classifier)
+        model_boot = share_model_params(pretrained_model, model_boot)
+
+        if hasattr(model_boot, "learning_rate_init"):
+            model_boot.learning_rate_init *= 0.1
+
+        model_boot.fit(resample_features, resample_labels)
+
         predictions = model_boot.predict(features)
         bootstrap_scores.append(f1_score(labels, predictions))
 
@@ -360,9 +399,8 @@ def _classify_test_corpus(
         selector: The feature selector for transforming the vectorized data.
         classifier: The classification model for predicting labels.
 
-    Yields:
-        tuple: A generator yielding tuples of abstracts and their corresponding
-        predictions.
+    Returns:
+        zip: A zip object containing the classified abstracts and predictions.
     """
     corpora = corpus["abstracts"].values
     y_test = corpus["encoding"].values
@@ -481,13 +519,6 @@ def _get_testset(
 ) -> pd.DataFrame:
     """Reads in test set data and returns a dataframe with the abstracts and
     encoding
-
-    Args:
-        data_path (str): _description_
-        positive (bool): _description_
-
-    Returns:
-        pd.DataFrame: _description_
     """
     if positive:
         df = (
@@ -554,10 +585,10 @@ def define_classifier(
     """Define pretrain and finetune classifiers."""
     if classifier == "logistic":
         pretrain_classifier = LogisticRegression(
-            C=0.1, max_iter=100, random_state=RANDOM_SEED
+            C=20, max_iter=100, random_state=RANDOM_SEED
         )
         finetuned_classifier = LogisticRegression(
-            C=50, max_iter=100, random_state=RANDOM_SEED
+            C=0.1, max_iter=100, random_state=RANDOM_SEED
         )
     elif classifier == "mlp":
         pretrain_classifier = MLPClassifier(
@@ -570,8 +601,8 @@ def define_classifier(
         )
         finetuned_classifier = MLPClassifier(
             solver="adam",
-            alpha=0.001,
-            max_iter=100,
+            alpha=0.01,
+            max_iter=200,
             hidden_layer_sizes=(32,),
             random_state=RANDOM_SEED,
             early_stopping=True,
@@ -645,16 +676,18 @@ def main() -> None:
 
     # final model training
     print("Training final model...")
-    final_model, fitted_vectorizer, fitted_selector = pretrain_and_finetune_classifier(
-        pretrain_abstracts=pretrain_abstracts,
-        finetune_abstracts=finetune_abstracts,
-        pretrain_classifier=pretrain_classifier,
-        finetuned_classifier=finetuned_classifier,
-        vectorizer=vectorizer,
-        selector=selector,
-        k=num,
-        grid_search=False,
-        savepath=savepath,
+    pretrained_model, final_model, fitted_vectorizer, fitted_selector = (
+        pretrain_and_finetune_classifier(
+            pretrain_abstracts=pretrain_abstracts,
+            finetune_abstracts=finetune_abstracts,
+            pretrain_classifier=pretrain_classifier,
+            finetuned_classifier=finetuned_classifier,
+            vectorizer=vectorizer,
+            selector=selector,
+            k=num,
+            grid_search=False,
+            savepath=savepath,
+        )
     )
 
     if final_model is not None:
@@ -664,13 +697,24 @@ def main() -> None:
             vectorizer=fitted_vectorizer,
             selector=fitted_selector,
         )
-        evaluation_results = evaluate_model(final_model, x_finetune, y_finetune)
+        evaluation_results = evaluate_model(
+            pretrained_model=pretrained_model,
+            finetuned_classifier=finetuned_classifier,
+            features=x_finetune,
+            labels=y_finetune,
+        )
 
         # save evaluation results
         with open(
             savepath / f"{args.classifier}_tfidf_{num}_evaluation_results.json", "w"
         ) as f:
             json.dump(evaluation_results, f)
+
+        # save final model
+        joblib.dump(
+            final_model,
+            savepath / f"{args.classifier}_final_model_tfidf_{num}.pkl",
+        )
 
         # get and save ROC/AUC
         y_pred_proba = final_model.predict_proba(x_finetune)[:, 1]
@@ -679,12 +723,6 @@ def main() -> None:
             predicted_labels=y_pred_proba,
             classifier_name=f"{args.classifier}_final_model_tfidf_{num}",
             savepath=savepath,
-        )
-
-        # save final model
-        joblib.dump(
-            final_model,
-            savepath / f"{args.classifier}_final_model_tfidf_{num}.pkl",
         )
 
         # classify full corpus
