@@ -11,7 +11,7 @@ and disease entitites.
 
 import argparse
 import pickle
-from typing import List
+from typing import List, Tuple
 
 import flair  # type: ignore
 from flair.data import Sentence  # type: ignore
@@ -44,51 +44,57 @@ class EntityNormalizer:
                 end_idx = start_idx + batch_size
                 batch_df = abstracts.iloc[start_idx:end_idx].copy()
 
-                all_sents = []
-                mapping = []
+                # create sentences
+                all_sents, mapping = self._create_sentences(
+                    texts=batch_df["cleaned_abstracts"].tolist()
+                )
 
-                for abs_idx, text in enumerate(batch_df["cleaned_abstracts"]):
-                    tokens = text.split()
-                    if len(tokens) <= 512:
-                        all_sents.append(Sentence(text, use_tokenizer=True))
-                        mapping.append(abs_idx)
-                    else:
-                        chunked_texts = self.chunk_long_abstract(text, max_len=400)
-                        for chunk_text in chunked_texts:
-                            all_sents.append(Sentence(chunk_text, use_tokenizer=True))
-                            mapping.append(abs_idx)
+                # tag and link entities
+                self._tag_and_link_entities(
+                    sentences=all_sents, mini_batch_size=sub_batch_size
+                )
 
-                # NER tagging and entity linking
-                self.tagger.predict(all_sents, mini_batch_size=sub_batch_size)
-
-                # use sub-batching for linkers
-                for i in range(0, len(all_sents), sub_batch_size):
-                    sub_batch = all_sents[i : i + sub_batch_size]
-                    try:
-                        self.disease_linker.predict(sub_batch)
-                    except UnicodeDecodeError as e:
-                        print(
-                            f"Error linking diseases in sub-batch {i //sub_batch_size}: {e}"
-                        )
-                    self.gene_linker.predict(sub_batch)
-
-                # replace in each chunk
+                # normalize entities
                 modified_sents = [
                     self._replace_entities_with_links(s) for s in all_sents
                 ]
 
                 # rebuild texts
-                abstract_sents: List[List[str]] = [[] for _ in range(len(batch_df))]
-                for txt, abs_idx in zip(modified_sents, mapping):
-                    abstract_sents[abs_idx].append(txt)
+                joined_texts = self._rebuild_texts(
+                    texts=modified_sents, mapping=mapping, n_abstracts=len(batch_df)
+                )
 
-                joined_texts = [" ".join(slist) for slist in abstract_sents]
                 batch_df["modified_abstracts"] = joined_texts
                 dfs_to_concat.append(batch_df)
 
                 pbar.update(1)
 
         return pd.concat(dfs_to_concat, ignore_index=True)
+
+    def _create_sentences(
+        self,
+        texts: List[str],
+        max_tokens: int = 512,
+        chunk_len: int = 400,
+    ) -> Tuple[List[Sentence], List[int]]:
+        """Convert each text into a list of Sentence objects. Chunks the
+        abstract if it passes token length.
+        """
+        all_sents: List[Sentence] = []
+        mapping: List[int] = []
+
+        for abs_idx, text in enumerate(texts):
+            tokens = text.split()
+            if len(tokens) <= max_tokens:
+                all_sents.append(Sentence(text, use_tokenizer=True))
+                mapping.append(abs_idx)
+            else:
+                chunked_texts = self.chunk_long_abstract(text, max_len=chunk_len)
+                for chunk_text in chunked_texts:
+                    all_sents.append(Sentence(chunk_text, use_tokenizer=True))
+                    mapping.append(abs_idx)
+
+        return all_sents, mapping
 
     def _tag_and_link_entities(
         self, sentences: List[Sentence], mini_batch_size: int = 128
@@ -103,14 +109,22 @@ class EntityNormalizer:
         """
         self.tagger.predict(sentences, mini_batch_size)
 
-        num_sentences = len(sentences)
-        for i in range(0, num_sentences, mini_batch_size):
+        for i in range(0, len(sentences), mini_batch_size):
             sub_batch = sentences[i : i + mini_batch_size]
+
             try:
                 self.disease_linker.predict(sub_batch)
                 self.gene_linker.predict(sub_batch)
-            except Exception as e:
-                print(f"Error linking entities in sub-batch {i//mini_batch_size}: {e}")
+
+            except UnicodeDecodeError as e:
+                print(
+                    f"Error linking sub-batch {i // mini_batch_size}: {e}. "
+                    "Cleaning text and retrying..."
+                )
+                cleaned_sub_batch = self.clean_text(sub_batch)
+                self.disease_linker.predict(cleaned_sub_batch)
+                self.gene_linker.predict(cleaned_sub_batch)
+                sentences[i : i + mini_batch_size] = cleaned_sub_batch
 
     def _replace_entities_with_links(self, sentence: Sentence) -> str:
         """Replace tagged entities in the sentence with their normalized
@@ -131,11 +145,30 @@ class EntityNormalizer:
 
         return modified_text
 
+    def _rebuild_texts(
+        self,
+        texts: List[str],
+        mapping: List[int],
+        n_abstracts: int,
+    ) -> List[str]:
+        """Rebuild the list of chunked/modified texts into their corresponding
+        abstracts.
+
+        Arguments:
+            texts: The modified text pieces.
+            mapping: Indices mapping each piece back to its abstract ID.
+            n_abstracts: Number of abstracts in this batch.
+        """
+        abstract_sents: List[List[str]] = [[] for _ in range(n_abstracts)]
+        for txt, abs_idx in zip(texts, mapping):
+            abstract_sents[abs_idx].append(txt)
+        return [" ".join(slist) for slist in abstract_sents]
+
     @staticmethod
     def _extract_normalized_name(linked_value: str) -> str:
         """Extract the normalized name from the linked identifier.
 
-        Args:
+        Arguments:
             linked_value (str): The linked identifier string (e.g.,
             "MESH:D007239/name=Infections").
 
@@ -156,6 +189,18 @@ class EntityNormalizer:
             chunks.append(" ".join(chunk_tokens))
             start = end
         return chunks
+
+    @staticmethod
+    def clean_text(sentences: List[Sentence]) -> List[Sentence]:
+        """Clean text by removing non-utf-8 characters. Get raw text, clean, and
+        return as Sentence.
+        """
+        cleaned_sentences = []
+        for sent in sentences:
+            raw_text = sent.to_original_text()
+            cleaned_text = raw_text.encode("utf-8", errors="ignore").decode("utf-8")
+            cleaned_sentences.append(Sentence(cleaned_text, use_tokenizer=True))
+        return cleaned_sentences
 
 
 def load_abstracts(file_path: str) -> pd.DataFrame:
