@@ -115,16 +115,19 @@ class EntityNormalizer:
             try:
                 self.disease_linker.predict(sub_batch)
                 self.gene_linker.predict(sub_batch)
-
             except UnicodeDecodeError as e:
                 print(
                     f"Error linking sub-batch {i // mini_batch_size}: {e}. "
-                    "Cleaning text and retrying..."
+                    "Skipping problematic sentences."
                 )
-                cleaned_sub_batch = self.clean_text(sub_batch)
-                self.disease_linker.predict(cleaned_sub_batch)
-                self.gene_linker.predict(cleaned_sub_batch)
-                sentences[i : i + mini_batch_size] = cleaned_sub_batch
+
+                for idx, sentence in enumerate(sub_batch):
+                    print(f"Problematic sentence {idx}: {sentence}")
+                    try:
+                        self.disease_linker.predict([sentence])
+                        self.gene_linker.predict([sentence])
+                    except UnicodeDecodeError as e:
+                        print(f"Error linking sentence: {e}. Skipping.")
 
     def _replace_entities_with_links(self, sentence: Sentence) -> str:
         """Replace tagged entities in the sentence with their normalized
