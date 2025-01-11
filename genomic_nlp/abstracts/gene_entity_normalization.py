@@ -64,7 +64,12 @@ class EntityNormalizer:
                 # use sub-batching for linkers
                 for i in range(0, len(all_sents), sub_batch_size):
                     sub_batch = all_sents[i : i + sub_batch_size]
-                    self.disease_linker.predict(sub_batch)
+                    try:
+                        self.disease_linker.predict(sub_batch)
+                    except UnicodeDecodeError as e:
+                        print(
+                            f"Error linking diseases in sub-batch {i //sub_batch_size}: {e}"
+                        )
                     self.gene_linker.predict(sub_batch)
 
                 # replace in each chunk
