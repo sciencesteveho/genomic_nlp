@@ -41,25 +41,39 @@ def main() -> None:
     """Main function"""
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "--classified_abstracts_dir",
+        type=str,
+        default="/ocean/projects/bio210019p/stevesho/genomic_nlp/classification",
+    )
+    parser.add_argument(
         "--classified_abstracts",
         type=str,
-        default="/ocean/projects/bio210019p/stevesho/genomic_nlp/data/abstracts_logistic_classified_tfidf_40000.pkl",
+        default="abstracts_mlp_classified_tfidf_40000.pkl",
     )
     parser.add_argument("--num_parts", type=int, default=20)
     parser.add_argument(
-        "--output_base_path",
+        "--output_path",
         type=str,
-        default="/ocean/projects/bio210019p/stevesho/genomic_nlp/data/abstracts_logistic_classified_tfidf_40000_chunk",
+        default="/ocean/projects/bio210019p/stevesho/genomic_nlp/data",
+    )
+    parser.add_argument(
+        "--output_filename",
+        type=str,
+        default="abstracts_mlp_classified_tfidf_40000_chunk",
     )
     args = parser.parse_args()
 
+    # get full paths to files
+    classified_abstracts = (
+        f"{args.classified_abstracts_dir}/{args.classified_abstracts}"
+    )
+    output_base_path = f"{args.output_path}/{args.output_filename}"
+
     # get relevant abstracts
-    corpus = _get_relevant_abstracts(args.classified_abstracts)
+    corpus = _get_relevant_abstracts(classified_abstracts)
 
     # chunk the corpus
-    chunk_corpus(
-        corpus=corpus, parts=args.num_parts, output_base_path=args.output_base_path
-    )
+    chunk_corpus(corpus=corpus, parts=args.num_parts, output_base_path=output_base_path)
 
 
 if __name__ == "__main__":
