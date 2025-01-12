@@ -160,7 +160,7 @@ class ChunkedDocumentProcessor:
         for gene in ["mice", "bad", "insulin", "camp", "plasminogen", "ski"]:
             self.genes.remove(gene)
 
-        self.df = abstracts[["cleaned_abstracts", "year"]]
+        self.df = abstracts[["modified_abstracts", "year"]]
         self.nlp: Language = None
         self.spacy_model: str = ""
 
@@ -429,7 +429,7 @@ def main() -> None:
     parser.add_argument(
         "--file_prefix",
         type=str,
-        default="abstracts_logistic_classified_tfidf_40000_chunk_part",
+        default="abstracts_with_normalized_entities",
     )
     args = parser.parse_args()
 
