@@ -263,9 +263,13 @@ class ChunkedDocumentProcessor:
 
         processed_sents_w2v, processed_tokens_ft = [], []
 
-        for _, doc in zip(
-            doc_indices,
-            self.nlp.pipe(texts, batch_size=self.batch_size, n_process=1),
+        for _, doc in tqdm(
+            zip(
+                doc_indices,
+                self.nlp.pipe(texts, batch_size=self.batch_size, n_process=1),
+            ),
+            total=len(texts),
+            desc="Tokenizing abstracts and NER",
         ):
             sents_w2v, tokens_ft = self.process_document(doc)
             processed_sents_w2v.append(sents_w2v)
@@ -280,7 +284,9 @@ class ChunkedDocumentProcessor:
 
     @time_decorator(print_args=False)
     def exclude_symbols(self) -> None:
-        """Exclude punctuation tokens, replace standalone numbers, and remove double spaces in w2v tokens."""
+        """Exclude punctuation tokens, replace standalone numbers, and remove
+        double spaces in w2v tokens.
+        """
         tqdm.pandas(desc="Cleaning tokens")
 
         # helper function for w2v
