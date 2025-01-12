@@ -246,7 +246,7 @@ class ChunkedDocumentProcessor:
             sent_tokens_w2v = []
             for token in sent:
                 token_w2v = self.custom_lemmatize(token, lemmatize=True)
-                token_ft = self.custom_lemmatize(token, lemmatize=False)
+                token_ft = token.text
                 sent_tokens_w2v.append(token_w2v)
                 doc_tokens_finetune.append(token_ft)
             doc_sentences_w2v.append(sent_tokens_w2v)
@@ -258,7 +258,7 @@ class ChunkedDocumentProcessor:
         """Tokenize the abstracts using spaCy with batch processing and
         standardize entities.
         """
-        texts = self.df["cleaned_abstracts"].tolist()
+        texts = self.df["modified_abstracts"].tolist()
         doc_indices = self.df.index.tolist()
 
         processed_sents_w2v, processed_tokens_ft = [], []
@@ -323,7 +323,7 @@ class ChunkedDocumentProcessor:
         if "processed_abstracts_finetune" in self.df.columns:
             finetune_outpref = f"{outpref}_finetune_chunk_{self.chunk}.pkl"
             columns_to_save = [
-                "cleaned_abstracts",
+                "modified_abstracts",
                 "year",
                 "processed_abstracts_finetune",
             ]
