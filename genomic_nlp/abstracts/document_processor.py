@@ -383,6 +383,13 @@ class ChunkedDocumentProcessor:
         self.exclude_symbols()
 
         # additional processing for w2v: remove genes
+        logger.info("Casefolding")
+        self.df["processed_abstracts_w2v"] = self.df[
+            "processed_abstracts_w2v"
+        ].progress_apply(
+            lambda sents: [[token.casefold() for token in sent] for sent in sents]
+        )
+
         logger.info("Removing gene symbols for phraser training")
         self.remove_genes()
         self.save_data(f"{self.root_dir}/data/processed_abstracts")
