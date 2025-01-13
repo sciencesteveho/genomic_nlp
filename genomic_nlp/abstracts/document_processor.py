@@ -322,6 +322,26 @@ class ChunkedDocumentProcessor:
             ]
         )
 
+    @time_decorator(print_args=False)
+    def remove_genes(self) -> None:
+        """Remove gene symbols from tokens, for future n-gram generation. Only
+        done for w2v.
+        """
+        tqdm.pandas(desc="Removing genes")
+
+        # helper function
+        def remove_genes_from_sentences(sentences: List[List[str]]) -> List[List[str]]:
+            """Remove gene symbols from a list of list of tokens."""
+            cleaned_sentences = []
+            for sent in sentences:
+                cleaned_sent = [token for token in sent if token not in self.genes]
+                cleaned_sentences.append(cleaned_sent)
+            return cleaned_sentences
+
+        self.df["processed_abstracts_w2v_nogenes"] = self.df[
+            "processed_abstracts_w2v"
+        ].progress_apply(remove_genes_from_sentences)
+
     def save_data(self, outpref: str) -> None:
         """Save final copies of abstracts with cleaned, processed, and year
         columns.
@@ -362,6 +382,9 @@ class ChunkedDocumentProcessor:
         logger.info("Excluding punctuation and replacing standalone numbers")
         self.exclude_symbols()
 
+        # additional processing for w2v: remove genes
+        logger.info("Removing gene symbols for phraser training")
+        self.remove_genes()
         self.save_data(f"{self.root_dir}/data/processed_abstracts")
 
 
