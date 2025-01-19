@@ -17,6 +17,7 @@ The following are implemented:
 
 from typing import Optional, Tuple, Union
 
+from genomic_nlp.utils.constants import RANDOM_STATE
 import numpy as np
 from sklearn.base import BaseEstimator  # type: ignore
 from sklearn.base import ClassifierMixin
@@ -26,8 +27,6 @@ from sklearn.metrics.pairwise import cosine_similarity  # type: ignore
 from sklearn.neural_network import MLPClassifier  # type: ignore
 from sklearn.svm import SVC  # type: ignore
 from xgboost import XGBClassifier
-
-from genomic_nlp.utils.constants import RANDOM_STATE
 
 
 class BaselineModel(BaseEstimator, ClassifierMixin):
