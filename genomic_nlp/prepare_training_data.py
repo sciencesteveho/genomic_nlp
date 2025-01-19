@@ -41,6 +41,55 @@ import zipfile
 
 import mygene  # type: ignore
 import pandas as pd
+from pybedtools import BedTool  # type: ignore
+import pybedtools  # type: ignore
+
+
+def get_genes_within_kb(gtf_file: str, kb: int = 100000) -> Set[Tuple[str, str]]:
+    """Uses pybedtools and an input gencode GTF to fine all gene pairs within
+    100kb of each other on hg38.
+
+    Arguments:
+        gtf_file (str): Path to the GTF file.
+        kb (int): Distance in base pairs to create a window around each gene.
+        This is the distance we AVOID when sampling negative pairs.
+
+    Returns:
+        Set[Tuple[str, str]]: Set of gene pairs within 100kb of each other.
+    """
+
+    def filter_protein_coding_genes(bedfile: BedTool) -> BedTool:
+        """Filter a bedfile to only include protein coding genes."""
+        return bedfile.filter(
+            lambda x: "gene" in x[2] and "protein_coding" in x[8]
+        ).saveas()
+
+    def only_gene_names(feature: Any) -> List[str]:
+        """Get gene name from the metadata description. Also in feature 8."""
+        meta = feature[8]
+        for part in meta.split(";"):
+            if part.startswith(" gene_name"):
+                feature[8] = part.split('"')[1]
+        return feature
+
+    gtf = pybedtools.BedTool(gtf_file)
+    protein_coding = filter_protein_coding_genes(gtf)
+    genes = protein_coding.each(only_gene_names).saveas()
+
+    # use bedtools to find all gene pairs within 100kb
+    genes_within_kb = genes.window(genes, w=kb)
+
+    # collect gene pairs
+    gene_pairs = set()
+    for record in genes_within_kb:
+        gene1 = record[8]
+        gene2 = record[17]
+        gene_pairs.add((gene1, gene2))
+        if gene1 != gene2:
+            pair = tuple(sorted((gene1, gene2)))  # sort to avoid duplicates
+            gene_pairs.add(pair)
+
+    return gene_pairs
 
 
 class PrepareTrainingData:
@@ -189,13 +238,16 @@ class PrepareTrainingData:
     def negative_sampler(
         self,
         n_random_edges: int,
+        genes_within_kb: Set[Tuple[str, str]],
     ) -> Set[Tuple[str, ...]]:
         """Generate random negative samples.
 
         We first create a list of genes from the experimentally derived edges.
         We then initialize the negative samples by adding the experimentally
         derived negative samples. We start to generate negative samples at
-        random, only keeping them if they are not in `all_positive_edges`.
+        random, only keeping them if they are not in `all_positive_edges` and
+        not in `genes_within_kb` to ensure that gene pairs within 100kb linear
+        distance are not sampled.
         """
 
         def load_pickle(filename: str) -> Set[Tuple[str, ...]]:
@@ -204,8 +256,12 @@ class PrepareTrainingData:
                 return pickle.load(f)
 
         all_positive_edges = load_pickle("all_positive_edges.pkl")
+        all_positive_edges = self.gene_only_edges(all_positive_edges)
         exp_derived_edges = load_pickle("experimentally_derived_edges.pkl")
         exp_negative_edges = load_pickle("coessential_neg_graph.pkl")
+
+        # add genes within 100kb to the positive set
+        all_positive_edges |= genes_within_kb
 
         # make a list of all genes, used in experimentally derived edges to pull
         # from
@@ -492,6 +548,10 @@ class PrepareTrainingData:
 def main() -> None:
     """Main function"""
 
+    # get genes_within_kb, 100kb
+    gtf_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/reference_files/gencode.v45.basic.annotation.gtf"
+    genes_within_kb = get_genes_within_kb(gtf_file)
+
     # make graphs!
     data_prep_obect = PrepareTrainingData(
         "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data"
@@ -499,7 +559,9 @@ def main() -> None:
     len_edges = data_prep_obect.create_graphs()
 
     # make negative samples, with n = positive samples
-    negative_samples = data_prep_obect.negative_sampler(n_random_edges=len_edges)
+    negative_samples = data_prep_obect.negative_sampler(
+        n_random_edges=len_edges, genes_within_kb=genes_within_kb
+    )
 
     with open(
         "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/negative_edges.pkl",

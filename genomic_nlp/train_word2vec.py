@@ -284,10 +284,10 @@ def main() -> None:
         year=args.year,
         min_count=8,
         vector_size=300,
-        window=12,
+        window=10,
         workers=24,
         sample=0.0001,
-        alpha=0.005,
+        alpha=0.01,
         min_alpha=0.0001,
         negative=15,
         sg=1,
@@ -298,7 +298,7 @@ def main() -> None:
 
     # build gram models
     modelprocessingObj._gram_generator(
-        minimum=10,
+        minimum=15,
         score=20,
     )
     print("Grams generated. Training word2vec model...")

@@ -6,10 +6,12 @@
 
 from collections import Counter
 import contextlib
+import csv
 from datetime import timedelta
 import functools
 import glob
 import inspect
+import logging
 import os
 from pathlib import Path
 import pickle
@@ -47,27 +49,18 @@ def filter_zero_embeddings(embeddings: Dict[str, np.ndarray]) -> Dict[str, np.nd
     return {key: value for key, value in embeddings.items() if np.any(value != 0)}
 
 
+def gene_symbol_from_gencode(gencode_ref: pybedtools.BedTool) -> Set[str]:
+    """Returns deduped set of genes from a gencode gtf. Written for the gencode
+    45 and avoids header"""
+    return {
+        line[8].split('gene_name "')[1].split('";')[0]
+        for line in gencode_ref
+        if not line[0].startswith("#") and "gene_name" in line[8]
+    }
+
+
 def gencode_genes(gtf: str) -> Set[str]:
-    """_summary_
-
-    Args:
-        entity_file (str): _description_
-        genes (Set[str]): _description_
-        type (str, optional): _description_. Defaults to "gene".
-
-    Returns:
-        Set[str]: _description_
-    """
-
-    def gene_symbol_from_gencode(gencode_ref: pybedtools.BedTool) -> Set[str]:
-        """Returns deduped set of genes from a gencode gtf. Written for the gencode
-        45 and avoids header"""
-        return {
-            line[8].split('gene_name "')[1].split('";')[0]
-            for line in gencode_ref
-            if not line[0].startswith("#") and "gene_name" in line[8]
-        }
-
+    """Get gene symbols from a gencode gtf file."""
     print("Grabbing genes from GTF")
     gtf = pybedtools.BedTool(gtf)
     genes = list(gene_symbol_from_gencode(gtf))
@@ -76,6 +69,27 @@ def gencode_genes(gtf: str) -> Set[str]:
         genes.remove(key)
         genes.append(COPY_GENES[key])
     return set(genes)
+
+
+def hgnc_ncbi_genes(tsv: str, hgnc: bool = False) -> Set[str]:
+    """Get gene symbols and names from HGNC file"""
+    gene_symbols, gene_names = [], []
+    with open(tsv, newline="") as file:
+        reader = csv.reader(file, delimiter="\t")
+        next(reader)  # skip header
+        for row in reader:
+            if hgnc:
+                gene_symbols.append(row[1])
+                gene_names.append(row[2])
+            else:
+                gene_symbols.append(row[0])
+                gene_names.append(row[1])
+
+    gene_names = [
+        name.replace("(", "").replace(")", "").replace(" ", "_").replace(",", "")
+        for name in gene_names
+    ]
+    return set(gene_symbols + gene_names)
 
 
 def _concat_chunks(filenames: List[str]) -> List[List[str]]:

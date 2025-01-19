@@ -17,8 +17,8 @@ from sklearn.metrics import auc  # type: ignore
 from sklearn.metrics import roc_curve  # type: ignore
 import umap  # type: ignore
 
-from constants import census_oncogenes
-from constants import RANDOM_STATE
+from genomic_nlp.utils.constants import census_oncogenes
+from genomic_nlp.utils.constants import RANDOM_STATE
 
 
 def load_roc_data(filename: str) -> Tuple[np.ndarray, np.ndarray]:

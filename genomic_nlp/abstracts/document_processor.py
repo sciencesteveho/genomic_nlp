@@ -23,6 +23,9 @@ from spacy.tokens import Token  # type: ignore
 from tqdm import tqdm  # type: ignore
 
 from genomic_nlp.utils.common import dir_check_make
+from genomic_nlp.utils.common import gencode_genes
+from genomic_nlp.utils.common import gene_symbol_from_gencode
+from genomic_nlp.utils.common import hgnc_ncbi_genes
 from genomic_nlp.utils.common import time_decorator
 from genomic_nlp.utils.constants import COPY_GENES
 
@@ -393,49 +396,6 @@ class ChunkedDocumentProcessor:
         logger.info("Removing gene symbols for phraser training")
         self.remove_genes()
         self.save_data(f"{self.root_dir}/data/processed_abstracts")
-
-
-def gene_symbol_from_gencode(gencode_ref: pybedtools.BedTool) -> Set[str]:
-    """Returns deduped set of genes from a gencode gtf. Written for the gencode
-    45 and avoids header"""
-    return {
-        line[8].split('gene_name "')[1].split('";')[0]
-        for line in gencode_ref
-        if not line[0].startswith("#") and "gene_name" in line[8]
-    }
-
-
-def gencode_genes(gtf: str) -> Set[str]:
-    """Get gene symbols from a gencode gtf file."""
-    logger.info("Grabbing genes from GTF")
-    gtf = pybedtools.BedTool(gtf)
-    genes = list(gene_symbol_from_gencode(gtf))
-
-    for key in COPY_GENES:
-        genes.remove(key)
-        genes.append(COPY_GENES[key])
-    return set(genes)
-
-
-def hgnc_ncbi_genes(tsv: str, hgnc: bool = False) -> Set[str]:
-    """Get gene symbols and names from HGNC file"""
-    gene_symbols, gene_names = [], []
-    with open(tsv, newline="") as file:
-        reader = csv.reader(file, delimiter="\t")
-        next(reader)  # skip header
-        for row in reader:
-            if hgnc:
-                gene_symbols.append(row[1])
-                gene_names.append(row[2])
-            else:
-                gene_symbols.append(row[0])
-                gene_names.append(row[1])
-
-    gene_names = [
-        name.replace("(", "").replace(")", "").replace(" ", "_").replace(",", "")
-        for name in gene_names
-    ]
-    return set(gene_symbols + gene_names)
 
 
 def main() -> None:
