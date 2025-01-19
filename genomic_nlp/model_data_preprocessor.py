@@ -21,6 +21,19 @@ import pandas as pd
 class InteractionDataPreprocessor:
     """Preprocess data for baseline models. Load gene pairs, embeddings, filter,
     and statify the train and test sets by source.
+
+    Our split is designed as follows:
+    Train set:
+        All text-derived edges (that have embeddings) as positive.
+        An equal number of randomly sampled negative pairs that do not exist in
+        a catalogue of known interactions + the genes are not within 100kb on
+        the linear reference genome.
+
+    Test set:
+        All experiment pairs that have embeddings. These are further stratified
+        so we can see performance on all pairs, performance on known pairs, and
+        performance on unknown pairs (pairs that are not in the text-derived
+        edges).
     """
 
     def __init__(
@@ -37,35 +50,48 @@ class InteractionDataPreprocessor:
         self.gene_embeddings = _load_pickle(args.embeddings)
         self.gene_embeddings = casefold_embeddings(self.gene_embeddings)
 
+        # load experimental pairs
         self.pos_pairs_with_source = _load_pickle(args.positive_pairs_file)
+
+        # casefold pairs and create a mapping of pairs to source
         self.pair_to_source = {
             (pair[0].lower(), pair[1].lower()): pair[2]
             for pair in self.pos_pairs_with_source
         }
         self.positive_pairs = casefold_pairs(self.pos_pairs_with_source)
         self.negative_pairs = casefold_pairs(_load_pickle(args.negative_pairs_file))
-        text_edges = casefold_pairs(
-            [
-                tuple(row)
-                for row in csv.reader(open(args.text_edges_file), delimiter="\t")
-            ]
+
+        # load co_occurrence pairs
+        self.text_edges = set(
+            casefold_pairs(
+                [
+                    tuple(row)
+                    for row in csv.reader(open(args.text_edges_file), delimiter="\t")
+                ]
+            )
         )
-        self.text_edges = set(text_edges)
         print("Data and embeddings loaded!")
 
-    def load_and_preprocess_data(self) -> Tuple[
-        List[Tuple[str, str]],
-        List[Tuple[str, str]],
-        np.ndarray,
-        np.ndarray,
-        np.ndarray,
-        np.ndarray,
-        List[Tuple[str, str]],
-        List[Tuple[str, str]],
-    ]:
-        """Load all data for training!"""
+    def load_and_preprocess_data(self) -> Dict[str, Any]:
+        """Load all data for training!
+
+        Returns a dictionary of the format:
+        {
+            'train_features': np.ndarray,
+            'train_targets': np.ndarray,
+            'test_features': np.ndarray,
+            'test_targets': np.ndarray,
+            'test_pairs_known': List[Tuple[str,str]],
+            'test_pairs_unknown': List[Tuple[str,str]],
+          }
+        """
         print("Filtering pairs for those with embeddings")
-        self.positive_pairs, self.negative_pairs = self.filter_pairs_for_embeddings()
+        train_pos = self._filter_pairs_for_embeddings(
+            set(self.positive_pairs), self.gene_embeddings
+        )
+        train_neg = self._filter_pairs_for_embeddings(
+            set(self.negative_pairs), self.gene_embeddings
+        )
 
         print("Splitting pairs into train and test sets")
         pos_train, pos_test = self.filter_pairs_for_prior_knowledge()
@@ -122,24 +148,6 @@ class InteractionDataPreprocessor:
                 stratified_test_data[source]["targets"]
             )
         return dict(stratified_test_data)
-
-    def filter_pairs_for_embeddings(
-        self,
-    ) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
-        """Filter pairs to only include those with embeddings."""
-        filtered_positive_pairs = [
-            pair
-            for pair in self.positive_pairs
-            if all(gene in self.gene_embeddings for gene in pair)
-        ]
-        filtered_negative_pairs = [
-            pair
-            for pair in self.negative_pairs
-            if all(gene in self.gene_embeddings for gene in pair)
-        ]
-        return self.balance_filtered_pairs(
-            filtered_positive_pairs, filtered_negative_pairs
-        )
 
     def filter_pairs_for_prior_knowledge(
         self,
@@ -230,6 +238,15 @@ class InteractionDataPreprocessor:
         return data, targets
 
     @staticmethod
+    def _filter_pairs_for_embeddings(
+        pairs: Set[Tuple[str, str]], gene_embeddings: Dict[str, np.ndarray]
+    ) -> Set[Tuple[str, str]]:
+        """Filter pairs of genes or proteins to ensure they have valid
+        embeddings.
+        """
+        return {pair for pair in pairs if all(gene in gene_embeddings for gene in pair)}
+
+    @staticmethod
     def balance_filtered_pairs(
         filtered_positive_pairs: List[Tuple[str, str]],
         filtered_negative_pairs: List[Tuple[str, str]],
@@ -251,17 +268,6 @@ class InteractionDataPreprocessor:
         random.shuffle(genes)
         split_index = len(genes) // 2
         return genes[:split_index], genes[split_index:]
-
-
-def _load_pickle(pickle_file: Any) -> Any:
-    """Simple wrapper to unpickle embedding or pair pkls."""
-    with open(pickle_file, "rb") as file:
-        return pickle.load(file)
-
-
-def casefold_pairs(pairs: Any) -> List[Tuple[str, str]]:
-    """Casefold gene pairs."""
-    return [(pair[0].casefold(), pair[1].casefold()) for pair in pairs]
 
 
 class CancerGeneDataPreprocessor:
@@ -356,3 +362,14 @@ def casefold_embeddings(embeddings: Dict[str, np.ndarray]) -> Dict[str, np.ndarr
     if not first_key.islower():
         return {gene.casefold(): vec for gene, vec in embeddings.items()}
     return embeddings
+
+
+def _load_pickle(pickle_file: Any) -> Any:
+    """Simple wrapper to unpickle embedding or pair pkls."""
+    with open(pickle_file, "rb") as file:
+        return pickle.load(file)
+
+
+def casefold_pairs(pairs: Any) -> List[Tuple[str, str]]:
+    """Casefold gene pairs."""
+    return [(pair[0].casefold(), pair[1].casefold()) for pair in pairs]
