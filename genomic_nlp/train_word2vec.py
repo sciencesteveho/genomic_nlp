@@ -298,8 +298,8 @@ def main() -> None:
 
     # build gram models
     modelprocessingObj._gram_generator(
-        minimum=15,
-        score=20,
+        minimum=40,
+        score=35,
     )
     print("Grams generated. Training word2vec model...")
 
