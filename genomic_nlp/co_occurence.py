@@ -19,16 +19,20 @@ from genomic_nlp.utils.common import gencode_genes
 def combine_synonyms(
     synonyms: Dict[str, Set[str]], genes: Set[str]
 ) -> Dict[str, Set[str]]:
-    """Combine synonyms and genes into a single set. For each synonym and gene,
-    add itself to its own set to make a comprehensive list.
-    """
-    for gene, syn_set in synonyms.items():
-        syn_set.add(gene)
+    """Combine synonyms and genes into a single set."""
+    # first, casefold gene names
+    genes = {gene.casefold() for gene in genes}
 
-    # add genes not in the synonym set
+    # loop through synonyms. if gene is in synonym set, remove it from {genes}.
+    # otherwise, add it to the synonym dictionary as its own entry
+    for syn_set in synonyms.values():
+        for syn in syn_set:
+            if syn in genes:
+                genes.remove(syn)
+
+    # add leftover genes to its own synonym set
     for gene in genes:
-        if gene not in synonyms:
-            synonyms[gene] = {gene}
+        synonyms[gene] = {gene}
 
     return synonyms
 
@@ -82,9 +86,11 @@ def write_gene_edges_to_file(edge_set: Set[Tuple[str, str]], filename: str) -> N
             file.write(f"{edge[0]}\t{edge[1]}\n")
 
 
-def process_abstract_file(args: Tuple[int, Dict[str, str]]) -> Set[Tuple[str, str]]:
+def process_abstract_file(
+    args: Tuple[int, Dict[str, str], int]
+) -> Set[Tuple[str, str]]:
     """Process a single abstract file and return gene edges."""
-    num, alias_to_gene = args
+    num, alias_to_gene, year = args
     abstracts = pd.read_pickle(
         f"/ocean/projects/bio210019p/stevesho/genomic_nlp/data/processed_abstracts_w2v_chunk_{num}.pkl"
     )
@@ -93,8 +99,9 @@ def process_abstract_file(args: Tuple[int, Dict[str, str]]) -> Set[Tuple[str, st
 
 
 def extract_gene_edges_from_abstracts(
-    index_end: int,
     alias_to_gene: Dict[str, str],
+    year: int,
+    index_end: int = 20,
 ) -> Set[Tuple[str, str]]:
     """Extract gene edges from abstracts using multiprocessing."""
     with mp.Pool(processes=20) as pool:
@@ -102,7 +109,7 @@ def extract_gene_edges_from_abstracts(
             tqdm(
                 pool.imap(
                     process_abstract_file,
-                    [(num, alias_to_gene) for num in range(index_end)],
+                    [(num, alias_to_gene, year) for num in range(index_end)],
                 ),
                 total=index_end,
             )
@@ -129,13 +136,19 @@ def main() -> None:
 
     combined_genes = combine_synonyms(hgnc_synonyms, genes)
     alias_to_gene = create_alias_to_gene_mapping(combined_genes)
-    gene_edges = extract_gene_edges_from_abstracts(20, alias_to_gene=alias_to_gene)
 
-    # write to text file
-    write_gene_edges_to_file(
-        gene_edges,
-        f"{working_directory}/ppi/text_extracted_gene_edges_syns.tsv",
-    )
+    # run text extraction for each year model
+    for year in range(2003, 2023 + 1):
+        print(f"Processing year {year}")
+        gene_edges = extract_gene_edges_from_abstracts(
+            alias_to_gene=alias_to_gene, year=year
+        )
+
+        # write to text file
+        write_gene_edges_to_file(
+            gene_edges,
+            f"{working_directory}/ppi/gene_co_occurence_{year}.tsv",
+        )
 
 
 if __name__ == "__main__":
