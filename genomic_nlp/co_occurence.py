@@ -19,16 +19,20 @@ from genomic_nlp.utils.common import gencode_genes
 def combine_synonyms(
     synonyms: Dict[str, Set[str]], genes: Set[str]
 ) -> Dict[str, Set[str]]:
-    """Combine synonyms and genes into a single set. For each synonym and gene,
-    add itself to its own set to make a comprehensive list.
-    """
-    for gene, syn_set in synonyms.items():
-        syn_set.add(gene)
+    """Combine synonyms and genes into a single set."""
+    # first, casefold gene names
+    genes = {gene.casefold() for gene in genes}
 
-    # add genes not in the synonym set
+    # loop through synonyms. if gene is in synonym set, remove it from {genes}.
+    # otherwise, add it to the synonym dictionary as its own entry
+    for syn_set in synonyms.values():
+        for syn in syn_set:
+            if syn in genes:
+                genes.remove(syn)
+
+    # add leftover genes to its own synonym set
     for gene in genes:
-        if gene not in synonyms:
-            synonyms[gene] = {gene}
+        synonyms[gene] = {gene}
 
     return synonyms
 
