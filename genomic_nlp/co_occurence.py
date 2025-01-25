@@ -116,25 +116,25 @@ def extract_gene_edges_from_abstracts(
 
 def main() -> None:
     """Main function"""
+    working_directory = "/ocean/projects/bio210019p/stevesho/genomic_nlp"
     genes = gencode_genes(
-        "/ocean/projects/bio210019p/stevesho/genomic_nlp/reference_files/gencode.v45.basic.annotation.gtf"
+        f"{working_directory}/reference_files/gencode.v45.basic.annotation.gtf"
     )
 
     with open(
-        "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_synonyms.pkl",
+        f"{working_directory}/embeddings/gene_synonyms.pkl",
         "rb",
     ) as file:
         hgnc_synonyms = pickle.load(file)
 
     combined_genes = combine_synonyms(hgnc_synonyms, genes)
     alias_to_gene = create_alias_to_gene_mapping(combined_genes)
-
     gene_edges = extract_gene_edges_from_abstracts(20, alias_to_gene=alias_to_gene)
 
     # write to text file
     write_gene_edges_to_file(
         gene_edges,
-        "/ocean/projects/bio210019p/stevesho/genomic_nlp/ppi/text_extracted_gene_edges_syns.tsv",
+        f"{working_directory}/ppi/text_extracted_gene_edges_syns.tsv",
     )
 
 

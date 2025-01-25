@@ -230,6 +230,10 @@ def main() -> None:
     # oncogenes = [gene.upper() for gene in census_oncogenes if gene.upper() in words]
     oncogenes = [gene for gene in census_oncogenes if gene in words]
 
+    # load gene to go process mapping
+    with open("go_processes.pkl", "rb") as file:
+        gene_to_go = pickle.load(file)
+
     visualize_word_embeddings(
         word_embeddings=word_embeddings,
         n_clusters=6,
