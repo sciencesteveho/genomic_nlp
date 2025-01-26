@@ -69,35 +69,36 @@ def detect_genes_with_synonyms(
 
 def _extract_normalized_name(linked_value: str) -> str:
     """Extract the normalized name from the linked identifier."""
-    try:
-        return linked_value.split("/name=", 1)[1].split(" (")[0]
-    except IndexError:
-        print(f"Error extracting normalized name from {linked_value}")
+    return linked_value.split("/name=", 1)[1].split(" (")[0]
 
 
 def detect_diseases_with_flair(
-    tokenized_sentences: List[List[str]],
+    tokenized_sentences_batch: List[List[str]],
     disease_tagger: Classifier,
     disease_linker: EntityMentionLinker,
-) -> Set[str]:
+) -> List[Set[str]]:
     """Detect diseases in a list of tokenized sentences using flair."""
-    flair_sents = [
-        Sentence(" ".join(sent_tokens)) for sent_tokens in tokenized_sentences
+    abstracts_text = [
+        " ".join([" ".join(sent) for sent in abstract])
+        for abstract in tokenized_sentences_batch
     ]
 
+    flair_sentences = [Sentence(text) for text in abstracts_text]
+
     # tag and link
-    disease_tagger.predict(flair_sents)
-    disease_linker.predict(flair_sents)
+    disease_tagger.predict(flair_sentences)
+    disease_linker.predict(flair_sentences)
 
-    found_diseases = set()
-    for sentence in flair_sents:
+    diseases_per_abstract = []
+    for sentence in flair_sentences:
+        found_diseases = set()
         for span in sentence.get_spans("link"):
-            label = span.get_label("link")
-            if label is not None:
-                norm_name = _extract_normalized_name(str(label.value))
+            if label := span.get_label("link"):
+                norm_name = _extract_normalized_name(str(label))
                 found_diseases.add(norm_name)
+        diseases_per_abstract.append(found_diseases)
 
-    return found_diseases
+    return diseases_per_abstract
 
 
 def collect_gene_disease_edges(
@@ -108,7 +109,7 @@ def collect_gene_disease_edges(
 
 
 def process_abstract_file(
-    chunk_idx: int, alias_to_gene: Dict[str, str]
+    chunk_idx: int, alias_to_gene: Dict[str, str], batch_size: int
 ) -> Set[Tuple[str, str]]:
     """Process one chunk of abstracts"""
     path = f"/ocean/projects/bio210019p/stevesho/genomic_nlp/data/processed_abstracts_w2v_chunk_{chunk_idx}.pkl"
@@ -118,24 +119,34 @@ def process_abstract_file(
     disease_tagger = Classifier.load("hunflair2")
     disease_linker = EntityMentionLinker.load("disease-linker")
 
+    total_abstracts = len(abstracts)
+    num_batches = (total_abstracts + batch_size - 1) // batch_size
+
     gd_edges = set()
+    for batch_num in tqdm(range(num_batches), desc=f"Processing Chunk {chunk_idx}"):
+        start_idx = batch_num * batch_size
+        end_idx = min(start_idx + batch_size, total_abstracts)
+        batch_abstracts = abstracts.iloc[start_idx:end_idx]
 
-    for _, row in abstracts.iterrows():
-        tokenized_sentences = row["processed_abstracts_w2v"]
+        # detect gene-disease edges
+        tokenized_sentences_batch = batch_abstracts["processed_abstracts_w2v"].tolist()
 
-        # detect genes
-        gene_occurences = detect_genes_with_synonyms(tokenized_sentences, alias_to_gene)
+        # get genes per batch
+        gene_sets = [
+            detect_genes_with_synonyms(sent, alias_to_gene)
+            for sent in tokenized_sentences_batch
+        ]
 
-        # disease flair
-        disease_occurences = detect_diseases_with_flair(
-            tokenized_sentences, disease_tagger, disease_linker
+        # detect diseases per batch
+        disease_sets = detect_diseases_with_flair(
+            tokenized_sentences_batch=tokenized_sentences_batch,
+            disease_tagger=disease_tagger,
+            disease_linker=disease_linker,
         )
 
-        # combine to get gene-disease edges
-        if len(gene_occurences) > 0 and len(disease_occurences) > 0:
-            gd_edges.update(
-                collect_gene_disease_edges(gene_occurences, disease_occurences)
-            )
+        for gene_set, disease_set in zip(gene_sets, disease_sets):
+            if gene_set and disease_set:
+                gd_edges.update(collect_gene_disease_edges(gene_set, disease_set))
 
     return gd_edges
 
@@ -167,7 +178,10 @@ def main() -> None:
     alias_to_gene = create_alias_to_gene_mapping(combined_genes)
 
     # get gda for chunk 0
-    gda_edges = process_abstract_file(0, alias_to_gene)
+    gda_edges = process_abstract_file(0, alias_to_gene, 256)
+
+    output = "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/disease"
+    write_edges_to_file(gda_edges, f"{output}/gene_disease_edges_chunk_0.tsv")
 
 
 if __name__ == "__main__":
