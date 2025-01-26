@@ -48,8 +48,42 @@ def create_synonym_dictionary(hgnc: Path, casefold: bool = True) -> Dict[str, Se
     return synonyms
 
 
-def formatter(name: str, casefold: bool = True) -> Union[str, List[str]]:
-    """Format a string to be used as a key in a dictionary."""
+def create_disease_synonym_dictionary(
+    ctd: Path, casefold: bool = True
+) -> Dict[str, Set[str]]:
+    """Map disease identifiers to potential synonyms from the CTD disease
+    vocabulary. We add the disease name, and any alternate identifiers as
+    synonyms.
+    """
+    synonyms: Dict[str, Set[str]] = {}
+
+    with open(ctd, "r") as file:
+        reader = csv.reader(file, delimiter="\t")
+        for line in reader:
+
+            # skip header, #
+            if line[0].startswith("#"):
+                continue
+
+            # set disease identifier as key
+            key = (
+                _replace_symbols(line[0]).casefold()
+                if casefold
+                else _replace_symbols(line[0])
+            )
+            synonyms[key] = set()
+
+            # add name and alternate identifiers
+            for idx in [7]:
+                if line[idx]:
+                    synonym = formatter(name=line[idx], casefold=casefold)
+                    _add_values(synonyms, key, synonym)
+
+    return synonyms
+
+
+def _replace_symbols(name: str) -> str:
+    """Replace symbols in a string."""
     REPLACE_SYMBOLS = {
         "(": "",
         ")": "",
@@ -58,9 +92,15 @@ def formatter(name: str, casefold: bool = True) -> Union[str, List[str]]:
         "/": "_",
     }
 
-    name = name.casefold() if casefold else name
     for symbol, replacement in REPLACE_SYMBOLS.items():
         name = name.replace(symbol, replacement)
+    return name
+
+
+def formatter(name: str, casefold: bool = True) -> Union[str, List[str]]:
+    """Format a string to be used as a key in a dictionary."""
+    name = _replace_symbols(name)
+    name = name.casefold() if casefold else name
     return name.split("|") if "|" in name else name
 
 
