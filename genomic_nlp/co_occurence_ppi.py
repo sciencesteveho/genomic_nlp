@@ -94,6 +94,8 @@ def process_abstract_file(
     abstracts = pd.read_pickle(
         f"/ocean/projects/bio210019p/stevesho/genomic_nlp/data/processed_abstracts_w2v_chunk_{num}.pkl"
     )
+    # only keep abstracts from the specified year
+    abstracts = abstracts[abstracts["year"] == year]
     gene_relationships = gene_mentions_per_abstract(abstracts, alias_to_gene)
     return collect_gene_edges(gene_relationships)
 
