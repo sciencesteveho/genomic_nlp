@@ -7,18 +7,12 @@ token/alias-based approach for genes and a HunFlair2 for diseases.
 """
 
 
-import argparse
 import itertools
 import multiprocessing as mp
 import pickle
 from typing import Dict, List, Set, Tuple
 
-import flair  # type: ignore
-from flair.data import Sentence  # type: ignore
-from flair.models import EntityMentionLinker  # type: ignore
-from flair.nn import Classifier  # type: ignore
 import pandas as pd
-import torch
 from tqdm import tqdm  # type: ignore
 
 from genomic_nlp.utils.common import gencode_genes
@@ -146,7 +140,7 @@ def main() -> None:
         hgnc_synonyms = pickle.load(file)
 
     with open(
-        f"{working_directory}/training_data/disease/disease_synonyms.pk",
+        f"{working_directory}/training_data/disease/disease_synonyms.pkl",
         "rb",
     ) as file:
         disease_synonyms = pickle.load(file)
