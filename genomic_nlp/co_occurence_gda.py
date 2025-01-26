@@ -2,10 +2,12 @@
 # -*- coding: utf-8 -*-
 
 
-"""Use flair2
+"""Detect gene-disease associations (GDAs) from scientific abstracts, using a
+token/alias-based approach for genes and a HunFlair2 for diseases.
 """
 
 
+import argparse
 import itertools
 import multiprocessing as mp
 import pickle
@@ -20,6 +22,13 @@ import torch
 from tqdm import tqdm  # type: ignore
 
 from genomic_nlp.utils.common import gencode_genes
+
+
+def gene_disease_edges(
+    gene_set: Set[str], disease_set: Set[str]
+) -> Set[Tuple[str, str]]:
+    """For each gene in gene_set, pair it with each disease in disease_set."""
+    return set(itertools.product(gene_set, disease_set))
 
 
 def combine_synonyms(
@@ -52,117 +61,79 @@ def create_alias_to_gene_mapping(gene_aliases: Dict[str, Set[str]]) -> Dict[str,
     return alias_to_gene
 
 
-def detect_genes_with_synonyms(
-    tokenized_sentences: List[List[str]], alias_to_gene: Dict[str, str]
+def mentions_per_abstract(
+    abstracts: pd.DataFrame, alias_to_entity: Dict[str, str]
 ) -> Set[str]:
-    """Flatten the tokenized sentences into one list of tokens, intersect with
-    alias_to_gene keys, and map those matches back to canonical gene symbols.
+    """Loop through tokenized abstracts and create a sublist of mentioned genes
+    within the abstract. Gene mentions are based on tokens that either map to
+    the gene symbol or synonyms from the HGNC complete set.
     """
-    # flatten all sentences into one token list
-    tokens = [token for sent in tokenized_sentences for token in sent]
-    token_uniq = set(tokens)
+    alias = set(alias_to_entity.keys())
 
-    # intersect with our known aliases
-    valid_aliases = token_uniq.intersection(alias_to_gene.keys())
-    return {alias_to_gene[a] for a in valid_aliases}
+    def process_abstract(abstract_sentences: List[List[str]]) -> Set[str]:
+        """Vectorized matching"""
+        tokens = [
+            token for sentence in abstract_sentences for token in sentence
+        ]  # flatten the list of sentences
+        matches = set(tokens) & alias
+        mentions = {alias_to_entity[token] for token in matches}
+        return mentions if len(mentions) > 2 else set()
 
-
-def _extract_normalized_name(linked_value: str) -> str:
-    """Extract the normalized name from the linked identifier."""
-    return linked_value.split("/name=", 1)[1].split(" (")[0]
-
-
-def detect_diseases_with_flair(
-    tokenized_sentences_batch: List[List[str]],
-    disease_tagger: Classifier,
-    disease_linker: EntityMentionLinker,
-) -> List[Set[str]]:
-    """Detect diseases in a list of tokenized sentences using flair."""
-    abstracts_text = [
-        " ".join([" ".join(sent) for sent in abstract])
-        for abstract in tokenized_sentences_batch
-    ]
-
-    flair_sentences = [Sentence(text) for text in abstracts_text]
-
-    # tag and link
-    disease_tagger.predict(flair_sentences)
-    disease_linker.predict(flair_sentences)
-
-    diseases_per_abstract = []
-    for sentence in flair_sentences:
-        found_diseases = set()
-        for span in sentence.get_spans("link"):
-            if label := span.get_label("link"):
-                norm_name = _extract_normalized_name(str(label))
-                found_diseases.add(norm_name)
-        diseases_per_abstract.append(found_diseases)
-
-    return diseases_per_abstract
-
-
-def collect_gene_disease_edges(
-    gene_set: Set[str], disease_set: Set[str]
-) -> Set[Tuple[str, str]]:
-    """For each gene in gene_set, pair it with each disease in disease_set."""
-    return set(itertools.product(gene_set, disease_set))
+    relations = abstracts["processed_abstracts_w2v"].apply(process_abstract)
+    return {ents for ents in relations if ents}
 
 
 def process_abstract_file(
-    chunk_idx: int, alias_to_gene: Dict[str, str], batch_size: int
+    args: Tuple[int, Dict[str, str], Dict[str, str], int]
 ) -> Set[Tuple[str, str]]:
-    """Process one chunk of abstracts"""
-    path = f"/ocean/projects/bio210019p/stevesho/genomic_nlp/data/processed_abstracts_w2v_chunk_{chunk_idx}.pkl"
-    abstracts = pd.read_pickle(path)
+    """Process a single abstract file and return gene edges."""
+    num, alias_to_gene, alias_to_disease, year = args
+    abstracts = pd.read_pickle(
+        f"/ocean/projects/bio210019p/stevesho/genomic_nlp/data/processed_abstracts_w2v_chunk_{num}.pkl"
+    )
+    # only keep abstracts from the specified year
+    abstracts = abstracts[abstracts["year"] <= year]
+    gene_relationships = mentions_per_abstract(abstracts, alias_to_gene)
+    disease_relationships = mentions_per_abstract(abstracts, alias_to_disease)
+    return gene_disease_edges(gene_relationships, disease_relationships)
 
-    # load flair models
-    disease_tagger = Classifier.load("hunflair2")
-    disease_linker = EntityMentionLinker.load("disease-linker")
 
-    total_abstracts = len(abstracts)
-    num_batches = (total_abstracts + batch_size - 1) // batch_size
-
-    gd_edges = set()
-    for batch_num in tqdm(range(num_batches), desc=f"Processing Chunk {chunk_idx}"):
-        start_idx = batch_num * batch_size
-        end_idx = min(start_idx + batch_size, total_abstracts)
-        batch_abstracts = abstracts.iloc[start_idx:end_idx]
-
-        # detect gene-disease edges
-        tokenized_sentences_batch = batch_abstracts["processed_abstracts_w2v"].tolist()
-
-        # get genes per batch
-        gene_sets = [
-            detect_genes_with_synonyms(sent, alias_to_gene)
-            for sent in tokenized_sentences_batch
-        ]
-
-        # detect diseases per batch
-        disease_sets = detect_diseases_with_flair(
-            tokenized_sentences_batch=tokenized_sentences_batch,
-            disease_tagger=disease_tagger,
-            disease_linker=disease_linker,
+def extract_gda_edges_from_abstracts(
+    alias_to_gene: Dict[str, str],
+    alias_to_disease: Dict[str, str],
+    year: int,
+    index_end: int = 20,
+) -> Set[Tuple[str, str]]:
+    """Extract gene edges from abstracts using multiprocessing."""
+    with mp.Pool(processes=20) as pool:
+        results = list(
+            tqdm(
+                pool.imap(
+                    process_abstract_file,
+                    [
+                        (num, alias_to_gene, alias_to_disease, year)
+                        for num in range(index_end)
+                    ],
+                ),
+                total=index_end,
+            )
         )
 
-        for gene_set, disease_set in zip(gene_sets, disease_sets):
-            if gene_set and disease_set:
-                gd_edges.update(collect_gene_disease_edges(gene_set, disease_set))
-
-    return gd_edges
+    gene_edges: Set[Tuple[str, str]] = set()
+    for result in results:
+        gene_edges.update(result)
+    return gene_edges
 
 
 def write_edges_to_file(edge_set: Set[Tuple[str, str]], filename: str) -> None:
-    """Write out edges to tsv."""
+    """Write gene pairs to file from a set of edges."""
     with open(filename, "w") as file:
-        for a, b in edge_set:
-            file.write(f"{a}\t{b}\n")
+        for edge in edge_set:
+            file.write(f"{edge[0]}\t{edge[1]}\n")
 
 
 def main() -> None:
-    """Get gene-disease edges!"""
-    # force GPU if desired
-    flair.device = torch.device("cuda:0")
-
+    """Main function"""
     working_directory = "/ocean/projects/bio210019p/stevesho/genomic_nlp"
     genes = gencode_genes(
         f"{working_directory}/reference_files/gencode.v45.basic.annotation.gtf"
@@ -174,14 +145,28 @@ def main() -> None:
     ) as file:
         hgnc_synonyms = pickle.load(file)
 
+    with open(
+        f"{working_directory}/training_data/disease/disease_synonyms.pk",
+        "rb",
+    ) as file:
+        disease_synonyms = pickle.load(file)
+
     combined_genes = combine_synonyms(hgnc_synonyms, genes)
     alias_to_gene = create_alias_to_gene_mapping(combined_genes)
+    alias_to_disease = create_alias_to_gene_mapping(disease_synonyms)
 
-    # get gda for chunk 0
-    gda_edges = process_abstract_file(0, alias_to_gene, 256)
+    # run text extraction for each year model
+    for year in range(2003, 2023 + 1):
+        print(f"Processing year {year}")
+        gene_edges = extract_gda_edges_from_abstracts(
+            alias_to_gene=alias_to_gene, alias_to_disease=alias_to_disease, year=year
+        )
 
-    output = "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/disease"
-    write_edges_to_file(gda_edges, f"{output}/gene_disease_edges_chunk_0.tsv")
+        # write to text file
+        write_edges_to_file(
+            gene_edges,
+            f"{working_directory}/training_data/disease/gda_co_occurence_{year}.tsv",
+        )
 
 
 if __name__ == "__main__":
