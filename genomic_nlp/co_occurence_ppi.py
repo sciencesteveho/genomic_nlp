@@ -6,6 +6,7 @@
 if genes appear in the same abstract, an edge is created between genes."""
 
 
+import itertools
 import multiprocessing as mp
 import pickle
 from typing import Dict, List, Set, Tuple
