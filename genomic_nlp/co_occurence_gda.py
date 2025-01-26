@@ -19,10 +19,12 @@ from genomic_nlp.utils.common import gencode_genes
 
 
 def gene_disease_edges(
-    gene_set: Set[str], disease_set: Set[str]
+    gene_set: List[Set[str]], disease_set: List[Set[str]]
 ) -> Set[Tuple[str, str]]:
     """For each gene in gene_set, pair it with each disease in disease_set."""
-    return set(itertools.product(gene_set, disease_set))
+    flattened_genes = {gene for genes in gene_set for gene in genes}
+    flattened_diseases = {disease for diseases in disease_set for disease in diseases}
+    return set(itertools.product(flattened_genes, flattened_diseases))
 
 
 def combine_synonyms(
@@ -57,7 +59,7 @@ def create_alias_to_gene_mapping(gene_aliases: Dict[str, Set[str]]) -> Dict[str,
 
 def mentions_per_abstract(
     abstracts: pd.DataFrame, alias_to_entity: Dict[str, str]
-) -> Set[str]:
+) -> List[Set[str]]:
     """Loop through tokenized abstracts and create a sublist of mentioned genes
     within the abstract. Gene mentions are based on tokens that either map to
     the gene symbol or synonyms from the HGNC complete set.
@@ -74,7 +76,7 @@ def mentions_per_abstract(
         return mentions if len(mentions) > 2 else set()
 
     relations = abstracts["processed_abstracts_w2v"].apply(process_abstract)
-    return {ents for ents in relations if ents}
+    return [ents for ents in relations if ents]
 
 
 def process_abstract_file(
