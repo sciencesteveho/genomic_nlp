@@ -58,9 +58,9 @@ def compute_analogy(
     result = model.wv.most_similar(
         positive=[analogy[0], analogy[1]], negative=[analogy[2]], topn=top_n
     )
-    print(f"Analogy: {analogy[0]} is to {analogy[1]} as {analogy[2]} is to ?")
+    print(f"Analogy: {analogy[0]} is to {analogy[2]} as {analogy[1]} is to ?")
     for word, score in result:
-        print(f"{word} ({score:.2f})")
+        print(f"{word} ({score:.2f})\n")
 
 
 def collect_vectors(model: Word2Vec, words: List[str]) -> np.ndarray:
@@ -101,7 +101,7 @@ def plot_analogies_2d(
     vectors_2d = project_vectors_2d(vectors)
     in_vocab_words = [w for w in words if w in model.wv]
     word_to_2d = dict(zip(in_vocab_words, vectors_2d))
-    fig, ax = plt.subplots(constrained_layout=True)
+    fig, ax = plt.subplots(constrained_layout=True, figsize=(4, 4))
 
     base_marker_size = 25
     face_light_factor = 0.95
@@ -133,11 +133,12 @@ def plot_analogies_2d(
                 s=base_marker_size,
                 linewidths=0.5,
                 zorder=3,
+                alpha=0.45,
             )
             texts.append(ax.text(w_coord[0], w_coord[1], word_label, zorder=4))
 
         # draw arrows between pairs illustrating the analogy
-        for start, end in [(v1, v2), (v3, v4)]:
+        for start, end in [(v1, v3), (v2, v4)]:
             ax.arrow(
                 start[0],
                 start[1],
@@ -149,25 +150,29 @@ def plot_analogies_2d(
                 head_length=0.02,
                 length_includes_head=True,
                 zorder=2,
+                alpha=0.70,
             )
 
     # minimize text overlap
     adjust_text(
         texts,
         ax=ax,
-        arrowprops=dict(arrowstyle="->", color="black"),
-        expand_text=(1.5, 1.5),
-        expand_points=(1.5, 1.5),
-        force_text=0.5,
-        force_points=0.5,
-        only_move={"texts": "y", "points": "y"},
+        expand_text=(1, 1),
+        expand_points=(1, 1),
+        force_text=1.0,
+        force_points=1.0,
+        force_explode=1.0,
+        only_move={"texts": "xy", "points": "xy"},
     )
 
-    ax.set_title("Word Analogies in 2D Space")
-    ax.set_xlabel("First Principal Component")
-    ax.set_ylabel("Second Principal Component")
+    # ax.set_title("Word Analogies in 2D Space")
+    ax.set_xlabel("First principal component")
+    ax.set_ylabel("Second principal component")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
+    ax.tick_params(axis="both", which="major", length=6)
+    ax.set_xticks(np.linspace(-3, 3, 7))
+    ax.set_yticks(np.linspace(-3, 3, 7))
     ax.set_aspect("equal")
 
     plt.tight_layout()
@@ -179,57 +184,76 @@ def main() -> None:
     """Main function for testing simple analogies."""
     set_matplotlib_publication_parameters()
 
-    viz_analogies = [
-        ("genes", "dna", "rna", "transcript"),
-        ("euchromatic", "open", "heterochromatic", "closed"),
-        ("h3k4me3", "promoter", "h3k9me3", "silencer"),
-        ("apc", "colorectal_cancer", "brca1", "breast"),
-        ("notch1", "hes1", "mapk1", "akt1"),
-        ("il6", "stat3", "ifng", "il1b"),
-    ]
-
-    test_analogies = [
-        ("rna", "genes", "dna"),
-        ("euchromatic", "closed", "open"),
-        ("h3k4me3", "silencer", "promoter"),
-        ("colorectal_cancer", "brca", "apc"),
-        ("notch1", "mapk1", "hes1"),
-        ("il6", "ifng", "stat3"),
-    ]
-
-    ### notes
-    ### results should be
-    # genes - dna + rna = transcript
-    # euchromatic is to open as heterochromatic is to closed
-    # h3k4me3 is to promoter as h3k9me3 is to silencer
-    # apc is to colorectal_cancer as brca1 is to breast
-    # notch1 activates hes1 as mapk1 activates akt1
-    # il6 activates stat3 as ifng activates il1b
-
-    ### 2003 wrong answers
-    # correct
-    # correct
-    # correct
-    # ovarian_cancer
-    # p41
-    # 592a
-
-    # exploratory usage
-    # find_partial_matches("suppressor")
-    # find_partial_matches("cycle")
-    # find_partial_matches("homologous")
-
     # load full models
     model = Word2Vec.load("word2vec_300_dimensions_2023.model")
     # model = Word2Vec.load("word2vec_300_dimensions_2003.model")
 
+    broad_analogies = [
+        # broader domain knowledge
+        ("genes", "rna", "dna", "expression"),
+        ("euchromatin", "closed", "open", "heterochromatin"),
+        ("h3k4me1", "silencer", "enhancer", "h3k9me3"),
+        ("h3k4me1", "promoter", "enhancer", "histone_h3_trimethyl_lys4"),
+        # ("exonic", "splice", "expressed", "intronic"),
+        ("acetylation", "silencing", "activation", "deacetylation"),
+        # ("ligase", "unwind", "join", "helicase"),
+        ("g1-phase", "replication", "growth", "s-phase"),
+    ]
+
+    interact_analogies = [
+        # specific gene/gene protein/protein interactions
+        # ("notch1", "il2", "hes1", "il4"),
+        ("stat3", "ifng", "il6", "stat1"),
+        # ("brca1", "rad51", "bard1", "brca2"),
+        ("atm", "chk1", "chk2", "atr"),
+        # ("cdk4", "ccne1", "ccnd1", "cdk2"),
+        ("jak2", "stat1", "stat3", "jak1"),
+        # ("cd4", "mhci", "mhcii", "cd8"),
+        ("casp8", "apaf1", "fadd", "casp9"),
+        # ("notch", "vegf", "delta", "vegfr"),
+        # ("hdac1", "uhrf1", "sin3a", "dnmt1"),
+    ]
+
+    gda_analogies = [
+        # gene-disease relationships
+        # ("mecp2", "fragile_x", "rett", "fmr1"),
+        # ("idua", "autosomal_recessive_polycystic", "mucopolysaccharidosis", "pkhd1"),
+        # ("hbb", "hemophilia", "sickle", "f8"),
+        # ("app", "huntington", "alzheimers", "htt"),
+        # ("capn3", "muscular_dystrophy_duchenne", "lgmd", "dmd"),
+        ("dmd", "spinal_muscular_atrophy", "muscular_dystrophy", "smn1"),
+        # ("smn1", "mapt", "spinal_muscular_atrophy", "tauopathies"),
+        # ("snca", "hemiplegic_migraine", "synucleinopathies", "cacna1a"),
+        ("park7", "huntington", "htt", "parkinson"),
+        # ("abcd1", "mucopolysaccharidosis", "adrenoleukodystrophy", "idua"),
+        ("idua", "tay_sachs_disease", "mucopolysaccharidosis", "hexosaminidase"),
+        ("hbb", "hemophilia", "thalassemia", "f8"),
+        # ("tsc1", "neurofibromatosis", "tuberous_sclerosis", "nf1"),
+    ]
+
     # test analogies
-    for analogy in test_analogies:
-        compute_analogy(model, analogy)
+    # for analogy in analogies:
+    #     test_analogy = (analogy[0], analogy[1], analogy[2])
+    #     compute_analogy(model, test_analogy, top_n=1)
+
+    plot_analogies_2d(
+        model=model,
+        analogies=gda_analogies,
+        shapes=["o", "s", "^", "D", "p", "*"],
+        output_filename="gda_analogies_2d.png",
+    )
 
     # plot analogies
     plot_analogies_2d(
         model=model,
-        analogies=viz_analogies,
+        analogies=broad_analogies,
         shapes=["o", "s", "^", "D", "p", "*"],
+        output_filename="broad_analogies_2d.png",
+    )
+
+    plot_analogies_2d(
+        model=model,
+        analogies=interact_analogies,
+        shapes=["o", "s", "^", "D", "p", "*"],
+        output_filename="interact_analogies_2d.png",
     )
