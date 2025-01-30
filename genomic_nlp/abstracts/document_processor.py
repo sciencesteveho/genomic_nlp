@@ -22,6 +22,7 @@ from spacy.tokens import Span  # type: ignore
 from spacy.tokens import Token  # type: ignore
 from tqdm import tqdm  # type: ignore
 
+from genomic_nlp.abstracts.gene_entity_normalization import replace_symbols
 from genomic_nlp.utils.common import dir_check_make
 from genomic_nlp.utils.common import gencode_genes
 from genomic_nlp.utils.common import gene_symbol_from_gencode
@@ -38,6 +39,24 @@ logging.basicConfig(
     ],
 )
 logger = logging.getLogger(__name__)
+
+
+def load_normalized_disease_names(ctd: str) -> Set[str]:
+    """Get casefolded, symbol normalized disease names from CTD."""
+    diseases: Set[str] = set()
+
+    with open(ctd, "r") as file:
+        reader = csv.reader(file, delimiter="\t")
+        for line in reader:
+
+            # skip header, #
+            if line[0].startswith("#"):
+                continue
+
+            # set disease identifier as key
+            diseases.add(replace_symbols(line[1]).casefold())
+
+    return diseases
 
 
 class ChunkedDocumentProcessor:
@@ -90,7 +109,6 @@ class ChunkedDocumentProcessor:
     extras = {
         ".",
         "\\",
-        "/",
         "~",
         "*",
         "&",
@@ -115,8 +133,11 @@ class ChunkedDocumentProcessor:
         "Å",
         ":",
         "©",
+        "®",
         ",",
-        "-",
+        ">",
+        "<",
+        "′′",
     }
 
     finetune_extras = {
@@ -153,6 +174,7 @@ class ChunkedDocumentProcessor:
         abstracts: pd.DataFrame,
         chunk: int,
         genes: Set[str],
+        diseases: Set[str],
         batch_size: int = 64,
     ):
         """Initialize the ChunkedDocumentProcessor object."""
@@ -160,6 +182,7 @@ class ChunkedDocumentProcessor:
         self.chunk = chunk
         self.batch_size = batch_size
         self.genes = {gene.lower() for gene in genes}
+        self.diseases = {disease.lower() for disease in diseases}
         for gene in ["mice", "bad", "insulin", "camp", "plasminogen", "ski"]:
             self.genes.remove(gene)
 
@@ -208,37 +231,44 @@ class ChunkedDocumentProcessor:
         else:
             return token.lemma_ if lemmatize else token.text
 
-    def replace_symbol_tokens(
-        self, token: str, finetune: bool = False
-    ) -> Union[str, None]:
+    def replace_symbol_tokens(self, token: str, finetune: bool = False) -> List[str]:
         """Replace symbols with an empty string. Replace standalone numbers with
         '<nUm>' only for w2v.
         """
+        # remove extras in tokens
+        if not finetune:
+            token = re.sub(r"[-/]", " ", token)  # replace '-' and '/' with space
+            token = re.sub(r"(\w),(\w)", r"\1 \2", token)  # replace ',' with '_'
+            token = re.sub(r"(\w),\s+(\w)", r"\1 \2", token)  # replace ', ' with ' '
+            token = re.sub(f"[{self.extras}]", "", token)
+            token = re.sub(r"\s+", " ", token).strip()  # collapse spaces
+
+        # if token is just a symbol, skip it
         if (not finetune and token in self.extras) or (
             finetune and token in self.finetune_extras
         ):
-            return None
+            return []
 
         # For finetune, keep periods and commas
         if finetune and token in {".", ","}:
-            return token
+            return [token]
 
         # check if the token contains letters
         if re.search("[a-zA-Z]", token):
-            return token
+            return token.split()
 
         # check if there are numbers
         if re.search("[0-9]", token):
-            return token if finetune else "<nUm>"
+            return [token] if finetune else ["<nUm>"]
 
-        return None
+        return []
 
-    def selective_casefold_token(self, token: str) -> str:
-        """No longer selective casefolding, just normal casefolding. Too many
-        instances of genes made it through, so we casefold everything
-        to avoid loss of information.
-        """
-        return token.casefold()
+    # def selective_casefold_token(self, token: str) -> str:
+    #     """No longer selective casefolding, just normal casefolding. Too many
+    #     instances of genes made it through, so we casefold everything
+    #     to avoid loss of information.
+    #     """
+    #     return token.casefold()
 
     def process_document(self, doc: Doc) -> Tuple[List[List[str]], List[str]]:
         """Splits a spaCy doc into sentences."""
@@ -299,12 +329,9 @@ class ChunkedDocumentProcessor:
             for sent in sentences:
                 cleaned_sent = []
                 for token in sent:
-                    replacement = self.replace_symbol_tokens(token)
-                    if replacement is not None:
-                        # remove double spaces
-                        if "  " in replacement:
-                            replacement = replacement.replace("  ", " ")
-                        cleaned_sent.append(replacement)
+                    pieces = self.replace_symbol_tokens(token.casefold())
+                    if pieces is not None:
+                        cleaned_sent.extend(pieces)
                 cleaned_sentences.append(cleaned_sent)
             return cleaned_sentences
 
@@ -326,24 +353,30 @@ class ChunkedDocumentProcessor:
         )
 
     @time_decorator(print_args=False)
-    def remove_genes(self) -> None:
+    def remove_genes_and_diseases(self) -> None:
         """Remove gene symbols from tokens, for future n-gram generation. Only
         done for w2v.
         """
-        tqdm.pandas(desc="Removing genes")
+        # combine genes and diseases into one set
+        tokens_for_removal = self.genes | self.diseases
 
         # helper function
-        def remove_genes_from_sentences(sentences: List[List[str]]) -> List[List[str]]:
+        def remove_tokens(
+            sentences: List[List[str]],
+            tokens_for_removal: Set[str] = tokens_for_removal,
+        ) -> List[List[str]]:
             """Remove gene symbols from a list of list of tokens."""
-            cleaned_sentences = []
-            for sent in sentences:
-                cleaned_sent = [token for token in sent if token not in self.genes]
-                cleaned_sentences.append(cleaned_sent)
-            return cleaned_sentences
+            return [
+                [token for token in sent if token not in tokens_for_removal]
+                for sent in sentences
+            ]
 
-        self.df["processed_abstracts_w2v_nogenes"] = self.df[
-            "processed_abstracts_w2v"
-        ].progress_apply(remove_genes_from_sentences)
+        # remove genes and diseases
+        with tqdm(desc="Removing genes and diseases") as pbar:
+            self.df["processed_abstracts_w2v_nogenes"] = [
+                remove_tokens(sent) for sent in self.df["processed_abstracts_w2v"]
+            ]
+            pbar.update()
 
     def save_data(self, outpref: str) -> None:
         """Save final copies of abstracts with cleaned, processed, and year
@@ -385,16 +418,18 @@ class ChunkedDocumentProcessor:
         logger.info("Excluding punctuation and replacing standalone numbers")
         self.exclude_symbols()
 
-        # additional processing for w2v: remove genes
-        logger.info("Casefolding")
-        self.df["processed_abstracts_w2v"] = self.df[
-            "processed_abstracts_w2v"
-        ].progress_apply(
-            lambda sents: [[token.casefold() for token in sent] for sent in sents]
-        )
+        # additional processing for w2v: casefold and gene removal
+        # logger.info("Casefolding")
+        # self.df["processed_abstracts_w2v"] = self.df[
+        #     "processed_abstracts_w2v"
+        # ].progress_apply(
+        #     lambda sents: [[token.casefold() for token in sent] for sent in sents]
+        # )
 
-        logger.info("Removing gene symbols for phraser training")
-        self.remove_genes()
+        # EDIT: casefolding now applied early, during tokenziation
+
+        logger.info("Removing gene symbols and disease names from phraser training")
+        self.remove_genes_and_diseases()
         self.save_data(f"{self.root_dir}/data/processed_abstracts")
 
 
@@ -427,6 +462,11 @@ def main() -> None:
         type=str,
         default="abstracts_with_normalized_entities",
     )
+    parser.add_argument(
+        "--disease_names",
+        type=str,
+        default="/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/disease/CTD_diseases.tsv",
+    )
     args = parser.parse_args()
 
     # load abstract df
@@ -444,6 +484,7 @@ def main() -> None:
     ncbi = hgnc_ncbi_genes(tsv=args.ncbi_genes)
     genes = gencode.union(hgnc).union(ncbi)
     genes = {gene.casefold() for gene in genes}
+    diseases = load_normalized_disease_names(args.disease_names)
 
     # instantiate document processor
     documentProcessor = ChunkedDocumentProcessor(
@@ -451,6 +492,7 @@ def main() -> None:
         abstracts=abstracts,
         chunk=args.chunk,
         genes=genes,
+        diseases=diseases,
     )
 
     # run processing pipeline
