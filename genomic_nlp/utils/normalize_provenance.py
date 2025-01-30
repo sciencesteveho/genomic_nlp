@@ -16,18 +16,7 @@ import pandas as pd
 import torch  # type: ignore
 from tqdm import tqdm  # type: ignore
 
-
-def _extract_normalized_name(linked_value: str) -> str:
-    """Extract the normalized name from the linked identifier.
-
-    Arguments:
-        linked_value (str): The linked identifier string (e.g.,
-        "MESH:D007239/name=Infections").
-
-    Returns:
-        str: The extracted normalized name (e.g., "Infections").
-    """
-    return linked_value.split("/name=", 1)[1].split(" (")[0]
+from genomic_nlp.abstracts.gene_entity_normalization import extract_normalized_name
 
 
 def load_flair_models() -> Tuple[Classifier, EntityMentionLinker, EntityMentionLinker]:
@@ -84,7 +73,7 @@ def normalize_cancer_provenance_batched(
             spans = sentence.get_spans("link")
             for span in spans:
                 if label := span.get_label("link"):
-                    norm_symbol = _extract_normalized_name(str(label))
+                    norm_symbol = extract_normalized_name(str(label))
                     normed += 1
                     break
             normalized_symbols[start_idx + i] = norm_symbol
@@ -149,7 +138,7 @@ def normalize_gda_provenance(
             spans = sentence.get_spans("link")
             for span in spans:
                 if label := span.get_label("link"):
-                    norm_gene = _extract_normalized_name(str(label))
+                    norm_gene = extract_normalized_name(str(label))
                     break
             normalized_genes[start_idx + i] = norm_gene
 
@@ -163,7 +152,7 @@ def normalize_gda_provenance(
             spans = sentence.get_spans("link")
             for span in spans:
                 if label := span.get_label("link"):
-                    norm_disease = _extract_normalized_name(str(label))
+                    norm_disease = extract_normalized_name(str(label))
                     normed += 1
                     break
             normalized_diseases[start_idx + i] = norm_disease
