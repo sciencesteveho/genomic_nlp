@@ -11,6 +11,7 @@ and disease entitites.
 
 import argparse
 import pickle
+import re
 from typing import List, Tuple
 
 import flair  # type: ignore
@@ -20,6 +21,49 @@ from flair.nn import Classifier  # type: ignore
 import pandas as pd
 import torch  # type: ignore
 from tqdm import tqdm  # type: ignore
+
+
+def replace_symbols(name: str) -> str:
+    """Replace symbols in a string. First replace special characters before
+    replacing spaces to create a uniform entity with underscores.
+    """
+    REPLACE_SYMBOLS = {
+        "(": "",
+        ")": "",
+        ",": "",
+        '"': "",
+        ":": "",
+        "-": "_",
+        "/": "_",
+        " ": "_",
+    }
+
+    for symbol, replacement in REPLACE_SYMBOLS.items():
+        name = name.replace(symbol, replacement)
+
+    # handle comma patterns
+    # [letter or number],[letter or number] -> [letter or number]_[letter or number]
+    name = re.sub(r"(\w),(\w)", r"\1_\2", name)
+
+    # [letter or number], [letter or number] -> [letter or number] [letter or number]
+    name = re.sub(r"(\w),\s+(\w)", r"\1 \2", name)
+
+    return name
+
+
+def extract_normalized_name(linked_value: str) -> str:
+    """Extract the normalized name from the linked identifier.
+
+    Arguments:
+        linked_value (str): The linked identifier string (e.g.,
+        "MESH:D007239/name=Infections").
+
+    Returns:
+        str: The extracted normalized name (e.g., "Infections") with symbols
+        replaced.
+    """
+    name = linked_value.split("/name=", 1)[1].split(" (")[0]
+    return replace_symbols(name)
 
 
 class EntityNormalizer:
@@ -56,7 +100,7 @@ class EntityNormalizer:
 
                 # normalize entities
                 modified_sents = [
-                    self._replace_entities_with_links(s) for s in all_sents
+                    self.replace_entities_with_links(s) for s in all_sents
                 ]
 
                 # rebuild texts
@@ -129,7 +173,7 @@ class EntityNormalizer:
                     except UnicodeDecodeError as e:
                         print(f"Error linking sentence: {e}. Skipping.")
 
-    def _replace_entities_with_links(self, sentence: Sentence) -> str:
+    def replace_entities_with_links(self, sentence: Sentence) -> str:
         """Replace tagged entities in the sentence with their normalized
         names.
         """
@@ -140,7 +184,7 @@ class EntityNormalizer:
 
         for span in sorted_spans:
             if linked_label := span.get_label("link"):
-                if normalized_name := self._extract_normalized_name(str(linked_label)):
+                if normalized_name := extract_normalized_name(str(linked_label)):
                     start, end = span.start_position, span.end_position
                     modified_text = (
                         modified_text[:start] + normalized_name + modified_text[end:]
@@ -166,19 +210,6 @@ class EntityNormalizer:
         for txt, abs_idx in zip(texts, mapping):
             abstract_sents[abs_idx].append(txt)
         return [" ".join(slist) for slist in abstract_sents]
-
-    @staticmethod
-    def _extract_normalized_name(linked_value: str) -> str:
-        """Extract the normalized name from the linked identifier.
-
-        Arguments:
-            linked_value (str): The linked identifier string (e.g.,
-            "MESH:D007239/name=Infections").
-
-        Returns:
-            str: The extracted normalized name (e.g., "Infections").
-        """
-        return linked_value.split("/name=", 1)[1].split(" (")[0]
 
     @staticmethod
     def chunk_long_abstract(text: str, max_len: int = 400) -> List[str]:
