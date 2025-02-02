@@ -380,13 +380,24 @@ class ChunkedDocumentProcessor:
                 new_sentences.append(new_sent)
             return new_sentences
 
-        def deduplicate_tokens_finetune(tokens: List[str]) -> List[str]:
+        def deduplicate_tokens_finetune(
+            tokens: List[Union[str, List[str]]]
+        ) -> List[str]:
             """Helper to dedupe for finetune, which consists of a list of
             tokens.
             """
+            # flatten the list for downstream
+            flat_tokens: List[str] = []
+            for token in tokens:
+                if isinstance(token, list):
+                    flat_tokens.extend(token)
+                else:
+                    flat_tokens.append(token)
+
+            # dedupe
             new_tokens = []
             prev_token = None
-            for token in tokens:
+            for token in flat_tokens:
                 if token == prev_token and token in self.main_entities:
                     continue
                 new_tokens.append(token)
