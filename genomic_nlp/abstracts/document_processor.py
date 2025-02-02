@@ -238,11 +238,19 @@ class ChunkedDocumentProcessor:
         """
         # remove extras in tokens
         if not finetune:
+            # deal with specific cases
             token = re.sub(r"[-/]", " ", token)  # replace '-' and '/' with space
             token = re.sub(r"(\w),(\w)", r"\1 \2", token)  # replace ',' with '_'
             token = re.sub(r"(\w),\s+(\w)", r"\1 \2", token)  # replace ', ' with ' '
-            token = re.sub(f"[{self.extras}]", "", token)
-            token = re.sub(r"\s+", " ", token).strip()  # collapse spaces
+
+            # now remove extras
+            sorted_extras = sorted(self.extras, key=len, reverse=True)
+            escaped_extras = [re.escape(extra) for extra in sorted_extras]
+            pattern = "(" + "|".join(escaped_extras) + ")"
+            token = re.sub(pattern, "", token)
+
+            # collapse spaces
+            token = re.sub(r"\s+", " ", token).strip()
 
         # if token is just a symbol, skip it
         if (not finetune and token in self.extras) or (
@@ -263,13 +271,6 @@ class ChunkedDocumentProcessor:
             return [token] if finetune else ["<nUm>"]
 
         return []
-
-    # def selective_casefold_token(self, token: str) -> str:
-    #     """No longer selective casefolding, just normal casefolding. Too many
-    #     instances of genes made it through, so we casefold everything
-    #     to avoid loss of information.
-    #     """
-    #     return token.casefold()
 
     def process_document(self, doc: Doc) -> Tuple[List[List[str]], List[str]]:
         """Splits a spaCy doc into sentences."""
