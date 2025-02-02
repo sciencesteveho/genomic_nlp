@@ -134,6 +134,7 @@ class PrepareTrainingData:
             "https://current.geneontology.org/annotations/goa_human.gaf.gz",
             "goa_human.gaf.gz",
         ),
+        ("http://www.interactome-atlas.org/data/Lit-BM.tsv", "litbm.tsv"),
         # (
         #     "https://static-content.springer.com/esm/art%3A10.1038%2Fs42003-022-03831-w/MediaObjects/42003_2022_3831_MOESM4_ESM.xlsx",
         #     "sc_cop.xlsx",
@@ -149,6 +150,7 @@ class PrepareTrainingData:
         "goa": "goa_human.gaf",
         "go_mapper": "go_ids_to_gene_symbol.txt",
         "sc_cop": "sc_cops.txt",
+        "litbm": "litbm.tsv",
     }
 
     def __init__(self, output_dir: str = "./reference_files"):
@@ -164,22 +166,22 @@ class PrepareTrainingData:
         filtering`.
         """
         # download files
-        # self.download_reference_files()
+        self.download_reference_files()
 
         # Create and save individual graphs
-        # graphs = {
-        #     "coessential_pos": self.coessential_graph()[0],
-        #     "coessential_neg": self.coessential_graph()[1],
-        #     "opencell": self.opencell_graph(),
-        #     "sc_cop": self.sc_cop_graph(),
-        #     "hi_union": self.hi_union_graph(),
-        #     "string": self.physical_string_graph(),
-        #     "go": self.go_graph(),
-        # }
+        graphs = {
+            "coessential_pos": self.coessential_graph()[0],
+            "coessential_neg": self.coessential_graph()[1],
+            "opencell": self.opencell_graph(),
+            "sc_cop": self.sc_cop_graph(),
+            "hi_union": self.hi_union_graph(),
+            "string": self.physical_string_graph(),
+            "go": self.go_graph(),
+        }
 
         # Save individual graphs
-        # for name, graph in graphs.items():
-        #     self.save_graph(graph, f"{name}_graph.pkl")
+        for name, graph in graphs.items():
+            self.save_graph(graph, f"{name}_graph.pkl")
 
         # load individual graphs
         graphs: Dict[str, Any] = {
@@ -311,11 +313,17 @@ class PrepareTrainingData:
 
     def hi_union_graph(self) -> Set[Tuple[str, ...]]:
         """Get edges from the HI-union dataset."""
-        file_path = self.output_dir / self.FILENAMES["hi_union"]
+        hi_union_path = self.output_dir / self.FILENAMES["hi_union"]
+        litbm_path = self.output_dir / self.FILENAMES["litbm"]
 
         # get all ids for batch rename
         ensembl_ids = set()
-        with open(file_path, "r") as file:
+        with open(hi_union_path, "r") as file:
+            reader = csv.reader(file, delimiter="\t")
+            for row in reader:
+                ensembl_ids.update(row[:2])
+
+        with open(litbm_path, "r") as file:
             reader = csv.reader(file, delimiter="\t")
             for row in reader:
                 ensembl_ids.update(row[:2])
@@ -323,7 +331,7 @@ class PrepareTrainingData:
         # convert ensembl ids to gene symbols
         id_to_symbol = self.batch_ensembl_to_gene_symbol(ensembl_ids)
 
-        with open(file_path, "r") as file:
+        with open(hi_union_path, "r") as file:
             reader = csv.reader(file, delimiter="\t")
             edges = {
                 (
@@ -334,6 +342,23 @@ class PrepareTrainingData:
                 if id_to_symbol.get(row[0], "Unknown") != "Unknown"
                 and id_to_symbol.get(row[1], "Unknown") != "Unknown"
             }
+
+        # get lit_bm edges
+        with open(litbm_path, "r") as file:
+            reader = csv.reader(file, delimiter="\t")
+            litbm_edges = {
+                (
+                    id_to_symbol.get(row[0], "Unknown"),
+                    id_to_symbol.get(row[1], "Unknown"),
+                )
+                for row in reader
+                if id_to_symbol.get(row[0], "Unknown") != "Unknown"
+                and id_to_symbol.get(row[1], "Unknown") != "Unknown"
+            }
+
+        # add litbm to hi_union
+        # ensure no duplicates
+        edges |= litbm_edges
 
         return self.remove_duplicate_edges(edges)
 

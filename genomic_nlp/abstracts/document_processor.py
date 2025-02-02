@@ -189,6 +189,7 @@ class ChunkedDocumentProcessor:
         self.df = abstracts[["modified_abstracts", "year"]]
         self.nlp: Language = None
         self.spacy_model: str = ""
+        self.main_entities = self.genes | self.diseases
 
     def _make_directories(self) -> None:
         """Make directories for processing"""
@@ -353,17 +354,64 @@ class ChunkedDocumentProcessor:
         )
 
     @time_decorator(print_args=False)
+    def dedupe_gene_disease_tokens(self) -> None:
+        """Remove consecutive duplicates of gene or disease tokens that occur
+        due to normalization of entities that are also marked with abbreviation
+        of that entity.
+        E.g. "TP53 TP53" -> "TP53", "VEGFC (VEGFC)" -> "VEGFC"
+        """
+
+        def deduplicate_sentences_w2v(
+            sentences: List[List[str]],
+        ) -> List[List[str]]:
+            """Helper to dedupe for w2v, which consists of a list of list of
+            tokens.
+            """
+            new_sentences = []
+            for sent in sentences:
+                new_sent = []
+                prev_token = None
+                for token in sent:
+                    if token == prev_token and token in self.main_entities:
+                        continue
+                    new_sent.append(token)
+                    prev_token = token
+                new_sentences.append(new_sent)
+            return new_sentences
+
+        def deduplicate_tokens_finetune(tokens: List[str]) -> List[str]:
+            """Helper to dedupe for finetune, which consists of a list of
+            tokens.
+            """
+            new_tokens = []
+            prev_token = None
+            for token in tokens:
+                if token == prev_token and token in self.main_entities:
+                    continue
+                new_tokens.append(token)
+                prev_token = token
+            return new_tokens
+
+        tqdm.pandas(desc="Deduplicating repeated gene/disease tokens (w2v)")
+        self.df["processed_abstracts_w2v"] = self.df[
+            "processed_abstracts_w2v"
+        ].progress_apply(deduplicate_sentences_w2v)
+
+        tqdm.pandas(desc="Deduplicating repeated gene/disease tokens (finetune)")
+        self.df["processed_abstracts_finetune"] = self.df[
+            "processed_abstracts_finetune"
+        ].progress_apply(deduplicate_tokens_finetune)
+
+    @time_decorator(print_args=False)
     def remove_genes_and_diseases(self) -> None:
         """Remove gene symbols from tokens, for future n-gram generation. Only
         done for w2v.
         """
-        # combine genes and diseases into one set
-        tokens_for_removal = self.genes | self.diseases
 
         # helper function
         def remove_tokens(
             sentences: List[List[str]],
-            tokens_for_removal: Set[str] = tokens_for_removal,
+            tokens_for_removal: Set[str] = self.main_entities,
         ) -> List[List[str]]:
             """Remove gene symbols from a list of list of tokens."""
             return [
@@ -418,15 +466,9 @@ class ChunkedDocumentProcessor:
         logger.info("Excluding punctuation and replacing standalone numbers")
         self.exclude_symbols()
 
-        # additional processing for w2v: casefold and gene removal
-        # logger.info("Casefolding")
-        # self.df["processed_abstracts_w2v"] = self.df[
-        #     "processed_abstracts_w2v"
-        # ].progress_apply(
-        #     lambda sents: [[token.casefold() for token in sent] for sent in sents]
-        # )
-
-        # EDIT: casefolding now applied early, during tokenziation
+        # deduplicate gene and disease tokens
+        logger.info("Deduplicating gene and disease tokens")
+        self.dedupe_gene_disease_tokens()
 
         logger.info("Removing gene symbols and disease names from phraser training")
         self.remove_genes_and_diseases()
