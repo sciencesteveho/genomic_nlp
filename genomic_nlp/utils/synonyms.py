@@ -21,6 +21,7 @@ from flair.models import EntityMentionLinker  # type: ignore
 from flair.nn import Classifier  # type: ignore
 from tqdm import tqdm  # type: ignore
 
+from genomic_nlp.abstracts.gene_entity_normalization import replace_symbols
 from genomic_nlp.utils.normalize_provenance import load_flair_models
 
 
@@ -67,9 +68,9 @@ def create_disease_synonym_dictionary(
 
             # set disease identifier as key
             key = (
-                _replace_symbols(line[0]).casefold()
+                replace_symbols(line[0]).casefold()
                 if casefold
-                else _replace_symbols(line[0])
+                else replace_symbols(line[0])
             )
             synonyms[key] = set()
 
@@ -82,24 +83,9 @@ def create_disease_synonym_dictionary(
     return synonyms
 
 
-def _replace_symbols(name: str) -> str:
-    """Replace symbols in a string."""
-    REPLACE_SYMBOLS = {
-        "(": "",
-        ")": "",
-        ",": "",
-        '"': "",
-        "/": "_",
-    }
-
-    for symbol, replacement in REPLACE_SYMBOLS.items():
-        name = name.replace(symbol, replacement)
-    return name
-
-
 def formatter(name: str, casefold: bool = True) -> Union[str, List[str]]:
     """Format a string to be used as a key in a dictionary."""
-    name = _replace_symbols(name)
+    name = replace_symbols(name)
     name = name.casefold() if casefold else name
     return name.split("|") if "|" in name else name
 

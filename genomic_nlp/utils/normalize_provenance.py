@@ -188,7 +188,11 @@ def main() -> None:
     gda_provenance = "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/disease/Gene-RD-Provenance_V2.1_with_year.txt"
     gda_out = "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/disease/gda_normalized.txt"
     normalize_gda_provenance(
-        gda_provenance, tagger, gene_linker, disease_linker, gda_out
+        provenance=gda_provenance,
+        tagger=tagger,
+        gene_linker=gene_linker,
+        disease_linker=disease_linker,
+        out_file=gda_out,
     )
 
 
