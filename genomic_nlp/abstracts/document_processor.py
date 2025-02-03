@@ -239,7 +239,9 @@ class ChunkedDocumentProcessor:
         # remove extras in tokens
         if not finetune:
             # deal with specific cases
-            token = re.sub(r"[-/]", " ", token)  # replace '-' and '/' with space
+            token = re.sub(
+                r"[-/‐−]", " ", token
+            )  # replace '-' '‐' '−' and '/' with space
             token = re.sub(r"(\w),(\w)", r"\1 \2", token)  # replace ',' with '_'
             token = re.sub(r"(\w),\s+(\w)", r"\1 \2", token)  # replace ', ' with ' '
 
@@ -264,7 +266,7 @@ class ChunkedDocumentProcessor:
 
         # check if the token contains letters
         if re.search("[a-zA-Z]", token):
-            return token.split()
+            return [token]
 
         # check if there are numbers
         if re.search("[0-9]", token):
@@ -326,7 +328,9 @@ class ChunkedDocumentProcessor:
 
         # helper function for w2v
         def clean_sentences(sentences: List[List[str]]) -> List[List[str]]:
-            """Clean a list of list of tokens by excluding symbols and removing double spaces."""
+            """Clean a list of list of tokens by excluding symbols and removing
+            double spaces.
+            """
             cleaned_sentences = []
             for sent in sentences:
                 cleaned_sent = []
@@ -358,9 +362,32 @@ class ChunkedDocumentProcessor:
     def dedupe_gene_disease_tokens(self) -> None:
         """Remove consecutive duplicates of gene or disease tokens that occur
         due to normalization of entities that are also marked with abbreviation
-        of that entity.
-        E.g. "TP53 TP53" -> "TP53", "VEGFC (VEGFC)" -> "VEGFC"
+        of that entity. Removal is applied both to successive tokens (first) but
+        also to individual tokens that are repeated (second).
+
+        E.g.
+            "TP53", "TP53" -> "TP53"
+            "VEGFC (VEGFC)" -> "VEGFC"
+            "hiv_infections hiv_infections" -> "hiv_infections"
         """
+
+        def fix_repeated_entity_in_token(token: str) -> str:
+            """If 'token' is composed of multiple consecutive repeats of the
+            same entity then unify it to the single canonical form found in
+            self.main_entities.
+            """
+            # return token if it's in the main entities
+            if token in self.main_entities:
+                return token
+
+            # make regex pattern for repeated tokens
+            for ent in self.main_entities:
+                pattern = (
+                    f"^(?:{re.escape(ent)})+$"  # entire token is repeated blocks of ent
+                )
+                if re.match(pattern, token):
+                    return ent
+            return token
 
         def deduplicate_sentences_w2v(
             sentences: List[List[str]],
@@ -373,8 +400,12 @@ class ChunkedDocumentProcessor:
                 new_sent = []
                 prev_token = None
                 for token in sent:
+                    token = fix_repeated_entity_in_token(
+                        token
+                    )  # repeated-entity patterns inside the token
+
                     if token == prev_token and token in self.main_entities:
-                        continue
+                        continue  # check consecutive duplicates
                     new_sent.append(token)
                     prev_token = token
                 new_sentences.append(new_sent)
@@ -386,20 +417,24 @@ class ChunkedDocumentProcessor:
             """Helper to dedupe for finetune, which consists of a list of
             tokens.
             """
-            # flatten the list for downstream
+            # flatten first
             flat_tokens: List[str] = []
-            for token in tokens:
-                if isinstance(token, list):
-                    flat_tokens.extend(token)
+            for tok in tokens:
+                if isinstance(tok, list):
+                    flat_tokens.extend(tok)
                 else:
-                    flat_tokens.append(token)
+                    flat_tokens.append(tok)
 
             # dedupe
             new_tokens = []
             prev_token = None
             for token in flat_tokens:
+                token = fix_repeated_entity_in_token(
+                    token
+                )  # repeated-entity patterns inside the token
+
                 if token == prev_token and token in self.main_entities:
-                    continue
+                    continue  # check consecutive duplicates
                 new_tokens.append(token)
                 prev_token = token
             return new_tokens
