@@ -190,51 +190,80 @@ def main() -> None:
 
     broad_analogies = [
         # broader domain knowledge
-        ("genes", "rna", "dna", "expression"),
+        ("genes", "rna", "dna", "transcripts"),
         ("euchromatin", "closed", "open", "heterochromatin"),
-        ("h3k4me1", "silencer", "enhancer", "h3k9me3"),
-        ("h3k4me1", "promoter", "enhancer", "histone_h3_trimethyl_lys4"),
-        # ("exonic", "splice", "expressed", "intronic"),
+        ("exonic", "splice", "expressed", "intronic"),
         ("acetylation", "silencing", "activation", "deacetylation"),
-        # ("ligase", "unwind", "join", "helicase"),
-        ("g1-phase", "replication", "growth", "s-phase"),
+        ("ligase", "unwinding", "join", "helicase"),
+        # ("h3k4me1", "silencer", "enhancer", "h3k9me3"),
+        # ("h3k4me1", "promoter", "enhancer", "histone_h3_trimethyl_lys4"),
     ]
 
     interact_analogies = [
         # specific gene/gene protein/protein interactions
-        # ("notch1", "il2", "hes1", "il4"),
-        ("stat3", "ifng", "il6", "stat1"),
-        # ("brca1", "rad51", "bard1", "brca2"),
-        ("atm", "chk1", "chk2", "atr"),
-        # ("cdk4", "ccne1", "ccnd1", "cdk2"),
-        ("jak2", "stat1", "stat3", "jak1"),
-        # ("cd4", "mhci", "mhcii", "cd8"),
-        ("casp8", "apaf1", "fadd", "casp9"),
-        # ("notch", "vegf", "delta", "vegfr"),
-        # ("hdac1", "uhrf1", "sin3a", "dnmt1"),
     ]
 
     gda_analogies = [
         # gene-disease relationships
-        # ("mecp2", "fragile_x", "rett", "fmr1"),
-        # ("idua", "autosomal_recessive_polycystic", "mucopolysaccharidosis", "pkhd1"),
-        # ("hbb", "hemophilia", "sickle", "f8"),
-        # ("app", "huntington", "alzheimers", "htt"),
-        # ("capn3", "muscular_dystrophy_duchenne", "lgmd", "dmd"),
-        ("dmd", "spinal_muscular_atrophy", "muscular_dystrophy", "smn1"),
-        # ("smn1", "mapt", "spinal_muscular_atrophy", "tauopathies"),
-        # ("snca", "hemiplegic_migraine", "synucleinopathies", "cacna1a"),
+        ("app", "huntington", "alzheimers", "htt"),
+        ("capn3", "muscular_dystrophy_duchenne", "lgmd", "dmd"),
+        ("smn1", "mapt", "spinal_muscular_atrophy", "tauopathies"),
+        ("snca", "hemiplegic_migraine", "synucleinopathies", "cacna1a"),
         ("park7", "huntington", "htt", "parkinson"),
-        # ("abcd1", "mucopolysaccharidosis", "adrenoleukodystrophy", "idua"),
+        ("abcd1", "mucopolysaccharidosis", "adrenoleukodystrophy", "idua"),
         ("idua", "tay_sachs_disease", "mucopolysaccharidosis", "hexosaminidase"),
-        ("hbb", "hemophilia", "thalassemia", "f8"),
-        # ("tsc1", "neurofibromatosis", "tuberous_sclerosis", "nf1"),
+        ("tsc1", "neurofibromatosis", "tuberous_sclerosis", "nf1"),
     ]
 
     # test analogies
-    # for analogy in analogies:
-    #     test_analogy = (analogy[0], analogy[1], analogy[2])
-    #     compute_analogy(model, test_analogy, top_n=1)
+    for analogy in broad_analogies:
+        test_analogy = (analogy[0], analogy[1], analogy[2])
+        compute_analogy(model, test_analogy, top_n=1)
+
+    # broad
+    # codon - mRNA + tRNA ≈ anticodon
+    model.wv.most_similar(positive=["codon", "tRNA"], negative=["mRNA"], topn=5)
+
+    # phosphorylation - kinase + phosphatase ≈ dephosphorylation
+    model.wv.most_similar(
+        positive=["phosphorylation", "phosphatase"], negative=["kinase"], topn=5
+    )
+
+    # interact
+    # il10 activates stat3 as il6 activates tnf
+    model.wv.most_similar(positive=["il10", "il6"], negative=["stat3"], topn=5)
+
+    # atm activates chk1 as atr activates chk2
+    model.wv.most_similar(positive=["atm", "atr"], negative=["chek1"], topn=5)
+
+    # p53 -> cdkn1a (p21); RB1 -> E2F1
+    model.wv.most_similar(positive=["tp53", "e2f1"], negative=["cdkn1a"], topn=5)
+
+    # SMAD2/3 both interact downstream of TGF-beta receptor subunits
+    model.wv.most_similar(positive=["smad2", "tgfbr2"], negative=["tgfbr1"], topn=5)
+
+    # MYC-MAX and JUN-FOS are classic transcription factor dimers
+    model.wv.most_similar(positive=["myc", "fos"], negative=["max"], topn=5)
+
+    # gda
+    # htt is to huntington_disease as park7 is to parkinson
+    model.wv.most_similar(
+        positive=["huntington_disease", "park7"], negative=["htt"], topn=5
+    )
+
+    # hbb is to hemophilia as f9 is to thalassemia
+    model.wv.most_similar(
+        positive=["hbb", "hemophilia"], negative=["thalassemia"], topn=5
+    )
+
+    # fragile_x_syndrome is to fmr1 as rett is to mecp2
+    model.wv.most_similar(
+        positive=["mecp2", "fragile_x_syndrome"], negative=["rett"], topn=5
+    )
+
+    model.wv.most_similar(
+        positive=["brca1", "colon_cancer"], negative=["carcinoma_ductal_breast"], topn=5
+    )
 
     plot_analogies_2d(
         model=model,

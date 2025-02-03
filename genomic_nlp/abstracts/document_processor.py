@@ -239,7 +239,9 @@ class ChunkedDocumentProcessor:
         # remove extras in tokens
         if not finetune:
             # deal with specific cases
-            token = re.sub(r"[-/]", " ", token)  # replace '-' and '/' with space
+            token = re.sub(
+                r"[-/‐−]", " ", token
+            )  # replace '-' '‐' '−' and '/' with space
             token = re.sub(r"(\w),(\w)", r"\1 \2", token)  # replace ',' with '_'
             token = re.sub(r"(\w),\s+(\w)", r"\1 \2", token)  # replace ', ' with ' '
 
@@ -264,7 +266,7 @@ class ChunkedDocumentProcessor:
 
         # check if the token contains letters
         if re.search("[a-zA-Z]", token):
-            return token.split()
+            return [token]
 
         # check if there are numbers
         if re.search("[0-9]", token):
@@ -326,7 +328,9 @@ class ChunkedDocumentProcessor:
 
         # helper function for w2v
         def clean_sentences(sentences: List[List[str]]) -> List[List[str]]:
-            """Clean a list of list of tokens by excluding symbols and removing double spaces."""
+            """Clean a list of list of tokens by excluding symbols and removing
+            double spaces.
+            """
             cleaned_sentences = []
             for sent in sentences:
                 cleaned_sent = []
