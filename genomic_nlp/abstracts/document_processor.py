@@ -362,9 +362,45 @@ class ChunkedDocumentProcessor:
     def dedupe_gene_disease_tokens(self) -> None:
         """Remove consecutive duplicates of gene or disease tokens that occur
         due to normalization of entities that are also marked with abbreviation
-        of that entity.
-        E.g. "TP53 TP53" -> "TP53", "VEGFC (VEGFC)" -> "VEGFC"
+        of that entity. Removal is applied both to successive tokens (first) but
+        also to individual tokens that are repeated (second).
+
+        E.g.
+            "TP53", "TP53" -> "TP53"
+            "VEGFC (VEGFC)" -> "VEGFC"
+            "hiv_infections hiv_infections" -> "hiv_infections"
         """
+
+        def fix_repeated_entity_in_token(token: str) -> str:
+            """Detect if 'token' is composed of multiple repeats of some smaller
+            substring that itself might be a known entity. Example:
+            hiv_infectionshiv_infection" -> "hiv_infections"
+            if "hiv_infections" is in main_entities.
+            """
+            if token in self.main_entities:
+                return token
+
+            # handle space separated repeats
+            # e.g. "hiv_infections hiv_infections"
+            parts = token.split()
+            if len(parts) > 1 and all(part == parts[0] for part in parts):
+                candidate = parts[0]  # e.g. "hiv_infections"
+                if candidate in self.main_entities:
+                    return candidate
+
+            # handle concatenated repeats
+            # e.g. "hiv_infectionshiv_infections"
+            doubled = token + token
+            double_check = doubled.find(token, 1)
+            if double_check >= 0 and double_check < len(token):
+                sub = token[:double_check]
+                repeated = sub * (len(token) // len(sub))
+                if repeated == token and sub in self.main_entities:
+                    return sub
+
+            # if none of the above conditions are met, return token
+            # unchanged
+            return token
 
         def deduplicate_sentences_w2v(
             sentences: List[List[str]],
@@ -377,6 +413,10 @@ class ChunkedDocumentProcessor:
                 new_sent = []
                 prev_token = None
                 for token in sent:
+                    # repeated-entity patterns in the token
+                    token = fix_repeated_entity_in_token(token)
+
+                    # remove consecutive duplicates
                     if token == prev_token and token in self.main_entities:
                         continue
                     new_sent.append(token)
@@ -390,18 +430,22 @@ class ChunkedDocumentProcessor:
             """Helper to dedupe for finetune, which consists of a list of
             tokens.
             """
-            # flatten the list for downstream
+            # flatten first
             flat_tokens: List[str] = []
-            for token in tokens:
-                if isinstance(token, list):
-                    flat_tokens.extend(token)
+            for tok in tokens:
+                if isinstance(tok, list):
+                    flat_tokens.extend(tok)
                 else:
-                    flat_tokens.append(token)
+                    flat_tokens.append(tok)
 
             # dedupe
             new_tokens = []
             prev_token = None
             for token in flat_tokens:
+                # repeated-entity patterns
+                token = fix_repeated_entity_in_token(token)
+
+                # remove consecutive duplicates
                 if token == prev_token and token in self.main_entities:
                     continue
                 new_tokens.append(token)
