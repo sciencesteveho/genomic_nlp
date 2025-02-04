@@ -372,21 +372,34 @@ class ChunkedDocumentProcessor:
         """
 
         def fix_repeated_entity_in_token(token: str) -> str:
-            """If 'token' is composed of multiple consecutive repeats of the
-            same entity then unify it to the single canonical form found in
-            self.main_entities.
+            """Detect if 'token' is composed of multiple repeats of some smaller
+            substring that itself might be a known entity. Example:
+            hiv_infectionshiv_infection" -> "hiv_infections"
+            if "hiv_infections" is in main_entities.
             """
-            # return token if it's in the main entities
             if token in self.main_entities:
                 return token
 
-            # make regex pattern for repeated tokens
-            for ent in self.main_entities:
-                pattern = (
-                    f"^(?:{re.escape(ent)})+$"  # entire token is repeated blocks of ent
-                )
-                if re.match(pattern, token):
-                    return ent
+            # handle space separated repeats
+            # e.g. "hiv_infections hiv_infections"
+            parts = token.split()
+            if len(parts) > 1 and all(part == parts[0] for part in parts):
+                candidate = parts[0]  # e.g. "hiv_infections"
+                if candidate in self.main_entities:
+                    return candidate
+
+            # handle concatenated repeats
+            # e.g. "hiv_infectionshiv_infections"
+            doubled = token + token
+            double_check = doubled.find(token, 1)
+            if double_check >= 0 and double_check < len(token):
+                sub = token[:double_check]
+                repeated = sub * (len(token) // len(sub))
+                if repeated == token and sub in self.main_entities:
+                    return sub
+
+            # if none of the above conditions are met, return token
+            # unchanged
             return token
 
         def deduplicate_sentences_w2v(
@@ -400,12 +413,12 @@ class ChunkedDocumentProcessor:
                 new_sent = []
                 prev_token = None
                 for token in sent:
-                    token = fix_repeated_entity_in_token(
-                        token
-                    )  # repeated-entity patterns inside the token
+                    # repeated-entity patterns in the token
+                    token = fix_repeated_entity_in_token(token)
 
+                    # remove consecutive duplicates
                     if token == prev_token and token in self.main_entities:
-                        continue  # check consecutive duplicates
+                        continue
                     new_sent.append(token)
                     prev_token = token
                 new_sentences.append(new_sent)
@@ -429,12 +442,12 @@ class ChunkedDocumentProcessor:
             new_tokens = []
             prev_token = None
             for token in flat_tokens:
-                token = fix_repeated_entity_in_token(
-                    token
-                )  # repeated-entity patterns inside the token
+                # repeated-entity patterns
+                token = fix_repeated_entity_in_token(token)
 
+                # remove consecutive duplicates
                 if token == prev_token and token in self.main_entities:
-                    continue  # check consecutive duplicates
+                    continue
                 new_tokens.append(token)
                 prev_token = token
             return new_tokens
