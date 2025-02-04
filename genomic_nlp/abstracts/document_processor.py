@@ -13,6 +13,7 @@ import logging
 import re
 from typing import List, Set, Tuple, Union
 
+import ahocorasick  # type: ignore
 import pandas as pd  # type: ignore
 import pybedtools  # type: ignore
 import spacy  # type: ignore
@@ -57,6 +58,49 @@ def load_normalized_disease_names(ctd: str) -> Set[str]:
             diseases.add(replace_symbols(line[1]).casefold())
 
     return diseases
+
+
+def build_automaton(entities: Set[str]) -> ahocorasick.Automaton:
+    """Build an Aho-Corasick automaton to match entity strings for
+    normalization.
+    """
+    automaton = ahocorasick.Automaton()
+    for entity in entities:
+        automaton.add_word(entity, entity)
+    automaton.make_automaton()
+    return automaton
+
+
+def decompose_token_with_automaton(
+    token: str, automaton: ahocorasick.Automaton, allow_spaces: bool = True
+) -> List[str]:
+    """Returns a list of entities that cover `token` exactly from start to
+    finish.
+
+    If `allow_spaces` is `False` we remove internal spaces before doing the
+    matching. E.g. "hiv_infections hiv_infections" =>
+    "hiv_infectionshiv_infections".
+    """
+    # remove spaces if specified
+    intermediate = token if allow_spaces else token.replace(" ", "")
+
+    matches = list(automaton.iter(intermediate))
+    if not matches:
+        return []
+
+    coverage: List[str] = []
+    prev_end = -1
+    for end_i, found_ent in matches:
+        start_i = end_i - len(found_ent) + 1
+
+        # overlap or gap check
+        if start_i != prev_end + 1:
+            coverage.clear()
+            break
+        coverage.append(found_ent)
+        prev_end = end_i
+
+    return coverage if coverage and prev_end == len(intermediate) - 1 else []
 
 
 class ChunkedDocumentProcessor:
@@ -190,6 +234,9 @@ class ChunkedDocumentProcessor:
         self.nlp: Language = None
         self.spacy_model: str = ""
         self.main_entities = self.genes | self.diseases
+
+        # build automaton
+        self.automaton = build_automaton(self.main_entities)
 
     def _make_directories(self) -> None:
         """Make directories for processing"""
@@ -371,37 +418,6 @@ class ChunkedDocumentProcessor:
             "hiv_infections hiv_infections" -> "hiv_infections"
         """
 
-        def fix_repeated_entity_in_token(token: str) -> str:
-            """Detect if 'token' is composed of multiple repeats of some smaller
-            substring that itself might be a known entity. Example:
-            hiv_infectionshiv_infection" -> "hiv_infections"
-            if "hiv_infections" is in main_entities.
-            """
-            if token in self.main_entities:
-                return token
-
-            # handle space separated repeats
-            # e.g. "hiv_infections hiv_infections"
-            parts = token.split()
-            if len(parts) > 1 and all(part == parts[0] for part in parts):
-                candidate = parts[0]  # e.g. "hiv_infections"
-                if candidate in self.main_entities:
-                    return candidate
-
-            # handle concatenated repeats
-            # e.g. "hiv_infectionshiv_infections"
-            doubled = token + token
-            double_check = doubled.find(token, 1)
-            if double_check >= 0 and double_check < len(token):
-                sub = token[:double_check]
-                repeated = sub * (len(token) // len(sub))
-                if repeated == token and sub in self.main_entities:
-                    return sub
-
-            # if none of the above conditions are met, return token
-            # unchanged
-            return token
-
         def deduplicate_sentences_w2v(
             sentences: List[List[str]],
         ) -> List[List[str]]:
@@ -413,14 +429,37 @@ class ChunkedDocumentProcessor:
                 new_sent = []
                 prev_token = None
                 for token in sent:
-                    # repeated-entity patterns in the token
-                    token = fix_repeated_entity_in_token(token)
+                    # decompose token using automaton
+                    matched_ents = decompose_token_with_automaton(
+                        token=token, automaton=self.automaton, allow_spaces=False
+                    )
 
-                    # remove consecutive duplicates
-                    if token == prev_token and token in self.main_entities:
-                        continue
-                    new_sent.append(token)
-                    prev_token = token
+                    if matched_ents:
+                        # check if coverage is same, or distinct
+                        unique_ents = set(matched_ents)
+                        if len(unique_ents) == 1:
+                            # e.g. ["hiv_infections", "hiv_infections"]
+                            ent = matched_ents[0]
+                            # dupe check
+                            if ent == prev_token and ent in self.main_entities:
+                                continue
+                            new_sent.append(ent)
+                            prev_token = ent
+                        else:
+                            # e.g. ["hiv_infections", "coronaviridae_infections"]
+                            # keep both
+                            for ent in matched_ents:
+                                if ent == prev_token and ent in self.main_entities:
+                                    continue
+                                new_sent.append(ent)
+                                prev_token = ent
+                    else:
+                        # keep original token
+                        if token == prev_token and token in self.main_entities:
+                            continue
+                        new_sent.append(token)
+                        prev_token = token
+
                 new_sentences.append(new_sent)
             return new_sentences
 
@@ -438,18 +477,36 @@ class ChunkedDocumentProcessor:
                 else:
                     flat_tokens.append(tok)
 
-            # dedupe
             new_tokens = []
             prev_token = None
             for token in flat_tokens:
-                # repeated-entity patterns
-                token = fix_repeated_entity_in_token(token)
+                matched_ents = decompose_token_with_automaton(
+                    token=token, automaton=self.automaton, allow_spaces=False
+                )
 
-                # remove consecutive duplicates
-                if token == prev_token and token in self.main_entities:
-                    continue
-                new_tokens.append(token)
-                prev_token = token
+                if matched_ents:
+                    unique_ents = set(matched_ents)
+                    if len(unique_ents) == 1:
+                        # repeated same entity
+                        ent = matched_ents[0]
+                        if ent == prev_token and ent in self.main_entities:
+                            continue
+                        new_tokens.append(ent)
+                        prev_token = ent
+                    else:
+                        # distinct entities
+                        for ent in matched_ents:
+                            if ent == prev_token and ent in self.main_entities:
+                                continue
+                            new_tokens.append(ent)
+                            prev_token = ent
+                else:
+                    # keep original token
+                    if token == prev_token and token in self.main_entities:
+                        continue
+                    new_tokens.append(token)
+                    prev_token = token
+
             return new_tokens
 
         tqdm.pandas(desc="Deduplicating repeated gene/disease tokens (w2v)")
