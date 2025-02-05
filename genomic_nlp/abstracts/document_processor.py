@@ -55,7 +55,7 @@ def load_normalized_disease_names(ctd: str) -> Set[str]:
                 continue
 
             # set disease identifier as key
-            diseases.add(replace_symbols(line[1]).casefold())
+            diseases.add(replace_symbols(line[0]).casefold())
 
     return diseases
 
