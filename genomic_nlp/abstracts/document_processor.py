@@ -84,22 +84,35 @@ def decompose_token_with_automaton(
     # remove spaces if specified
     intermediate = token if allow_spaces else token.replace(" ", "")
 
-    matches = list(automaton.iter(intermediate))
-    if not matches:
+    raw_matches = list(automaton.iter(intermediate))
+    if not raw_matches:
         return []
+
+    # sort left-to-right by end index
+    sorted_matches = sorted(raw_matches, key=lambda x: x[0])
 
     coverage: List[str] = []
     prev_end = -1
-    for end_i, found_ent in matches:
+    for i, (end_i, found_ent) in enumerate(sorted_matches):
         start_i = end_i - len(found_ent) + 1
 
-        # overlap or gap check
-        if start_i != prev_end + 1:
+        if i == 0 and start_i != 0:
+            # coverage fails because it doesn't start at index 0
             coverage.clear()
             break
+
+        # if new match overlaps previous coverage, skip it
+        if start_i <= prev_end:
+            continue
+
+        if prev_end != -1 and start_i != prev_end + 1:
+            coverage.clear()
+            break
+
         coverage.append(found_ent)
         prev_end = end_i
 
+    # final check: must end exactly at the last char
     return coverage if coverage and prev_end == len(intermediate) - 1 else []
 
 
@@ -122,8 +135,6 @@ class ChunkedDocumentProcessor:
         Perform tokenization on all abstracts.
     setup_pipeline:
         Set up the spaCy pipeline.
-    custom_lemmatize:
-        Custom lemmatization for tokens.
     reconstruct_documents:
         Reconstruct documents from processed sentences.
     exclude_punctuation_replace_standalone_numbers:
@@ -169,7 +180,6 @@ class ChunkedDocumentProcessor:
         "!",
         "''",
         "+",
-        "'s",
         "?",
         "@",
         "**",
@@ -230,13 +240,16 @@ class ChunkedDocumentProcessor:
         for gene in ["mice", "bad", "insulin", "camp", "plasminogen", "ski"]:
             self.genes.remove(gene)
 
-        self.df = abstracts[["modified_abstracts", "year"]]
         self.nlp: Language = None
         self.spacy_model: str = ""
         self.main_entities = self.genes | self.diseases
 
         # build automaton
         self.automaton = build_automaton(self.main_entities)
+
+        # initialize dataframe
+        # self.df = abstracts[["modified_abstracts", "year"]]
+        self.df = pd.read_pickle(f"{root_dir}/data/abstracts_intermediate.pkl")
 
     def _make_directories(self) -> None:
         """Make directories for processing"""
@@ -255,11 +268,6 @@ class ChunkedDocumentProcessor:
 
         self.nlp = spacy.load(self.spacy_model)
 
-        # add entity ruler for genes
-        ruler = self.nlp.add_pipe("entity_ruler", before="ner")
-        gene_patterns = [{"label": "GENE", "pattern": gene} for gene in self.genes]
-        ruler.add_patterns(gene_patterns)
-
         # add sentencizer if not present
         if "sentencizer" not in self.nlp.pipe_names:
             self.nlp.add_pipe("sentencizer", first=True)
@@ -269,15 +277,6 @@ class ChunkedDocumentProcessor:
         self.nlp.disable_pipes(*disable_pipes)
 
         logger.info(f"Pipeline components: {self.nlp.pipe_names}")
-
-    def custom_lemmatize(self, token: Token, lemmatize: bool = True) -> str:
-        """Custom token processing. Only lemmatize tokens that are not
-        recognized as entities via NER.
-        """
-        if token.ent_type_ in ["ENTITY", "GENE"]:
-            return token.text
-        else:
-            return token.lemma_ if lemmatize else token.text
 
     def replace_symbol_tokens(self, token: str, finetune: bool = False) -> List[str]:
         """Replace symbols with an empty string. Replace standalone numbers with
@@ -323,19 +322,9 @@ class ChunkedDocumentProcessor:
 
     def process_document(self, doc: Doc) -> Tuple[List[List[str]], List[str]]:
         """Splits a spaCy doc into sentences."""
-        doc_sentences_w2v = []
-        doc_tokens_finetune = []
-
-        for sent in doc.sents:
-            sent_tokens_w2v = []
-            for token in sent:
-                token_w2v = self.custom_lemmatize(token, lemmatize=True)
-                token_ft = token.text
-                sent_tokens_w2v.append(token_w2v)
-                doc_tokens_finetune.append(token_ft)
-            doc_sentences_w2v.append(sent_tokens_w2v)
-
-        return doc_sentences_w2v, doc_tokens_finetune
+        return [[token.text for token in sent] for sent in doc.sents], [
+            token.text for token in doc
+        ]
 
     @time_decorator(print_args=False)
     def tokenize(self) -> None:
@@ -572,16 +561,19 @@ class ChunkedDocumentProcessor:
     def processing_pipeline(self) -> None:
         """Run the NLP pipeline for finetuning."""
         # setup spaCy pipeline
-        logger.info("Setting up spaCy pipeline")
-        self.setup_pipeline()
+        # logger.info("Setting up spaCy pipeline")
+        # self.setup_pipeline()
 
-        # tokenization and NER
-        logger.info("Tokenizing and NER")
-        self.tokenize()
+        # # tokenization and NER
+        # logger.info("Tokenizing and NER")
+        # self.tokenize()
 
-        # exclude punctuation and replace standalone numbers
-        logger.info("Excluding punctuation and replacing standalone numbers")
-        self.exclude_symbols()
+        # # exclude punctuation and replace standalone numbers
+        # logger.info("Excluding punctuation and replacing standalone numbers")
+        # self.exclude_symbols()
+
+        # # save intermediate for later
+        # self.df.to_pickle(f"{self.root_dir}/data/abstracts_intermediate.pkl")
 
         # deduplicate gene and disease tokens
         logger.info("Deduplicating gene and disease tokens")
@@ -595,7 +587,7 @@ class ChunkedDocumentProcessor:
 def main() -> None:
     """Main function"""
     parser = argparse.ArgumentParser()
-    parser.add_argument("--chunk", type=str, required=True)
+    parser.add_argument("--chunk", type=str, default=0)
     parser.add_argument(
         "--root_dir",
         type=str,
@@ -653,6 +645,9 @@ def main() -> None:
         genes=genes,
         diseases=diseases,
     )
+
+    # debugging issues with t
+    # df = pd.read_pickle("abstracts_intermediate.pkl")
 
     # run processing pipeline
     documentProcessor.processing_pipeline()
