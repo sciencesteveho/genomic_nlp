@@ -169,7 +169,7 @@ class ChunkedDocumentProcessor:
         "!",
         "''",
         "+",
-        "'s",
+        "'",
         "?",
         "@",
         "**",
@@ -429,6 +429,7 @@ class ChunkedDocumentProcessor:
                 new_sent = []
                 prev_token = None
                 for token in sent:
+                    print("DEBUG final token:", repr(token))
                     # decompose token using automaton
                     matched_ents = decompose_token_with_automaton(
                         token=token, automaton=self.automaton, allow_spaces=False
@@ -578,6 +579,9 @@ class ChunkedDocumentProcessor:
         # tokenization and NER
         logger.info("Tokenizing and NER")
         self.tokenize()
+
+        # save intermediate for later
+        self.df.to_pickle(f"{self.root_dir}/data/abstracts_intermediate.pkl")
 
         # exclude punctuation and replace standalone numbers
         logger.info("Excluding punctuation and replacing standalone numbers")
