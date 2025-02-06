@@ -88,14 +88,18 @@ def decompose_token_with_automaton(
     if not raw_matches:
         return []
 
-    # sort left-to-right by end index
-    sorted_matches = sorted(raw_matches, key=lambda x: x[0])
+    # convert each match from (end_i, found_ent) -> (start_i, end_i, found_ent)
+    indexed_matches = []
+    for end_i, found_ent in raw_matches:
+        start_i = end_i - len(found_ent) + 1
+        indexed_matches.append((start_i, end_i, found_ent))
+
+    # sort left to right by start_i so we pick up bigger leftmost matches first
+    indexed_matches.sort(key=lambda x: x[0])
 
     coverage: List[str] = []
     prev_end = -1
-    for i, (end_i, found_ent) in enumerate(sorted_matches):
-        start_i = end_i - len(found_ent) + 1
-
+    for i, (start_i, end_i, found_ent) in enumerate(indexed_matches):
         if i == 0 and start_i != 0:
             # coverage fails because it doesn't start at index 0
             coverage.clear()
@@ -105,6 +109,7 @@ def decompose_token_with_automaton(
         if start_i <= prev_end:
             continue
 
+        # if there's a gap bigger than 1 char, coverage breaks
         if prev_end != -1 and start_i != prev_end + 1:
             coverage.clear()
             break
