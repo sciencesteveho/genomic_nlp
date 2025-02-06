@@ -1,3 +1,4 @@
+# sourcery skip: name-type-suffix
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
@@ -21,8 +22,10 @@ import numpy as np
 import pybedtools  # type: ignore
 from scipy.stats import t  # type: ignore
 from scipy.stats import ttest_rel  # type: ignore
+from tqdm import tqdm  # type: ignore
 
 from genomic_nlp.utils.common import gene_symbol_from_gencode
+from genomic_nlp.utils.common import hgnc_ncbi_genes
 from genomic_nlp.visualization import set_matplotlib_publication_parameters
 
 
@@ -36,6 +39,128 @@ def gencode_genes(gtf: str) -> Set[str]:
 def sigmoid(x: np.ndarray) -> np.ndarray:
     """Take the sigmoid of x."""
     return 1 / (1 + np.exp(-x))
+
+
+def add_significance_bar(
+    ax: plt.Axes,
+    x1: float,
+    x2: float,
+    y: float,
+    p_value: float,
+    bar_height: float = 0.5,
+    text_offset: float = -0.65,
+) -> None:
+    """Add a bar with p-value significance between two boxplots."""
+    # draw vertical lines that connect to horizontal bar
+    ax.plot([x1, x1], [y, y + bar_height], color="black", lw=0.5)
+    ax.plot([x2, x2], [y, y + bar_height], color="black", lw=0.5)
+    ax.plot([x1, x2], [y + bar_height, y + bar_height], color="black", lw=0.5)
+
+    # format the p-value for display
+    if p_value < 0.001:
+        p_text = "***"
+    elif p_value < 0.01:
+        p_text = "**"
+    elif p_value < 0.05:
+        p_text = "*"
+    else:
+        p_text = "ns"  # not significant
+
+    # add significance text
+    ax.text(
+        (x1 + x2) * 0.5,
+        y + bar_height + text_offset,
+        p_text,
+        ha="center",
+        va="bottom",
+        fontsize=7,
+    )
+
+
+def plot_embedding_quality(
+    sim_1: np.ndarray, sim_2: np.ndarray, comparison: str = "GO"
+) -> None:
+    """Plot the quality of the model's embeddings."""
+    # get p-value
+    t_stat, p_value = ttest_rel(sim_1, sim_2)
+    if p_value == 0:
+        p_value_title = f"$p$ < {sys.float_info.min:.2e}"
+    else:
+        p_value_title = f"$p$ = {p_value:.4e}"
+
+    if comparison == "GO":
+        colors = ["#CAD178", "#4B7F52"]
+        title = f"GO pair context probabilities\n$t$ = {t_stat:.2f}, {p_value_title}"
+    elif comparison == "coessential":
+        colors = ["#78aad1", "#4b557f"]
+        title = f"Coessential pair context probabilities\n$t$ = {t_stat:.2f}, {p_value_title}"
+    else:
+        raise ValueError(
+            f"Unknown comparison: {comparison}. Must be 'GO' or 'coessential'."
+        )
+
+    # prepare the plot
+    fig, ax = plt.subplots(constrained_layout=True)
+
+    # create violin plots
+    violin_parts = ax.violinplot(
+        [sim_1, sim_2],
+        positions=[1, 2],
+        widths=0.8,
+        showmeans=False,
+        showextrema=False,
+        showmedians=True,
+    )
+
+    # customize visuals
+    for i, pc in enumerate(violin_parts["bodies"]):  # type: ignore
+        pc.set_facecolor(colors[i])
+        pc.set_edgecolor("black")
+        pc.set_alpha(0.7)
+        pc.set_linewidth(0.5)
+
+    # customize median lines
+    for partname in ("cmedians",):
+        vp = violin_parts[partname]
+        vp.set_edgecolor("black")
+        vp.set_linewidth(0.5)
+
+    # add internal boxplot
+    boxprops = dict(linestyle="-", linewidth=0.5, color="black")
+    whiskerprops = dict(linestyle="-", linewidth=0.5, color="black")
+    medianprops = dict(linestyle="-", linewidth=0.5, color="black")
+
+    ax.boxplot(
+        [sim_1, sim_2],
+        positions=[1, 2],
+        widths=0.05,
+        whiskerprops=whiskerprops,
+        boxprops=boxprops,
+        showfliers=False,
+    )
+
+    # adjust boxplot line width
+    for line in ax.get_lines():
+        line.set_linewidth(0.5)
+
+    ax.set_xticks([1, 2])
+    ax.set_xticklabels(["2023", "2003"])
+    ax.set_ylabel("Probability")
+    ax.set_title(title)
+
+    # add significance bar
+    y_max = max(max(sim_1), max(sim_2))
+    add_significance_bar(ax, 1, 2, y_max + 0.45, p_value)
+
+    plt.tight_layout()
+    fig.set_size_inches(1.2, 1.95)
+    plt.savefig(
+        f"{comparison}_dotprod.png",
+        dpi=450,
+        bbox_inches="tight",
+        pad_inches=0.02,
+    )
+    plt.close(fig)
 
 
 def prepare_gene_matrices(gv: Dict[str, Dict[str, np.ndarray]]) -> Tuple:
@@ -61,7 +186,7 @@ def get_context_probabilities(
     input_matrix: np.ndarray,
     output_matrix: np.ndarray,
     sigmoid_transform: bool = False,
-):
+) -> Tuple[np.ndarray, np.ndarray]:
     """Get the context probabilities for positive and random pairs.
 
     Args:
@@ -83,15 +208,12 @@ def get_context_probabilities(
     gene2_indices = gene_indices[:, 1]
 
     # compute positive scores
-    positive_vec1 = input_matrix[gene1_indices]  # Shape: (num_pairs, vector_dim)
-    positive_vec2 = output_matrix[gene2_indices]  # Shape: (num_pairs, vector_dim)
-    positive_scores = np.einsum("ij,ij->i", positive_vec1, positive_vec2)  # Dot product
+    positive_vec1 = input_matrix[gene1_indices]
+    positive_vec2 = output_matrix[gene2_indices]
+    positive_scores = np.einsum("ij,ij->i", positive_vec1, positive_vec2)
 
     if sigmoid_transform:
         positive_scores = sigmoid(positive_scores)
-
-    # prepare for random gene selection
-    all_gene_indices = np.arange(len(genes))
 
     # for each pair, exclude gene1 and gene2 from possible random genes
     # create a mask where valid genes are True
@@ -106,7 +228,7 @@ def get_context_probabilities(
     random_offsets = np.random.randint(0, valid_counts)
 
     # get the indices of valid random genes
-    valid_gene_indices = np.argsort(~mask, axis=1)  # Sort True values first
+    valid_gene_indices = np.argsort(~mask, axis=1)  # sort true values first
     random_gene_indices = valid_gene_indices[np.arange(num_pairs), random_offsets]
 
     # compute random scores
@@ -120,8 +242,8 @@ def get_context_probabilities(
 
 
 def context_probability_experiment(
-    model_name, gv, positive_pairs, num_runs=5, sigmoid_transform=False
-):
+    model_name, gv, positive_pairs, num_runs=5, samples=10000, sigmoid_transform=False
+) -> Tuple[np.ndarray, np.ndarray]:
     """Run the context probability analysis for a given model n times and
     calculate statistical significance.
 
@@ -138,13 +260,16 @@ def context_probability_experiment(
     genes, gene_to_idx, input_matrix, output_matrix = prepare_gene_matrices(gv)
     all_t_stats = []
     all_p_values = []
-    aggregated_positive_scores = []
-    aggregated_random_scores = []
+    aggregated_positive_scores: List[float] = []
+    aggregated_random_scores: List[float] = []
 
     for i in range(num_runs):
+        # resample positive pairs
+        sampled_pairs = random.sample(positive_pairs, samples)
+
         print(f"Run {i + 1}/{num_runs} for {model_name}")
         positive_scores, random_scores = get_context_probabilities(
-            positive_pairs,
+            sampled_pairs,
             genes,
             gene_to_idx,
             input_matrix,
@@ -188,49 +313,42 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--model1",
         type=str,
-        required=True,
         help="Path to the first Word2Vec model.",
         default="word2vec_300_dimensions_2023.model",
     )
     parser.add_argument(
         "--model2",
         type=str,
-        required=True,
         help="Path to the second Word2Vec model.",
         default="word2vec_300_dimensions_2003.model",
     )
     parser.add_argument(
         "--coess",
         type=str,
-        required=True,
         help="Path to the coessential pairs file.",
-        default="coessential_pairs.txt",
+        default="/Users/steveho/genomic_nlp/development/training_data/coessential_pairs.txt",
     )
     parser.add_argument(
         "--gencode",
         type=str,
-        required=True,
         help="Path to the gencode GTF file.",
         default="gencode.v45.basic.annotation.gtf",
     )
     parser.add_argument(
         "--hgnc",
         type=str,
-        required=True,
         help="Path to the HGNC gene file.",
         default="hgnc_complete_set.txt",
     )
     parser.add_argument(
         "--ncbi",
         type=str,
-        required=True,
         help="Path to the NCBI gene file.",
         default="ncbi_genes.tsv",
     )
     parser.add_argument(
         "--go",
         type=str,
-        required=True,
         help="Path to the GO graph file.",
         default="go_graph.pkl",
     )
@@ -259,19 +377,30 @@ def main() -> None:
        pairs where a dataset pair is the top hit
     4. We plot ROC
     """
-    # parse arguments
-    args = parse_arguments()
+    set_matplotlib_publication_parameters()
+    # # parse arguments
+    # args = parse_arguments()
 
-    # set runs and random seed
-    num_runs = args.num_runs
-    random.seed(args.seed)
-    np.random.seed(args.seed)
+    # # set runs and random seed
+    # num_runs = args.num_runs
+    # random.seed(args.seed)
+    # np.random.seed(args.seed)
 
-    # gencode = gencode_genes(gtf="gencode.v45.basic.annotation.gtf")
-    # hgnc = hgnc_ncbi_genes("hgnc_complete_set.txt", hgnc=True)
-    # ncbi = hgnc_ncbi_genes("ncbi_genes.tsv")
-    # genes = gencode.union(hgnc).union(ncbi)
-    # genes = {gene.casefold() for gene in genes}
+    num_runs = 5
+    random.seed(42)
+    np.random.seed(42)
+
+    go_graph_file = "go_graph.pkl"
+    coess = "/Users/steveho/genomic_nlp/development/training_data/coessential_pairs.txt"
+    model1_path = "word2vec_300_dimensions_2023.model"
+    model2_path = "word2vec_300_dimensions_2003.model"
+
+    # load genes
+    gencode = gencode_genes(gtf="gencode.v45.basic.annotation.gtf")
+    hgnc = hgnc_ncbi_genes("hgnc_complete_set.txt", hgnc=True)
+    ncbi = hgnc_ncbi_genes("ncbi_genes.tsv")
+    genes = gencode.union(hgnc).union(ncbi)
+    genes = {gene.casefold() for gene in genes}
 
     with open(go_graph_file, "rb") as file:
         go = pickle.load(file)
@@ -317,171 +446,71 @@ def main() -> None:
     common_genes = set(gv1.keys()).intersection(gv2.keys())
     print(f"Common genes in both models: {len(common_genes)}")
 
-    # read coessential pairs and retain only those present in both models
-    # print("Filtering coessential pairs present in both models...")
-    # pairs = set()
-    # with open(coess, "r") as file:
-    #     reader = csv.reader(file, delimiter="\t")
-    #     for line in reader:
-    #         if len(line) < 3:
-    #             continue  # Skip malformed lines
-    #         gene_1, gene_2, relation = line
-    #         gene_1_cf = gene_1.casefold()
-    #         gene_2_cf = gene_2.casefold()
-    #         if gene_1_cf in common_genes and gene_2_cf in common_genes:
-    #             pairs.add((gene_1_cf, gene_2_cf, relation))
-
-    # print(f"Total coessential pairs after filtering: {len(pairs)}")
-
     # filter go pairs and retain only those present in both models
     print("Filtering go pairs present in both models...")
-    pairs = set()
-    for gene1, gene2 in go:
-        if gene1 in common_genes and gene2 in common_genes:
-            pairs.add((gene1, gene2))
-
-    # extract positive pairs
-    # positive_pairs = [
-    #     (gene1, gene2) for gene1, gene2, relation in pairs if relation.lower() == "pos"
-    # ]
-    # print(f"Total positive pairs: {len(positive_pairs)}")
+    pairs = {
+        (gene1, gene2)
+        for gene1, gene2 in go
+        if gene1 in common_genes and gene2 in common_genes
+    }
     positive_pairs = list(pairs)
-    positive_pairs = random.sample(positive_pairs, 500000)
 
     # run analysis for both models with sigmoid transformation
     print("Starting analysis for Model 1...")
-    m1_pos, m1_random = context_probability_experiment(
-        "Model1", gv1, positive_pairs, num_runs=num_runs, sigmoid_transform=False
+    go_2023, _ = context_probability_experiment(
+        "Model1", gv1, positive_pairs, samples=10000
     )
 
     print("Starting analysis for Model 2...")
-    m2_pos, m2_random = context_probability_experiment(
-        "Model2", gv2, positive_pairs, num_runs=num_runs, sigmoid_transform=False
+    go_2003, _ = context_probability_experiment(
+        "Model2", gv2, positive_pairs, samples=10000
+    )
+    # plot embedding quality
+    plot_embedding_quality(
+        sim_1=go_2023,
+        sim_2=go_2003,
+        comparison="GO",
+    )
+
+    # read coessential pairs and retain only those present in both models
+    print("Filtering coessential pairs present in both models...")
+    coess_pairs = set()
+    with open(coess, "r") as file:
+        reader = csv.reader(file, delimiter="\t")
+        for line in reader:
+            if len(line) < 3:
+                continue
+            gene_1, gene_2, relation = line
+            gene_1_cf = gene_1.casefold()
+            gene_2_cf = gene_2.casefold()
+            if gene_1_cf in common_genes and gene_2_cf in common_genes:
+                coess_pairs.add((gene_1_cf, gene_2_cf, relation))
+
+    print(f"Total coessential pairs after filtering: {len(pairs)}")
+
+    # extract positive pairs
+    coess_positive_pairs = [
+        (gene1, gene2)
+        for gene1, gene2, relation in coess_pairs
+        if relation.lower() == "pos"
+    ]
+    print(f"Total positive pairs: {len(coess_positive_pairs)}")
+
+    # run analysis for both models with sigmoid transformation
+    print("Starting analysis for Model 1...")
+    coess_2023, _ = context_probability_experiment(
+        "Model1", gv1, coess_positive_pairs, sigmoid_transform=False
+    )
+
+    print("Starting analysis for Model 2...")
+    coess_2003, _ = context_probability_experiment(
+        "Model2", gv2, coess_positive_pairs, sigmoid_transform=False
     )
 
     print("Analysis completed for both models.")
-
     set_matplotlib_publication_parameters()
-
-    positive_sims = m1_pos
-    random_sims = m1_random
-    model_year = 2023
-
-    # positive_sims = m2_pos
-    # random_sims = m2_random
-    # model_year = 2003
-
-    t_stat, p_value = ttest_rel(positive_sims, random_sims)
-    if p_value == 0:
-        p_value_str = f"p < {sys.float_info.min:.2e}"
-    else:
-        p_value_str = f"p = {p_value:.4e}"
-
-    # prepare the plot
-    fig, ax = plt.subplots(constrained_layout=True)
-    colors = ["#D43F3A", "#5CB85C"]  # Red for positive_sims, Green for random_sims
-
-    # create violin plots
-    violin_parts = ax.violinplot(
-        [positive_sims, random_sims],
-        positions=[1, 2],
-        widths=0.8,  # adjust the width of the violins
-        showmeans=False,
-        showextrema=False,
-        showmedians=True,
+    plot_embedding_quality(
+        sim_1=coess_2023,
+        sim_2=coess_2003,
+        comparison="coessential",
     )
-
-    # customize the violins
-    for i, pc in enumerate(violin_parts["bodies"]):
-        pc.set_facecolor(colors[i])
-        pc.set_edgecolor("black")
-        pc.set_alpha(0.7)
-
-    # customize median lines
-    for partname in ("cmedians",):
-        vp = violin_parts[partname]
-        vp.set_edgecolor("black")
-        vp.set_linewidth(1.5)
-
-    # add box plots inside violins
-    boxprops = dict(linestyle="-", linewidth=1, color="black")
-    whiskerprops = dict(linestyle="-", linewidth=1, color="black")
-    medianprops = dict(linestyle="-", linewidth=1, color="black")
-
-    ax.boxplot(
-        [positive_sims, random_sims],
-        positions=[1, 2],
-        widths=0.05,  # Width of the boxes
-        whiskerprops=whiskerprops,
-        boxprops=boxprops,
-        medianprops=medianprops,
-        showfliers=False,
-    )
-
-    # # customize box colors
-    # colors = ["#4C72B0", "#55A868"]
-    # for patch, color in zip(bp["boxes"], colors):
-    #     patch.set_facecolor(color)
-
-    # # set labels and title
-    # ax.set_xticks([1, 2])
-    # ax.set_xticklabels(["Coessential", "Random"])
-    # ax.set_ylabel("Probability")
-    # ax.set_title(
-    #     f"Comparison of context probabilities\nModel through year {model_year}\nt = {t_stat:.2f}, {p_value_str}"
-    # )
-
-    ax.set_xticks([1, 2])
-    ax.set_xticklabels(["GO", "Random"])
-    ax.set_ylabel("Probability")
-    ax.set_title(
-        f"Comparison of context probabilities\nModel through year {model_year}\nt = {t_stat:.2f}, {p_value_str}"
-    )
-
-    # add significance bar function
-    def add_significance_bar(ax, x1, x2, y, p_value, bar_height=0.1, text_offset=-0.3):
-        """Add a bar with p-value significance between two boxplots."""
-        bar_x = [x1, x1, x2, x2]
-        bar_y = [y, y + bar_height, y + bar_height, y]
-        ax.plot(bar_x, bar_y, color="black", lw=0.5)
-
-        # format the p-value for display
-        if p_value < 0.001:
-            p_text = "***"
-        elif p_value < 0.01:
-            p_text = "**"
-        elif p_value < 0.05:
-            p_text = "*"
-        else:
-            p_text = "ns"  # not significant
-
-        ax.text(
-            (x1 + x2) * 0.5,
-            y + bar_height + text_offset,
-            p_text,
-            ha="center",
-            va="bottom",
-            fontsize=7,
-        )
-
-    y_max = max(max(positive_sims), max(random_sims))
-    add_significance_bar(ax, 1, 2, y_max, p_value)
-
-    # adjust layout for better aesthetics
-    plt.tight_layout()
-
-    # save the figure
-    fig.set_size_inches(1.75, 3)
-    # plt.savefig(
-    #     f"coessentiality_dotprod_{model_year}.png",
-    #     dpi=450,
-    #     bbox_inches="tight",
-    #     pad_inches=0.02,
-    # )
-    plt.savefig(
-        f"go_dotprod_{model_year}.png",
-        dpi=450,
-        bbox_inches="tight",
-        pad_inches=0.02,
-    )
-    plt.close(fig)
