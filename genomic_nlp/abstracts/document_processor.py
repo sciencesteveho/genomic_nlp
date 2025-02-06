@@ -50,7 +50,7 @@ def load_normalized_disease_names(ctd: str) -> Set[str]:
         reader = csv.reader(file, delimiter="\t")
         for line in reader:
 
-            # skip header, #
+            # skip header
             if line[0].startswith("#"):
                 continue
 
@@ -253,8 +253,7 @@ class ChunkedDocumentProcessor:
         self.automaton = build_automaton(self.main_entities)
 
         # initialize dataframe
-        # self.df = abstracts[["modified_abstracts", "year"]]
-        self.df = pd.read_pickle(f"{root_dir}/data/abstracts_intermediate.pkl")
+        self.df = abstracts[["modified_abstracts", "year"]]
 
     def _make_directories(self) -> None:
         """Make directories for processing"""
@@ -566,19 +565,16 @@ class ChunkedDocumentProcessor:
     def processing_pipeline(self) -> None:
         """Run the NLP pipeline for finetuning."""
         # setup spaCy pipeline
-        # logger.info("Setting up spaCy pipeline")
-        # self.setup_pipeline()
+        logger.info("Setting up spaCy pipeline")
+        self.setup_pipeline()
 
-        # # tokenization and NER
-        # logger.info("Tokenizing and NER")
-        # self.tokenize()
+        # tokenization and NER
+        logger.info("Tokenizing and NER")
+        self.tokenize()
 
-        # # exclude punctuation and replace standalone numbers
-        # logger.info("Excluding punctuation and replacing standalone numbers")
-        # self.exclude_symbols()
-
-        # # save intermediate for later
-        # self.df.to_pickle(f"{self.root_dir}/data/abstracts_intermediate.pkl")
+        # exclude punctuation and replace standalone numbers
+        logger.info("Excluding punctuation and replacing standalone numbers")
+        self.exclude_symbols()
 
         # deduplicate gene and disease tokens
         logger.info("Deduplicating gene and disease tokens")
@@ -650,9 +646,6 @@ def main() -> None:
         genes=genes,
         diseases=diseases,
     )
-
-    # debugging issues with t
-    # df = pd.read_pickle("abstracts_intermediate.pkl")
 
     # run processing pipeline
     documentProcessor.processing_pipeline()
