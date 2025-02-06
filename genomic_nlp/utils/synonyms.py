@@ -13,6 +13,7 @@ HGNC complete set was downloaded from:
 
 import csv
 from pathlib import Path
+import re
 from typing import Dict, List, Set, Union
 
 import flair  # type: ignore
@@ -21,8 +22,46 @@ from flair.models import EntityMentionLinker  # type: ignore
 from flair.nn import Classifier  # type: ignore
 from tqdm import tqdm  # type: ignore
 
-from genomic_nlp.abstracts.gene_entity_normalization import replace_symbols
 from genomic_nlp.utils.normalize_provenance import load_flair_models
+
+
+def replace_symbols(name: str, syns: bool = False) -> str:
+    """Replace symbols in a string. First replace special characters before
+    replacing spaces to create a uniform entity with underscores.
+    """
+    REPLACE_SYMBOLS = {
+        "(": "",
+        ")": "",
+        ",": "",
+        '"': "",
+        ":": "",
+        "-": "_",
+        "/": "_",
+        " ": "_",
+    }
+
+    if syns:
+        REPLACE_SYMBOLS = {
+            "(": "",
+            ")": "",
+            ",": "",
+            '"': "",
+            ":": "",
+            "-": " ",
+            "/": " ",
+        }
+
+    for symbol, replacement in REPLACE_SYMBOLS.items():
+        name = name.replace(symbol, replacement)
+
+    # handle comma patterns
+    # [letter or number],[letter or number] -> [letter or number]_[letter or number]
+    name = re.sub(r"(\w),(\w)", r"\1_\2", name)
+
+    # [letter or number], [letter or number] -> [letter or number] [letter or number]
+    name = re.sub(r"(\w),\s+(\w)", r"\1 \2", name)
+
+    return name
 
 
 def create_synonym_dictionary(hgnc: Path, casefold: bool = True) -> Dict[str, Set[str]]:
@@ -85,7 +124,7 @@ def create_disease_synonym_dictionary(
 
 def formatter(name: str, casefold: bool = True) -> Union[str, List[str]]:
     """Format a string to be used as a key in a dictionary."""
-    name = replace_symbols(name)
+    name = replace_symbols(name, syns=True)
     name = name.casefold() if casefold else name
     return name.split("|") if "|" in name else name
 
@@ -150,7 +189,13 @@ def add_flair_normalized_genes(
                     normalized_count += 1
                     break
 
-            gene_synonyms[original_symbol].add(normalized_symbol)
+            gene_synonyms[original_symbol].add(normalized_symbol.casefold())
 
     print(f"Normalization complete. Total normalized symbols added: {normalized_count}")
     return gene_synonyms
+
+
+# syns = create_synonym_dictionary('hgnc_complete_set.txt')
+# tagger = Classifier.load("hunflair2")
+# gene_linker = EntityMentionLinker.load("gene-linker")
+# syns_norm = add_flair_normalized_genes(syns, tagger, gene_linker)
