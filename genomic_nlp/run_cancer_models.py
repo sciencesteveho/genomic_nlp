@@ -220,7 +220,7 @@ def main() -> None:
     gene_names = set(gene_names.keys())
 
     # train and test models via temporal split
-    for year in range(2002, 2023):
+    for year in range(2003, 2023):
         print(f"Running models for year {year}...")
 
         # load w2v model
