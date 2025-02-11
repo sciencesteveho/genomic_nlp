@@ -104,7 +104,7 @@ class SVM(CancerBaseModel):
     def __init__(
         self,
         kernel: str = "rbf",
-        C: float = 5,
+        C: float = 1,
         **kwargs,
     ):
         model = SVC(
@@ -112,7 +112,7 @@ class SVM(CancerBaseModel):
             C=C,
             probability=True,
             random_state=RANDOM_STATE,
-            gamma="scale",
+            gamma="auto",
             **kwargs,
         )
         super().__init__(model)
