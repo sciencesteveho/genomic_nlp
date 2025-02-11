@@ -249,6 +249,8 @@ def main() -> None:
 
     # train and test models via temporal split with horizon
     for year in range(2003, 2016):
+        if year == 2004:
+            continue  # little data for 2004
         print(f"Running models for year {year}... with horizon")
 
         # load w2v model
