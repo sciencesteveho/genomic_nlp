@@ -21,6 +21,7 @@ from genomic_nlp.cancer_data_preprocessor import CancerGeneDataPreprocessor
 from genomic_nlp.models.cancer_models import CancerBaseModel
 from genomic_nlp.models.cancer_models import LogisticRegressionModel
 from genomic_nlp.models.cancer_models import MLP
+from genomic_nlp.models.cancer_models import RandomBaseline
 from genomic_nlp.models.cancer_models import SVM
 from genomic_nlp.models.cancer_models import XGBoost
 from genomic_nlp.utils.constants import RANDOM_STATE
@@ -175,10 +176,11 @@ def prepare_data(
 def define_models() -> Dict[str, Callable[..., CancerBaseModel]]:
     """Define the models to be used in the ensemble."""
     return {
-        "logistic_regression": LogisticRegressionModel,
+        # "logistic_regression": LogisticRegressionModel,
         "xgboost": XGBoost,
         "svm": SVM,
-        "mlp": MLP,
+        "random_baseline": RandomBaseline,
+        # "mlp": MLP,
     }
 
 
@@ -220,7 +222,7 @@ def main() -> None:
     gene_names = set(gene_names.keys())
 
     # train and test models via temporal split
-    for year in range(2003, 2023):
+    for year in range(2003, 2016):
         print(f"Running models for year {year}...")
 
         # load w2v model

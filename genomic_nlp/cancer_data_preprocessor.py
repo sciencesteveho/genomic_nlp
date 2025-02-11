@@ -109,29 +109,41 @@ class CancerGeneDataPreprocessor:
         return np.array(data), np.array(targets)
 
     def preprocess_data_by_year(
-        self, year: int
+        self, year: int, horizon: int = 3
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """For each year in 2001+=2019, we train a separate model"""
-        # get cancer genes by year
-        before, after = self.get_cancer_genes_by_year(year)
-        available_genes = set(self.gene_embeddings.keys())
+        """For each year in 2001+=2019, we train a separate model.
+        For test data due to size imbalance, we only consider a fixed lookahead
+        window, testing the models's ability to capture cancer genes with
+        provenance over the next 3 years.
 
+        If it's the last models (2018 and 2019), we add any genes in
+        self.cancer_genes that are not in the training set to the test set.
+        """
         # filter cancer genes for those with embeddings
         cancer_genes = {
             gene for gene in self.cancer_genes if gene in self.gene_embeddings
         }
 
-        # split into training and test sets
-        # training = year inclusive and all previous
-        # test = years after
-        before_genes = list(before["Gene"].str.lower())
-        after_genes = list(after["Gene"].str.lower())
+        # get boundaries
+        start_test_year = year + 1
+        end_test_year = year + horizon
+
+        # split provenance data
+        train_df = self.provenance[self.provenance["Year"] <= year]
+        test_df = self.provenance[
+            (self.provenance["Year"] > year)
+            & (self.provenance["Year"] <= end_test_year)
+        ]
+
+        # filter cancer genes for those with embeddings
+        train_genes = set(train_df["Gene"].str.lower()) & set(
+            self.gene_embeddings.keys()
+        )
+        test_genes = set(test_df["Gene"].str.lower()) & set(self.gene_embeddings.keys())
 
         # get train and test set
-        # making sure to only keep genes that are available in
-        # self.gene_embeddings
-        pos_train = set(before_genes).intersection(available_genes)
-        pos_test = set(after_genes).intersection(available_genes)
+        pos_train = train_genes
+        pos_test = test_genes
 
         # generate negative samples
         # any sample not in the positive set or known cancer gene
