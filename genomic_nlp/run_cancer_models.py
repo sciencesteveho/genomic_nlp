@@ -42,7 +42,7 @@ class CancerGenePrediction:
         test_targets: np.ndarray,
         gene_embeddings: Dict[str, np.ndarray],
         model_name: str,
-        model_dir: Path,
+        save_dir: Path,
         year: int,
         cancer_genes: Set[str],
     ) -> None:
@@ -54,7 +54,7 @@ class CancerGenePrediction:
         self.test_targets = test_targets
         self.gene_embeddings = gene_embeddings
         self.model_name = model_name
-        self.model_dir = model_dir
+        self.save_dir = save_dir
         self.year = year
         self.cancer_genes = cancer_genes
 
@@ -124,8 +124,8 @@ class CancerGenePrediction:
 
     def save_data(self, data: Any, data_type: str) -> None:
         """Save data to the model directory."""
-        self.model_dir.mkdir(parents=True, exist_ok=True)
-        file_path = self.model_dir / f"{self.model_name}_{data_type}.pkl"
+        self.save_dir.mkdir(parents=True, exist_ok=True)
+        file_path = self.save_dir / f"{self.model_name}_{data_type}.pkl"
 
         try:
             with open(file_path, "wb") as f:
@@ -157,11 +157,10 @@ def prepare_data(
         preprocessor.preprocess_data_by_year(year=year)
     )
 
-    save_dir = (
-        Path("/ocean/projects/bio210019p/stevesho/genomic_nlp/models/cancer")
-        / args.save_str
-    )
+    # create save directory
+    save_dir = Path(args.save_path) / str(year)
     os.makedirs(save_dir, exist_ok=True)
+
     return (
         train_features,
         train_targets,
@@ -194,7 +193,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run baseline models for gene interaction prediction."
     )
-    parser.add_argument("--save_str", type=str, help="String to save the model with.")
+    parser.add_argument(
+        "--save_path",
+        type=str,
+        help="String to save the model with.",
+        default="/ocean/projects/bio210019p/stevesho/genomic_nlp/models/cancer",
+    )
     parser.add_argument(
         "--w2v_model_path",
         type=str,
@@ -256,7 +260,7 @@ def main() -> None:
                 test_targets=test_targets,
                 gene_embeddings=gene_embeddings,
                 model_name=name,
-                model_dir=save_dir,
+                save_dir=save_dir,
                 year=year,
                 cancer_genes=cancer_genes,
             )
