@@ -17,7 +17,6 @@ The following are implemented:
 
 from typing import Optional
 
-from genomic_nlp.utils.constants import RANDOM_STATE
 import numpy as np
 from sklearn.base import BaseEstimator  # type: ignore
 from sklearn.base import ClassifierMixin  # type: ignore
@@ -26,6 +25,8 @@ from sklearn.multiclass import OneVsRestClassifier  # type: ignore
 from sklearn.neural_network import MLPClassifier  # type: ignore
 from sklearn.svm import SVC  # type: ignore
 from xgboost import XGBClassifier
+
+from genomic_nlp.utils.constants import RANDOM_STATE
 
 
 class CancerBaseModel(BaseEstimator, ClassifierMixin):
@@ -66,6 +67,29 @@ class CancerBaseModel(BaseEstimator, ClassifierMixin):
         return input_features
 
 
+class RandomBaseline(CancerBaseModel):
+    """
+    A baseline model that ignores the input features
+    and returns random probabilities for the positive class.
+    """
+
+    def __init__(self) -> None:
+        """Initialize a random baseline model."""
+        super().__init__(model=None)
+
+    def train(
+        self, feature_data: np.ndarray, target_labels: np.ndarray
+    ) -> CancerBaseModel:
+        """Do nothing, as this is a baseline model."""
+        feature_data = feature_data
+        target_labels = target_labels
+        return self
+
+    def predict_probability(self, feature_data: np.ndarray) -> np.ndarray:
+        """Return random probabilities between 0 and 1."""
+        return np.random.rand(len(feature_data))
+
+
 class LogisticRegressionModel(CancerBaseModel):
     """Logistic regression for cancer prediction."""
 
@@ -80,12 +104,16 @@ class SVM(CancerBaseModel):
     def __init__(
         self,
         kernel: str = "rbf",
-        C: float = 1.0,
-        random_state: int = RANDOM_STATE,
+        C: float = 5,
         **kwargs,
     ):
         model = SVC(
-            kernel=kernel, C=C, probability=True, random_state=random_state, **kwargs
+            kernel=kernel,
+            C=C,
+            probability=True,
+            random_state=RANDOM_STATE,
+            gamma="scale",
+            **kwargs,
         )
         super().__init__(model)
 
@@ -94,7 +122,16 @@ class XGBoost(CancerBaseModel):
     """XGBoost for cancer prediction."""
 
     def __init__(self, **kwargs):
-        model = XGBClassifier(eval_metric="logloss", **kwargs)
+        model = XGBClassifier(
+            eval_metric="aucpr",
+            n_estimators=300,
+            learning_rate=0.05,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            seed=RANDOM_STATE,
+            reg_lambda=1,
+            **kwargs,
+        )
         super().__init__(model)
 
 
