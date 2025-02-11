@@ -32,7 +32,7 @@ from torch_geometric.data import Data  # type: ignore
 from torch_geometric.loader import DataLoader  # type: ignore
 from tqdm import tqdm  # type: ignore
 
-from genomic_nlp.model_data_preprocessor_gnn import GNNDataPreprocessor
+from genomic_nlp.gnn_data_preprocessor import GNNDataPreprocessor
 from genomic_nlp.models.interaction_models_gnn import LinkPredictionGNN
 
 # helpers

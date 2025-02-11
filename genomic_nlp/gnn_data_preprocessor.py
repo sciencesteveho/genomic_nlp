@@ -15,8 +15,8 @@ from typing import Dict, Set, Tuple
 import torch
 from torch_geometric.data import Data  # type: ignore
 
-from model_data_preprocessor import _load_pickle
-from model_data_preprocessor import casefold_pairs
+from genomic_nlp.interaction_data_preprocessor import _load_pickle
+from genomic_nlp.interaction_data_preprocessor import casefold_pairs
 
 
 class GNNDataPreprocessor:
