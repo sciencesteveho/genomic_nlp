@@ -156,8 +156,8 @@ class CancerGeneDataPreprocessor:
         negative_test = (all_genes - self.discovered_any_time) - cancer_genes
 
         # sample negatives
-        neg_train_samples = set(random.sample(negative_train, len(pos_train)))
-        neg_test_samples = set(random.sample(negative_test, len(pos_test)))
+        neg_train_samples = set(random.sample(negative_train, len(pos_train) * 2))
+        neg_test_samples = set(random.sample(negative_test, len(pos_test) * 2))
 
         # print to check
         print("Year:", year)

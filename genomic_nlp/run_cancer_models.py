@@ -90,6 +90,19 @@ class CancerGenePrediction:
         # save model
         self.save_data(self.model, f"trained_model_{self.year}")
 
+        # report what percentage of predicted genes are cancer genes
+        predicted_genes = {
+            gene
+            for gene, prob in zip(self.gene_embeddings.keys(), test_probabilities)
+            if prob > 0.5
+        }
+        cancer_genes = set(self.cancer_genes)
+        cancer_gene_count = len(predicted_genes & cancer_genes)
+        total_gene_count = len(predicted_genes)
+        print(
+            f"Percentage of predicted genes that are cancer genes: {cancer_gene_count / total_gene_count:.4f}"
+        )
+
     def predict_all_genes(self) -> Dict[str, float]:
         """Predict cancer relatedness for all gene embeddings using the single
         trained model. Focus is on genes not already known to be cancer
