@@ -114,6 +114,7 @@ class CancerGeneDataPreprocessor:
         """For each year in 2001+=2019, we train a separate model"""
         # get cancer genes by year
         before, after = self.get_cancer_genes_by_year(year)
+        available_genes = set(self.gene_embeddings.keys())
 
         # filter cancer genes for those with embeddings
         cancer_genes = {
@@ -123,8 +124,14 @@ class CancerGeneDataPreprocessor:
         # split into training and test sets
         # training = year inclusive and all previous
         # test = years after
-        pos_train = set(before["Gene"].str.lower())
-        pos_test = set(after["Gene"].str.lower())
+        before_genes = list(before["Gene"].str.lower())
+        after_genes = list(after["Gene"].str.lower())
+
+        # get train and test set
+        # making sure to only keep genes that are available in
+        # self.gene_embeddings
+        pos_train = set(before_genes).intersection(available_genes)
+        pos_test = set(after_genes).intersection(available_genes)
 
         # generate negative samples
         # any sample not in the positive set or known cancer gene
