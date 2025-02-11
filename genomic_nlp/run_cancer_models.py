@@ -247,65 +247,66 @@ def main() -> None:
 
     gene_names = set(gene_names.keys())
 
-    # train and test models via temporal split with horizon
-    for year in range(2003, 2016):
-        if year == 2004:
-            continue  # little data for 2004
-        print(f"Running models for year {year}... with horizon")
+    # # train and test models via temporal split with horizon
+    # for year in range(2003, 2016):
+    #     if year == 2004:
+    #         continue  # little data for 2004
+    #     print(f"Running models for year {year}... with horizon")
 
-        # load w2v model
-        model = Word2Vec.load(
-            f"{args.w2v_model_path}/{year}/word2vec_300_dimensions_{year}.model"
-        )
+    #     # load w2v model
+    #     model = Word2Vec.load(
+    #         f"{args.w2v_model_path}/{year}/word2vec_300_dimensions_{year}.model"
+    #     )
 
-        # extract gene vectors
-        gene_embeddings = _extract_gene_vectors(model, gene_names)
+    #     # extract gene vectors
+    #     gene_embeddings = _extract_gene_vectors(model, gene_names)
 
-        # prepare targets
-        (
-            train_features,
-            train_targets,
-            test_features,
-            test_targets,
-            save_dir,
-            gene_embeddings,
-            cancer_genes,
-        ) = prepare_data(
-            args=args, gene_embeddings=gene_embeddings, year=year, horizon=3
-        )
-        print(f"Total number of genes in training data: {len(train_features)}")
-        print(f"Total number of genes in test data: {len(test_features)}")
+    #     # prepare targets
+    #     (
+    #         train_features,
+    #         train_targets,
+    #         test_features,
+    #         test_targets,
+    #         save_dir,
+    #         gene_embeddings,
+    #         cancer_genes,
+    #     ) = prepare_data(
+    #         args=args, gene_embeddings=gene_embeddings, year=year, horizon=3
+    #     )
+    #     print(f"Total number of genes in training data: {len(train_features)}")
+    #     print(f"Total number of genes in test data: {len(test_features)}")
 
-        # define models
-        models = define_models()
+    #     # define models
+    #     models = define_models()
 
-        print("Running models (single train/test).")
-        for name, model_class in models.items():
-            print(f"\nRunning {name} model...")
+    #     print("Running models (single train/test).")
+    #     for name, model_class in models.items():
+    #         print(f"\nRunning {name} model...")
 
-            # initialize trainer
-            trainer = CancerGenePrediction(
-                model_class=model_class,
-                train_features=train_features,
-                train_targets=train_targets,
-                test_features=test_features,
-                test_targets=test_targets,
-                gene_embeddings=gene_embeddings,
-                model_name=name,
-                save_dir=save_dir,
-                year=year,
-                cancer_genes=cancer_genes,
-            )
+    #         # initialize trainer
+    #         trainer = CancerGenePrediction(
+    #             model_class=model_class,
+    #             train_features=train_features,
+    #             train_targets=train_targets,
+    #             test_features=test_features,
+    #             test_targets=test_targets,
+    #             gene_embeddings=gene_embeddings,
+    #             model_name=name,
+    #             save_dir=save_dir,
+    #             year=year,
+    #             cancer_genes=cancer_genes,
+    #         )
 
-            # train and evaluate
-            trainer.train_and_evaluate_once()
+    #         # train and evaluate
+    #         trainer.train_and_evaluate_once()
 
-            # predict all genes
-            final_predictions = trainer.predict_all_genes()
-            trainer.save_data(final_predictions, f"final_predictions_{year}_horizon")
+    #         # predict all genes
+    #         final_predictions = trainer.predict_all_genes()
+    #         trainer.save_data(final_predictions, f"final_predictions_{year}_horizon")
 
     # train and test models via temporal split without horizon
-    for year in range(2003, 2019):
+    # for year in range(2003, 2019):
+    for year in [2019]:
         print(f"Running models for year {year}...")
 
         # load w2v model
