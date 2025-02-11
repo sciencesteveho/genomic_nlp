@@ -21,6 +21,7 @@ from genomic_nlp.cancer_data_preprocessor import CancerGeneDataPreprocessor
 from genomic_nlp.models.cancer_models import CancerBaseModel
 from genomic_nlp.models.cancer_models import LogisticRegressionModel
 from genomic_nlp.models.cancer_models import MLP
+from genomic_nlp.models.cancer_models import RandomBaseline
 from genomic_nlp.models.cancer_models import SVM
 from genomic_nlp.models.cancer_models import XGBoost
 from genomic_nlp.utils.constants import RANDOM_STATE
@@ -88,6 +89,19 @@ class CancerGenePrediction:
 
         # save model
         self.save_data(self.model, f"trained_model_{self.year}")
+
+        # report what percentage of predicted genes are cancer genes
+        predicted_genes = {
+            gene
+            for gene, prob in zip(self.gene_embeddings.keys(), test_probabilities)
+            if prob > 0.5
+        }
+        cancer_genes = set(self.cancer_genes)
+        cancer_gene_count = len(predicted_genes & cancer_genes)
+        total_gene_count = len(predicted_genes)
+        print(
+            f"Percentage of predicted genes that are cancer genes: {cancer_gene_count / total_gene_count:.4f}"
+        )
 
     def predict_all_genes(self) -> Dict[str, float]:
         """Predict cancer relatedness for all gene embeddings using the single
@@ -175,10 +189,11 @@ def prepare_data(
 def define_models() -> Dict[str, Callable[..., CancerBaseModel]]:
     """Define the models to be used in the ensemble."""
     return {
-        "logistic_regression": LogisticRegressionModel,
+        # "logistic_regression": LogisticRegressionModel,
         "xgboost": XGBoost,
         "svm": SVM,
-        "mlp": MLP,
+        "random_baseline": RandomBaseline,
+        # "mlp": MLP,
     }
 
 
@@ -220,7 +235,7 @@ def main() -> None:
     gene_names = set(gene_names.keys())
 
     # train and test models via temporal split
-    for year in range(2003, 2023):
+    for year in range(2003, 2016):
         print(f"Running models for year {year}...")
 
         # load w2v model
