@@ -8,13 +8,15 @@ relationships."""
 
 import argparse
 import gc
-import gzip
 from pathlib import Path
 import pickle
 from typing import Any
 
 from gensim.models import Word2Vec  # type: ignore
 from gensim.models.callbacks import CallbackAny2Vec  # type: ignore
+import grape
+from grape import Graph
+from grape.embedders import Node2VecSkipGramEnsmallen
 import networkx as nx  # type: ignore
 from node2vec import Node2Vec  # type: ignore
 import numpy as np
@@ -39,58 +41,69 @@ def main() -> None:
     """Load the graph and train embeddings."""
     parser = argparse.ArgumentParser(description="Train node2vec embeddings.")
     parser.add_argument(
-        "--edge_file",
+        "--year",
         type=str,
         required=True,
-        help="Path to the text extracted gene edges.",
-        default="/ocean/projects/bio210019p/stevesho/genomic_nlp/ppi/text_extracted_gene_edges_syns.tsv",
+        help="Edge file to load.",
+        default="2003",
     )
     parser.add_argument(
         "--model_dir",
         type=str,
-        required=True,
         help="Directory to save the model.",
         default="/ocean/projects/bio210019p/stevesho/genomic_nlp/models/n2v",
     )
-    parser.add_argument(
-        "--output_dir",
-        type=str,
-        required=True,
-        help="Directory to save the embeddings.",
-        default="/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings",
-    )
     args = parser.parse_args()
+    edge_file = f"/ocean/projects/bio210019p/stevesho/genomic_nlp/ppi/gene_co_occurence_{args.year}.tsv"
 
-    # load edges
-    edges = pd.read_csv(
-        args.edge_file, sep="\t", header=None, names=["source", "target"]
+    # make year dir
+    model_dir = Path(args.model_dir) / args.year
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    # # load edges
+    # edges = pd.read_csv(
+    #     edge_file, sep="\t", header=None, names=["source", "destination"]
+    # )
+    # edges = edges.drop_duplicates()
+
+    graph = grape.Graph.from_csv(
+        edge_path=edge_file,
+        # sources_column="source",
+        # destinations_column="destination",
+        directed=False,
     )
-    edges = edges.drop_duplicates()
+    print("Graph loaded.")
 
     # create graph
-    graph = nx.from_pandas_edgelist(edges, create_using=nx.Graph)
+    # graph = nx.from_pandas_edgelist(edges, create_using=nx.Graph)
 
     # instantiate model
-    node2vec = Node2Vec(
-        graph,
-        dimensions=128,
-        walk_length=40,
-        num_walks=10,
-        workers=24,
-    )
+    # node2vec = Node2Vec(
+    #     graph,
+    #     dimensions=128,
+    #     walk_length=40,
+    #     num_walks=10,
+    #     workers=24,
+    # )
+    embeddings = Node2VecSkipGramEnsmallen().fit_transform(graph)
 
     # train node2vec
-    model = node2vec.fit(
-        window=10,
-        min_count=1,
-        batch_words=4,
-        callbacks=[EpochSaver(args.model_dir)],
-    )
+    # model = node2vec.fit(
+    #     window=10,
+    #     min_count=1,
+    #     batch_words=4,
+    #     callbacks=[EpochSaver(str(model_dir))],
+    # )
 
     # try and clear memory before saving
-    gc.collect()
+    # gc.collect()
 
-    model.save(str(args.output_dir / "node2vec.model"))
+    # model.save(str(model_dir / "node2vec.model"))
+    # save embeddings
+    node_names = graph.get_node_names()
+    embedding_vectors = dict(zip(node_names, embeddings))
+    with open(model_dir / "embeddings.no", "wb") as f:
+        pickle.dump(embedding_vectors, f)
 
 
 if __name__ == "__main__":
