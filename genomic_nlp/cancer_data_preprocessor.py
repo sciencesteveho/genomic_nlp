@@ -8,7 +8,7 @@
 
 from pathlib import Path
 import random
-from typing import Dict, Set, Tuple
+from typing import Dict, Optional, Set, Tuple
 
 import numpy as np
 import pandas as pd
@@ -109,7 +109,9 @@ class CancerGeneDataPreprocessor:
         return np.array(data), np.array(targets)
 
     def preprocess_data_by_year(
-        self, year: int, horizon: int = 3
+        self,
+        year: int,
+        horizon: Optional[int],
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """For each year in 2001+=2019, we train a separate model.
         For test data due to size imbalance, we only consider a fixed lookahead
@@ -126,7 +128,7 @@ class CancerGeneDataPreprocessor:
 
         # get boundaries
         start_test_year = year + 1
-        end_test_year = year + horizon
+        end_test_year = year + horizon if horizon else 2020
 
         # split provenance data
         train_df = self.provenance[self.provenance["Year"] <= year]
@@ -156,8 +158,8 @@ class CancerGeneDataPreprocessor:
         negative_test = (all_genes - self.discovered_any_time) - cancer_genes
 
         # sample negatives
-        neg_train_samples = set(random.sample(negative_train, len(pos_train) * 2))
-        neg_test_samples = set(random.sample(negative_test, len(pos_test) * 2))
+        neg_train_samples = set(random.sample(negative_train, len(pos_train)))
+        neg_test_samples = set(random.sample(negative_test, len(pos_test)))
 
         # print to check
         print("Year:", year)
