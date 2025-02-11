@@ -46,6 +46,7 @@ class CancerGenePrediction:
         save_dir: Path,
         year: int,
         cancer_genes: Set[str],
+        horizon: Optional[int] = None,
     ) -> None:
         """Initialize an OncogenicityPredictionTrainer object."""
         self.model_class = model_class
@@ -58,6 +59,7 @@ class CancerGenePrediction:
         self.save_dir = save_dir
         self.year = year
         self.cancer_genes = cancer_genes
+        self.horizon = horizon
 
         self.model: Optional[CancerBaseModel] = None
 
@@ -85,10 +87,20 @@ class CancerGenePrediction:
             self.test_targets, test_probabilities
         )
         pr_data = {"precision": precision, "recall": recall, "thresholds": thresholds}
-        self.save_data(pr_data, f"pr_curve_data_{self.year}")
+        save_pr_name = (
+            f"pr_curve_data_{self.year}_horizon_{self.horizon}"
+            if self.horizon
+            else f"pr_curve_data_{self.year}"
+        )
+        self.save_data(pr_data, save_pr_name)
 
         # save model
-        self.save_data(self.model, f"trained_model_{self.year}")
+        save_model_name = (
+            f"trained_model_{self.year}_horizon_{self.horizon}"
+            if self.horizon
+            else f"trained_model_{self.year}"
+        )
+        self.save_data(self.model, save_model_name)
 
         # report what percentage of predicted genes are cancer genes
         predicted_genes = {
@@ -153,6 +165,7 @@ def prepare_data(
     args: argparse.Namespace,
     gene_embeddings: Dict[str, np.ndarray],
     year: int,
+    horizon: Optional[int],
 ) -> Tuple[
     np.ndarray,
     np.ndarray,
@@ -168,7 +181,7 @@ def prepare_data(
 
     # load data
     train_features, train_targets, test_features, test_targets = (
-        preprocessor.preprocess_data_by_year(year=year)
+        preprocessor.preprocess_data_by_year(year=year, horizon=horizon)
     )
 
     # create save directory
@@ -234,9 +247,9 @@ def main() -> None:
 
     gene_names = set(gene_names.keys())
 
-    # train and test models via temporal split
+    # train and test models via temporal split with horizon
     for year in range(2003, 2016):
-        print(f"Running models for year {year}...")
+        print(f"Running models for year {year}... with horizon")
 
         # load w2v model
         model = Word2Vec.load(
@@ -255,7 +268,64 @@ def main() -> None:
             save_dir,
             gene_embeddings,
             cancer_genes,
-        ) = prepare_data(args=args, gene_embeddings=gene_embeddings, year=year)
+        ) = prepare_data(
+            args=args, gene_embeddings=gene_embeddings, year=year, horizon=3
+        )
+        print(f"Total number of genes in training data: {len(train_features)}")
+        print(f"Total number of genes in test data: {len(test_features)}")
+
+        # define models
+        models = define_models()
+
+        print("Running models (single train/test).")
+        for name, model_class in models.items():
+            print(f"\nRunning {name} model...")
+
+            # initialize trainer
+            trainer = CancerGenePrediction(
+                model_class=model_class,
+                train_features=train_features,
+                train_targets=train_targets,
+                test_features=test_features,
+                test_targets=test_targets,
+                gene_embeddings=gene_embeddings,
+                model_name=name,
+                save_dir=save_dir,
+                year=year,
+                cancer_genes=cancer_genes,
+            )
+
+            # train and evaluate
+            trainer.train_and_evaluate_once()
+
+            # predict all genes
+            final_predictions = trainer.predict_all_genes()
+            trainer.save_data(final_predictions, f"final_predictions_{year}_horizon")
+
+    # train and test models via temporal split without horizon
+    for year in range(2003, 2019):
+        print(f"Running models for year {year}...")
+
+        # load w2v model
+        model = Word2Vec.load(
+            f"{args.w2v_model_path}/{year}/word2vec_300_dimensions_{year}.model"
+        )
+
+        # extract gene vectors
+        gene_embeddings = _extract_gene_vectors(model, gene_names)
+
+        # prepare
+        (
+            train_features,
+            train_targets,
+            test_features,
+            test_targets,
+            save_dir,
+            gene_embeddings,
+            cancer_genes,
+        ) = prepare_data(
+            args=args, gene_embeddings=gene_embeddings, year=year, horizon=None
+        )
         print(f"Total number of genes in training data: {len(train_features)}")
         print(f"Total number of genes in test data: {len(test_features)}")
 
