@@ -72,6 +72,7 @@ def main() -> None:
         # destinations_column="destination",
         directed=False,
     )
+    print("Graph loaded.")
 
     # create graph
     # graph = nx.from_pandas_edgelist(edges, create_using=nx.Graph)
@@ -100,8 +101,8 @@ def main() -> None:
     # model.save(str(model_dir / "node2vec.model"))
     # save embeddings
     node_names = graph.get_node_names()
-    embedding_vectors = dict(zip(node_names, embeddings.numpy()))
-    with open(model_dir / "embeddings.npy", "wb") as f:
+    embedding_vectors = dict(zip(node_names, embeddings))
+    with open(model_dir / "embeddings.no", "wb") as f:
         pickle.dump(embedding_vectors, f)
 
 
