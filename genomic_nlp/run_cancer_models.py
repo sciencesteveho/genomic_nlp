@@ -10,7 +10,7 @@ import argparse
 import os
 from pathlib import Path
 import pickle
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 from gensim.models import Word2Vec  # type: ignore
 import numpy as np
@@ -162,7 +162,7 @@ class CancerGenePrediction:
 
 
 def prepare_data(
-    args: argparse.Namespace,
+    save_path: str,
     gene_embeddings: Dict[str, np.ndarray],
     year: int,
     horizon: Optional[int],
@@ -185,7 +185,7 @@ def prepare_data(
     )
 
     # create save directory
-    save_dir = Path(args.save_path) / str(year)
+    save_dir = Path(save_path) / str(year)
     os.makedirs(save_dir, exist_ok=True)
 
     return (
@@ -210,9 +210,46 @@ def define_models() -> Dict[str, Callable[..., CancerBaseModel]]:
     }
 
 
-def _extract_gene_vectors(model: Word2Vec, genes: List[str]) -> Dict[str, np.ndarray]:
+def _extract_gene_vectors(
+    model: Union[Word2Vec, Dict[str, np.ndarray]], gene_names: Set[str]
+) -> Dict[str, np.ndarray]:
     """Extract gene vectors from a word2vec model."""
-    return {gene: model.wv[gene] for gene in genes if gene in model.wv.key_to_index}
+    if type(model) == Word2Vec:
+        return {
+            gene: model.wv[gene] for gene in gene_names if gene in model.wv.key_to_index
+        }
+    elif type(model) == dict:
+        return {gene: model[gene] for gene in gene_names if gene in model}
+    else:
+        raise ValueError("Model must be a Word2Vec model or a dictionary.")
+
+
+def get_gene_embeddings(
+    args: argparse.Namespace, gene_names: Set[str]
+) -> Tuple[Dict[str, np.ndarray], str]:
+    """Get gene embeddings based on the model type."""
+    model_dir = f"{args.model_path}/{args.model_type}"
+
+    if args.model_type == "w2v":
+        model = Word2Vec.load(
+            f"{args.model_dir}/{args.year}/word2vec_300_dimensions_{args.year}.model"
+        )
+        gene_embeddings = _extract_gene_vectors(model, gene_names)
+        save_path = args.save_path
+    elif args.model_type == "n2v":
+        model_path = f"{model_dir}/{args.n2v_type}/{args.year}/input_embeddings.pkl"
+        with open(model_path, "rb") as f:
+            embeddings = pickle.load(f)
+        gene_embeddings = _extract_gene_vectors(embeddings, gene_names)
+        save_path = f"{args.save_path}/n2v/{args.n2v_type}"
+
+    return gene_embeddings, save_path
+
+
+def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    """Ensure that n2v embedding type is specified."""
+    if args.model_type == "n2v" and not args.n2v_type:
+        parser.error("n2v_type must be specified when using n2v embeddings.")
 
 
 def main() -> None:
@@ -228,10 +265,17 @@ def main() -> None:
         default="/ocean/projects/bio210019p/stevesho/genomic_nlp/models/cancer",
     )
     parser.add_argument(
-        "--w2v_model_path",
+        "--model_path",
         type=str,
         help="Path to word2vec model.",
-        default="/ocean/projects/bio210019p/stevesho/genomic_nlp/models/w2v",
+        default="/ocean/projects/bio210019p/stevesho/genomic_nlp/models",
+    )
+    parser.add_argument(
+        "--model_type",
+        type=str,
+        help="Type of embedding model to use.",
+        default="n2v",
+        choices=["w2v", "n2v"],
     )
     parser.add_argument(
         "--gene_names",
@@ -239,7 +283,14 @@ def main() -> None:
         help="Path to gene names file.",
         default="/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_synonyms.pkl",
     )
+    parser.add_argument(
+        "--n2v_type",
+        type=str,
+        help="Type of n2v embeddings to use.",
+        choices=["ppi", "disease"],
+    )
     args = parser.parse_args()
+    _validate_args(parser=parser, args=args)
 
     # load gene names
     with open(args.gene_names, "rb") as f:
@@ -247,75 +298,67 @@ def main() -> None:
 
     gene_names = set(gene_names.keys())
 
-    # # train and test models via temporal split with horizon
-    # for year in range(2003, 2016):
-    #     if year == 2004:
-    #         continue  # little data for 2004
-    #     print(f"Running models for year {year}... with horizon")
+    # train and test models via temporal split with horizon
+    for year in range(2003, 2016):
+        if year == 2004:
+            continue  # little data for 2004
+        print(f"Running models for year {year}... with horizon")
 
-    #     # load w2v model
-    #     model = Word2Vec.load(
-    #         f"{args.w2v_model_path}/{year}/word2vec_300_dimensions_{year}.model"
-    #     )
+        # load gene embeddings
+        gene_embeddings, save_path = get_gene_embeddings(args, gene_names)
 
-    #     # extract gene vectors
-    #     gene_embeddings = _extract_gene_vectors(model, gene_names)
+        # prepare targets
+        (
+            train_features,
+            train_targets,
+            test_features,
+            test_targets,
+            save_dir,
+            gene_embeddings,
+            cancer_genes,
+        ) = prepare_data(
+            save_path=save_path,
+            gene_embeddings=gene_embeddings,
+            year=year,
+            horizon=3,
+        )
+        print(f"Total number of genes in training data: {len(train_features)}")
+        print(f"Total number of genes in test data: {len(test_features)}")
 
-    #     # prepare targets
-    #     (
-    #         train_features,
-    #         train_targets,
-    #         test_features,
-    #         test_targets,
-    #         save_dir,
-    #         gene_embeddings,
-    #         cancer_genes,
-    #     ) = prepare_data(
-    #         args=args, gene_embeddings=gene_embeddings, year=year, horizon=3
-    #     )
-    #     print(f"Total number of genes in training data: {len(train_features)}")
-    #     print(f"Total number of genes in test data: {len(test_features)}")
+        # define models
+        models = define_models()
 
-    #     # define models
-    #     models = define_models()
+        print("Running models (single train/test).")
+        for name, model_class in models.items():
+            print(f"\nRunning {name} model...")
 
-    #     print("Running models (single train/test).")
-    #     for name, model_class in models.items():
-    #         print(f"\nRunning {name} model...")
+            # initialize trainer
+            trainer = CancerGenePrediction(
+                model_class=model_class,
+                train_features=train_features,
+                train_targets=train_targets,
+                test_features=test_features,
+                test_targets=test_targets,
+                gene_embeddings=gene_embeddings,
+                model_name=name,
+                save_dir=save_dir,
+                year=year,
+                cancer_genes=cancer_genes,
+            )
 
-    #         # initialize trainer
-    #         trainer = CancerGenePrediction(
-    #             model_class=model_class,
-    #             train_features=train_features,
-    #             train_targets=train_targets,
-    #             test_features=test_features,
-    #             test_targets=test_targets,
-    #             gene_embeddings=gene_embeddings,
-    #             model_name=name,
-    #             save_dir=save_dir,
-    #             year=year,
-    #             cancer_genes=cancer_genes,
-    #         )
+            # train and evaluate
+            trainer.train_and_evaluate_once()
 
-    #         # train and evaluate
-    #         trainer.train_and_evaluate_once()
-
-    #         # predict all genes
-    #         final_predictions = trainer.predict_all_genes()
-    #         trainer.save_data(final_predictions, f"final_predictions_{year}_horizon")
+            # predict all genes
+            final_predictions = trainer.predict_all_genes()
+            trainer.save_data(final_predictions, f"final_predictions_{year}_horizon")
 
     # train and test models via temporal split without horizon
-    # for year in range(2003, 2019):
-    for year in [2019]:
+    for year in range(2003, 2020):
         print(f"Running models for year {year}...")
 
-        # load w2v model
-        model = Word2Vec.load(
-            f"{args.w2v_model_path}/{year}/word2vec_300_dimensions_{year}.model"
-        )
-
-        # extract gene vectors
-        gene_embeddings = _extract_gene_vectors(model, gene_names)
+        # load gene embeddings
+        gene_embeddings, save_path = get_gene_embeddings(args, gene_names)
 
         # prepare
         (
@@ -327,7 +370,10 @@ def main() -> None:
             gene_embeddings,
             cancer_genes,
         ) = prepare_data(
-            args=args, gene_embeddings=gene_embeddings, year=year, horizon=None
+            save_path=save_path,
+            gene_embeddings=gene_embeddings,
+            year=year,
+            horizon=None,
         )
         print(f"Total number of genes in training data: {len(train_features)}")
         print(f"Total number of genes in test data: {len(test_features)}")
