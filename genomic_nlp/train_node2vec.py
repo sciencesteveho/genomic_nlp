@@ -14,9 +14,9 @@ from typing import Any
 
 from gensim.models import Word2Vec  # type: ignore
 from gensim.models.callbacks import CallbackAny2Vec  # type: ignore
-import grape
-from grape import Graph
-from grape.embedders import Node2VecSkipGramEnsmallen
+from grape import Graph  # type: ignore
+import grape  # type: ignore
+from grape.embedders import Node2VecSkipGramEnsmallen  # type: ignore
 import networkx as nx  # type: ignore
 from node2vec import Node2Vec  # type: ignore
 import numpy as np
@@ -43,7 +43,6 @@ def main() -> None:
     parser.add_argument(
         "--year",
         type=str,
-        required=True,
         help="Edge file to load.",
         default="2003",
     )
@@ -85,7 +84,7 @@ def main() -> None:
     #     num_walks=10,
     #     workers=24,
     # )
-    embeddings = Node2VecSkipGramEnsmallen().fit_transform(graph)
+    embeddings = Node2VecSkipGramEnsmallen(embedding_size=128).fit_transform(graph)
 
     # train node2vec
     # model = node2vec.fit(
@@ -100,10 +99,22 @@ def main() -> None:
 
     # model.save(str(model_dir / "node2vec.model"))
     # save embeddings
-    node_names = graph.get_node_names()
-    embedding_vectors = dict(zip(node_names, embeddings))
-    with open(model_dir / "embeddings.no", "wb") as f:
+
+    # convert ensmallen embeddings to dict
+    embedding_vectors = embeddings._node_embeddings[0].to_dict("index")
+    embedding_vectors = {
+        k: np.array(list(v.values())) for k, v in embedding_vectors.items()
+    }
+    with open(model_dir / "input_embeddings.pkl", "wb") as f:
         pickle.dump(embedding_vectors, f)
+
+    # save output embeddings
+    output_embeddings = embeddings._node_embeddings[1].to_dict("index")
+    output_embeddings = {
+        k: np.array(list(v.values())) for k, v in output_embeddings.items()
+    }
+    with open(model_dir / "output_embeddings.pkl", "wb") as f:
+        pickle.dump(output_embeddings, f)
 
 
 if __name__ == "__main__":
