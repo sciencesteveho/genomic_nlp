@@ -225,7 +225,7 @@ def _extract_gene_vectors(
 
 
 def get_gene_embeddings(
-    args: argparse.Namespace, gene_names: Set[str]
+    args: argparse.Namespace, gene_names: Set[str], year: int
 ) -> Tuple[Dict[str, np.ndarray], str]:
     """Get gene embeddings based on the model type."""
     model_dir = f"{args.model_path}/{args.model_type}"
@@ -237,7 +237,7 @@ def get_gene_embeddings(
         gene_embeddings = _extract_gene_vectors(model, gene_names)
         save_path = args.save_path
     elif args.model_type == "n2v":
-        model_path = f"{model_dir}/{args.n2v_type}/{args.year}/input_embeddings.pkl"
+        model_path = f"{model_dir}/{args.n2v_type}/{year}/input_embeddings.pkl"
         with open(model_path, "rb") as f:
             embeddings = pickle.load(f)
         gene_embeddings = _extract_gene_vectors(embeddings, gene_names)
@@ -305,7 +305,9 @@ def main() -> None:
         print(f"Running models for year {year}... with horizon")
 
         # load gene embeddings
-        gene_embeddings, save_path = get_gene_embeddings(args, gene_names)
+        gene_embeddings, save_path = get_gene_embeddings(
+            args=args, gene_names=gene_names, year=year
+        )
 
         # prepare targets
         (
@@ -358,7 +360,9 @@ def main() -> None:
         print(f"Running models for year {year}...")
 
         # load gene embeddings
-        gene_embeddings, save_path = get_gene_embeddings(args, gene_names)
+        gene_embeddings, save_path = get_gene_embeddings(
+            args=args, gene_names=gene_names, year=year
+        )
 
         # prepare
         (
