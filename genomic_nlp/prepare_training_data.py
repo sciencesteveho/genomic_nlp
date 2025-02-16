@@ -23,7 +23,7 @@ actually a true positive, we ensure that negatives pairs do not exist across all
 *NOTE - while we tried to opt for a completely programmatic data download, we
 found it difficult. The OpenCell file was no longer properly linked at the time
 we tried to download it, and the coessential file at 10% fdr was available only
-as an xlsx. Thus, users will have to manually download those files."""
+as an xlsx. Users will have to manually download those files."""
 
 
 from collections import defaultdict
@@ -43,6 +43,19 @@ import mygene  # type: ignore
 import pandas as pd
 from pybedtools import BedTool  # type: ignore
 import pybedtools  # type: ignore
+
+
+def count_unique_pairs(file_path: str) -> int:
+    """Count the number of unique deduplicated pairs from co-occurence TSV."""
+    unique_pairs = set()
+
+    reader = csv.reader(open(file_path), delimiter="\t")
+    for row in reader:
+        gene1, gene2 = row
+        pair = tuple(sorted([gene1, gene2]))
+        unique_pairs.add(pair)
+
+    return len(unique_pairs)
 
 
 def get_genes_within_kb(gtf_file: str, kb: int = 100000) -> Set[Tuple[str, str]]:
@@ -168,8 +181,8 @@ class PrepareTrainingData:
         # download files
         self.download_reference_files()
 
-        # Create and save individual graphs
-        graphs = {
+        # create and save individual graphs
+        save_graphs = {
             "coessential_pos": self.coessential_graph()[0],
             "coessential_neg": self.coessential_graph()[1],
             "opencell": self.opencell_graph(),
@@ -179,8 +192,8 @@ class PrepareTrainingData:
             "go": self.go_graph(),
         }
 
-        # Save individual graphs
-        for name, graph in graphs.items():
+        # save individual graphs
+        for name, graph in save_graphs.items():
             self.save_graph(graph, f"{name}_graph.pkl")
 
         # load individual graphs
@@ -196,7 +209,7 @@ class PrepareTrainingData:
             with open(self.output_dir / f"{name}_graph.pkl", "rb") as f:
                 graphs[name] = pickle.load(f)
 
-        # Create and save combined graphs
+        # create and save combined graphs
         coessential_pos = self.gene_only_edges(graphs["coessential_pos"])
         experimentally_derived_edges = self.combine_exp_derived_edges(
             (coessential_pos, "coessential"),
@@ -581,18 +594,37 @@ def main() -> None:
     data_prep_obect = PrepareTrainingData(
         "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data"
     )
-    len_edges = data_prep_obect.create_graphs()
+    # len_edges = data_prep_obect.create_graphs()
 
+    # use negative sampler for test set
     # make negative samples, with n = positive samples
-    negative_samples = data_prep_obect.negative_sampler(
-        n_random_edges=len_edges, genes_within_kb=genes_within_kb
-    )
+    # negative_samples = data_prep_obect.negative_sampler(
+    #     n_random_edges=len_edges, genes_within_kb=genes_within_kb
+    # )
 
-    with open(
-        "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/negative_edges.pkl",
-        "wb",
-    ) as f:
-        pickle.dump(negative_samples, f)
+    # with open(
+    #     "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/negative_edges.pkl",
+    #     "wb",
+    # ) as f:
+    #     pickle.dump(negative_samples, f)
+
+    # run negative sampler for each year
+    data_dir = "/ocean/projects/bio210019p/stevesho/genomic_nlp/ppi"
+    for year in range(2003, 2024):
+        co_occurence = f"{data_dir}/gene_co_occurrence_{year}.tsv"
+        unique_pairs = count_unique_pairs(co_occurence)
+        print(f"Unique pairs for {year}: {unique_pairs}")
+
+        # get negative samples
+        negative_samples = data_prep_obect.negative_sampler(
+            n_random_edges=unique_pairs, genes_within_kb=genes_within_kb
+        )
+
+        with open(
+            f"{data_dir}/negative_edges_{year}.pkl",
+            "wb",
+        ) as f:
+            pickle.dump(negative_samples, f)
 
     # # check if a negative sample is in the positive set
     # matching = next((e1 for e1 in edges for e2 in neg if e1 == e2), None)
