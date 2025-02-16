@@ -45,6 +45,19 @@ from pybedtools import BedTool  # type: ignore
 import pybedtools  # type: ignore
 
 
+def count_unique_pairs(file_path: str) -> int:
+    """Count the number of unique deduplicated pairs from co-occurence TSV."""
+    unique_pairs = set()
+
+    reader = csv.reader(open(file_path), delimiter="\t")
+    for row in reader:
+        gene1, gene2 = row
+        pair = tuple(sorted([gene1, gene2]))
+        unique_pairs.add(pair)
+
+    return len(unique_pairs)
+
+
 def get_genes_within_kb(gtf_file: str, kb: int = 100000) -> Set[Tuple[str, str]]:
     """Uses pybedtools and an input gencode GTF to fine all gene pairs within
     100kb of each other on hg38.
@@ -581,18 +594,37 @@ def main() -> None:
     data_prep_obect = PrepareTrainingData(
         "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data"
     )
-    len_edges = data_prep_obect.create_graphs()
+    # len_edges = data_prep_obect.create_graphs()
 
+    # use negative sampler for test set
     # make negative samples, with n = positive samples
-    negative_samples = data_prep_obect.negative_sampler(
-        n_random_edges=len_edges, genes_within_kb=genes_within_kb
-    )
+    # negative_samples = data_prep_obect.negative_sampler(
+    #     n_random_edges=len_edges, genes_within_kb=genes_within_kb
+    # )
 
-    with open(
-        "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/negative_edges.pkl",
-        "wb",
-    ) as f:
-        pickle.dump(negative_samples, f)
+    # with open(
+    #     "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/negative_edges.pkl",
+    #     "wb",
+    # ) as f:
+    #     pickle.dump(negative_samples, f)
+
+    # run negative sampler for each year
+    data_dir = "/ocean/projects/bio210019p/stevesho/genomic_nlp/ppi"
+    for year in range(2003, 2024):
+        co_occurence = f"{data_dir}/gene_co_occurence_{year}.tsv"
+        unique_pairs = count_unique_pairs(co_occurence)
+        print(f"Unique pairs for {year}: {unique_pairs}")
+
+        # get negative samples
+        negative_samples = data_prep_obect.negative_sampler(
+            n_random_edges=unique_pairs, genes_within_kb=genes_within_kb
+        )
+
+        with open(
+            f"{data_dir}/negative_edges_{year}.pkl",
+            "wb",
+        ) as f:
+            pickle.dump(negative_samples, f)
 
     # # check if a negative sample is in the positive set
     # matching = next((e1 for e1 in edges for e2 in neg if e1 == e2), None)
