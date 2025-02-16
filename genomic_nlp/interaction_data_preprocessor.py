@@ -48,7 +48,6 @@ class InteractionDataPreprocessor:
 
         # load embeddings
         self.gene_embeddings = _load_pickle(args.embeddings)
-        self.gene_embeddings = casefold_embeddings(self.gene_embeddings)
 
         # load experimental pairs
         self.pos_pairs_with_source = _load_pickle(args.positive_pairs_file)
