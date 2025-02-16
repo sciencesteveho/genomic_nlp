@@ -232,7 +232,7 @@ def get_gene_embeddings(
 
     if args.model_type == "w2v":
         model = Word2Vec.load(
-            f"{args.model_dir}/{args.year}/word2vec_300_dimensions_{args.year}.model"
+            f"{args.model_dir}/{year}/word2vec_300_dimensions_{year}.model"
         )
         gene_embeddings = _extract_gene_vectors(model, gene_names)
         save_path = args.save_path
@@ -288,6 +288,10 @@ def main() -> None:
         type=str,
         help="Type of n2v embeddings to use.",
         choices=["ppi", "disease"],
+        default="ppi",
+    )
+    parser.add_argument(
+        "--year", type=int, help="Year of the model to use.", default=2019
     )
     args = parser.parse_args()
     _validate_args(parser=parser, args=args)

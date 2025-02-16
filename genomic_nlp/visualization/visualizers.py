@@ -13,10 +13,12 @@ import matplotlib.colors as mcolors  # type: ignore
 from matplotlib.figure import Figure  # type: ignore
 import matplotlib.pyplot as plt  # type: ignore
 import numpy as np
+from sklearn.metrics import average_precision_score  # type: ignore
+from sklearn.metrics import precision_recall_curve  # type: ignore
 from sklearn.metrics import roc_auc_score  # type: ignore
 from sklearn.metrics import roc_curve
 
-from interaction_models import BaselineModel
+from genomic_nlp.models.interaction_models import BaselineModel
 
 
 class BaselineModelVisualizer:
@@ -114,33 +116,36 @@ class BaselineModelVisualizer:
             legend_loc="upper left",
         )
 
-    def plot_roc_curve(
+    def plot_pr_curve(
         self,
         models: Dict[str, BaselineModel],
         test_features: np.ndarray,
         test_labels: np.ndarray,
     ) -> None:
-        """Plot ROC curves for all models."""
+        """Plot Precision-Recall (PR) curves for all models."""
         for model_name, model in models.items():
             y_pred = model.predict_probability(test_features)
-            fpr, tpr, thresholds = roc_curve(test_labels, y_pred)
-            auc = roc_auc_score(test_labels, y_pred)
-            plt.plot(fpr, tpr, label=f"{model_name} (AUC = {auc:.2f})")
+            precision, recall, thresholds = precision_recall_curve(test_labels, y_pred)
+            ap = average_precision_score(test_labels, y_pred)
+            plt.plot(recall, precision, label=f"{model_name} (AP = {ap:.2f})")
 
-            # Save the ROC curve data to the save directory
-            roc_data = {"fpr": fpr, "tpr": tpr, "thresholds": thresholds}
-            roc_data_path = os.path.join(self.output_path, f"{model_name}_roc_data.pkl")
-            with open(roc_data_path, "wb") as f:
-                pickle.dump(roc_data, f)
-            print(f"ROC data for {model_name} saved to {roc_data_path}")
+            # save the PR curve data to the save directory
+            pr_data = {
+                "precision": precision,
+                "recall": recall,
+                "thresholds": thresholds,
+            }
+            pr_data_path = os.path.join(self.output_path, f"{model_name}_pr_data.pkl")
+            with open(pr_data_path, "wb") as f:
+                pickle.dump(pr_data, f)
+            print(f"PR data for {model_name} saved to {pr_data_path}")
 
-        plt.plot([0, 1], [0, 1], color="black", linestyle="--")
-        plt.xlabel("False positive rate")
-        plt.ylabel("True positive rate")
-        plt.title("ROC curve - model performances on test set")
+        plt.xlabel("Recall")
+        plt.ylabel("Precision")
+        plt.title("Precision-Recall Curve - Model Performances on Test Set")
         plt.legend()
 
-        self.plot_layout_and_save(plt=plt, savename="roc_curves")
+        self.plot_layout_and_save(plt=plt, savename="pr_curves")
 
     def plot_bootstrap_results(
         self,
@@ -191,7 +196,7 @@ class BaselineModelVisualizer:
     ) -> Tuple[plt.Figure, plt.Axes]:
         """Set up the plot with common parameters."""
         fig, axis = plt.subplots()
-        axis.set_ylabel("AUC score")
+        axis.set_ylabel("PR score")
         axis.set_title(title)
         axis.set_xticks(range(len(model_names)))
         return fig, axis

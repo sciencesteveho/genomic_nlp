@@ -9,11 +9,13 @@ threshold."""
 
 
 import argparse
+import csv
 import multiprocessing as mp
 import os
 import pickle
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Set, Tuple
 
+from gensim.models import Word2Vec  # type: ignore
 import numpy as np
 import psutil  # type: ignore
 from scipy import stats  # type: ignore
@@ -25,11 +27,13 @@ from genomic_nlp.interaction_data_preprocessor import InteractionDataPreprocesso
 from genomic_nlp.models.interaction_models import BaselineModel
 from genomic_nlp.models.interaction_models import LogisticRegressionModel
 from genomic_nlp.models.interaction_models import MLP
+from genomic_nlp.models.interaction_models import RandomBaseline
 from genomic_nlp.models.interaction_models import SVM
 from genomic_nlp.models.interaction_models import XGBoost
+from genomic_nlp.run_cancer_models import _extract_gene_vectors
+from genomic_nlp.utils.common import get_physical_cores
 from genomic_nlp.utils.constants import RANDOM_STATE
 from genomic_nlp.visualization.visualizers import BaselineModelVisualizer
-from utils import get_physical_cores
 
 
 class GeneInterationPredictions:
@@ -57,30 +61,30 @@ class GeneInterationPredictions:
         self.model_name = model_name
         self.model_dir = model_dir
 
-    def perform_cross_validation(
-        self,
-        n_splits: int,
-        **kwargs,
-    ) -> List[float]:
-        """Perform stratified k-fold cross-validation and return AUC scores."""
-        folds = StratifiedKFold(
-            n_splits=n_splits, shuffle=True, random_state=RANDOM_STATE
-        )
-        return [
-            self.evaluate_model(
-                model=self.train_model(
-                    model_class=self.model_class,
-                    features=self.train_features[train_index],
-                    labels=self.train_targets[train_index],
-                    **kwargs,
-                ),
-                features=self.train_features[test_index],
-                labels=self.train_targets[test_index],
-            )
-            for train_index, test_index in folds.split(
-                X=self.train_features, y=self.train_targets
-            )
-        ]
+    # def perform_cross_validation(
+    #     self,
+    #     n_splits: int,
+    #     **kwargs,
+    # ) -> List[float]:
+    #     """Perform stratified k-fold cross-validation and return AUC scores."""
+    #     folds = StratifiedKFold(
+    #         n_splits=n_splits, shuffle=True, random_state=RANDOM_STATE
+    #     )
+    #     return [
+    #         self.evaluate_model(
+    #             model=self.train_model(
+    #                 model_class=self.model_class,
+    #                 features=self.train_features[train_index],
+    #                 labels=self.train_targets[train_index],
+    #                 **kwargs,
+    #             ),
+    #             features=self.train_features[test_index],
+    #             labels=self.train_targets[test_index],
+    #         )
+    #         for train_index, test_index in folds.split(
+    #             X=self.train_features, y=self.train_targets
+    #         )
+    #     ]
 
     def train_and_evaluate_model(
         self,
@@ -88,11 +92,11 @@ class GeneInterationPredictions:
         """Train a model, evaluate, and save results."""
         print(f"\nTraining and evaluating {self.model_name}:")
 
-        # perform 5-fold CV
-        cv_scores = self.perform_cross_validation(n_splits=5)
-        mean_cv_auc = np.mean(cv_scores)
-        std_cv_auc = np.std(cv_scores)
-        print(f"Cross-validation Mean AUC: {mean_cv_auc:.4f} (+/- {std_cv_auc:.4f})")
+        # # perform 5-fold CV
+        # cv_scores = self.perform_cross_validation(n_splits=5)
+        # mean_cv_auc = np.mean(cv_scores)
+        # std_cv_auc = np.std(cv_scores)
+        # print(f"Cross-validation Mean AUC: {mean_cv_auc:.4f} (+/- {std_cv_auc:.4f})")
 
         # train final model on entire training set
         final_model = self.train_model(
@@ -100,16 +104,16 @@ class GeneInterationPredictions:
         )
 
         # evaluate on training set
-        train_auc = self.evaluate_model(
+        train_ap = self.evaluate_model(
             final_model, self.train_features, self.train_targets
         )
-        print(f"Training set AUC: {train_auc:.4f}")
+        print(f"Training set AUC: {train_ap:.4f}")
 
         # evaluate on hold-out test set
-        test_auc = self.evaluate_model(
+        test_ap = self.evaluate_model(
             final_model, self.test_features, self.test_targets
         )
-        print(f"Hold-out test set AUC: {test_auc:.4f}")
+        print(f"Hold-out test set AUC: {test_ap:.4f}")
 
         # save model
         model_path = f"{self.model_dir}/{self.model_name}_model.pkl"
@@ -140,7 +144,7 @@ class GeneInterationPredictions:
     ) -> float:
         """Evaluate a model and return its AUC score."""
         predicted_probabilities = model.predict_probability(features)
-        return roc_auc_score(labels, predicted_probabilities)
+        return average_precision_score(labels, predicted_probabilities)
 
 
 class BootstrapEvaluator:
@@ -250,40 +254,120 @@ def parse_args() -> argparse.Namespace:
         description="Run baseline models for gene interaction prediction."
     )
     parser.add_argument(
-        "--embeddings", type=str, help="Path to gene embeddings pickle file."
+        "--ppi_directory",
+        type=str,
+        default="/ocean/projects/bio210019p/stevesho/genomic_nlp/ppi",
     )
     parser.add_argument(
-        "--positive_pairs_file",
+        "--test_file_dir",
         type=str,
-        help="Path to positive gene interaction pairs pickle file.",
+        default="/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data",
     )
     parser.add_argument(
-        "--negative_pairs_file",
+        "--save_path",
         type=str,
-        help="Path to negative gene interaction pairs pickle file.",
+        help="String to save the model with.",
+        default="/ocean/projects/bio210019p/stevesho/genomic_nlp/models/interaction",
     )
     parser.add_argument(
-        "--text_edges_file",
+        "--model_path",
         type=str,
-        help="Path to text edges pickle file.",
+        help="Path to word2vec model.",
+        default="/ocean/projects/bio210019p/stevesho/genomic_nlp/models",
     )
-    # parser.add_argument(
-    #     "--no_train",
-    #     action="store_true",
-    #     help="Do not train models, only plot results.",
-    # )
+    parser.add_argument(
+        "--gene_names",
+        type=str,
+        help="Path to gene names file.",
+        default="/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_synonyms.pkl",
+    )
+    parser.add_argument(
+        "--n2v_type",
+        type=str,
+        help="Type of n2v embeddings to use.",
+        choices=["ppi", "disease"],
+        default="ppi",
+    )
+    parser.add_argument(
+        "--model_type",
+        type=str,
+        help="Type of embedding model to use.",
+        choices=["w2v", "n2v"],
+    )
+    parser.add_argument(
+        "--year", type=int, help="Year of the model to use.", default=2019
+    )
     return parser.parse_args()
+
+
+def get_gene_embeddings(
+    args: argparse.Namespace, gene_names: Set[str]
+) -> Tuple[Dict[str, np.ndarray], str]:
+    """Get gene embeddings based on the model type."""
+    model_dir = f"{args.model_path}/{args.model_type}"
+
+    if args.model_type == "w2v":
+        model = Word2Vec.load(
+            f"{model_dir}/{args.year}/word2vec_300_dimensions_{args.year}.model"
+        )
+        gene_embeddings = _extract_gene_vectors(model, gene_names)
+        save_path = args.save_path
+    elif args.model_type == "n2v":
+        model_path = f"{model_dir}/{args.n2v_type}/{args.year}/input_embeddings.pkl"
+        with open(model_path, "rb") as f:
+            embeddings = pickle.load(f)
+        gene_embeddings = _extract_gene_vectors(embeddings, gene_names)
+        save_path = f"{args.save_path}/n2v/{args.n2v_type}"
+
+    return gene_embeddings, save_path
+
+
+def get_training_files(
+    args: argparse.Namespace,
+) -> Tuple[str, str, str, str]:
+    """Get training file names."""
+    positive_train_file = f"{args.ppi_directory}/gene_co_occurence_{args.year}.tsv"
+    negative_train_file = f"{args.ppi_directory}/negative_edges_training.pkl"
+    positive_test_file = f"{args.test_file_dir}/experimentally_derived_edges.pkl"
+    negative_test_file = f"{args.test_file_dir}/negative_edges.pkl"
+    return (
+        positive_train_file,
+        negative_train_file,
+        positive_test_file,
+        negative_test_file,
+    )
 
 
 def main() -> None:
     """Run baseline models for gene interaction prediction."""
     args = parse_args()
 
-    # process training data
-    data_preprocessor = InteractionDataPreprocessor(args=args)
+    # load test files
     (
-        positive_pairs,
-        negative_pairs,
+        positive_train_file,
+        negative_train_file,
+        positive_test_file,
+        negative_test_file,
+    ) = get_training_files(args=args)
+
+    # load gene names
+    with open(args.gene_names, "rb") as f:
+        gene_names = pickle.load(f)
+
+    gene_names = set(gene_names.keys())
+
+    # load embeddings and out path
+    gene_embeddings, out_path = get_gene_embeddings(args=args, gene_names=gene_names)
+
+    # process training data
+    data_preprocessor = InteractionDataPreprocessor(
+        embeddings=gene_embeddings,
+        positive_train_file=positive_train_file,
+        negative_train_file=negative_train_file,
+        positive_test_file=positive_test_file,
+        negative_test_file=negative_test_file,
+    )
+    (
         train_features,
         train_targets,
         test_features,
@@ -292,8 +376,7 @@ def main() -> None:
         neg_test,
     ) = data_preprocessor.load_and_preprocess_data()
 
-    print(f"No. of positive pairs: {len(positive_pairs)}")
-    print(f"No. of negative pairs: {len(negative_pairs)}")
+    print(f"No. of training examples: {len(train_features)}")
     print(f"Train features shape: {train_features.shape}")
     print(f"Train targets shape: {train_targets.shape}")
     print(f"Test features shape: {test_features.shape}")
@@ -304,15 +387,13 @@ def main() -> None:
         pos_test=pos_test, test_features=test_features, neg_test=neg_test
     )
 
-    # setup model directory
-    model_dir = _setup_model_dir(args=args)
-
     # define models
     models = {
+        "xgboost": XGBoost,
+        "random_baseline": RandomBaseline,
         "logistic_regression": LogisticRegressionModel,
         # "svm": SVM,
-        "xgboost": XGBoost,
-        "mlp": MLP,
+        # "mlp": MLP,
     }
 
     # train and evaluate models
@@ -329,7 +410,7 @@ def main() -> None:
             test_features=test_features,
             test_targets=test_targets,
             model_name=name,
-            model_dir=model_dir,
+            model_dir=out_path,
         )
         trained_model = gene_interaction_predictor.train_and_evaluate_model()
         trained_models[name] = trained_model
@@ -352,12 +433,12 @@ def main() -> None:
                 )
             )
 
-    visualizer = BaselineModelVisualizer(output_path=model_dir)
+    visualizer = BaselineModelVisualizer(output_path=out_path)
     visualizer.plot_model_performances(
         train_results=train_results, test_results=test_results
     )
     visualizer.plot_stratified_performance(stratified_results=stratified_results)
-    visualizer.plot_roc_curve(
+    visualizer.plot_pr_curve(
         models=trained_models, test_features=test_features, test_labels=test_targets
     )
 

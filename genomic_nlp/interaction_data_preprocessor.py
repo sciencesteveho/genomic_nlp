@@ -18,6 +18,18 @@ import numpy as np
 import pandas as pd
 
 
+def load_unique_pairs(file_path: str) -> Set[Tuple[str, ...]]:
+    """Load pairs for training."""
+    unique_pairs: Set[Tuple[str, ...]] = set()
+    with open(file_path, newline="") as f:
+        reader = csv.reader(f, delimiter="\t")
+        for row in reader:
+            gene1, gene2 = row
+            pair = tuple(sorted([gene1, gene2]))
+            unique_pairs.add(pair)
+    return unique_pairs
+
+
 class InteractionDataPreprocessor:
     """Preprocess data for baseline models. Load gene pairs, embeddings, filter,
     and statify the train and test sets by source.
@@ -38,75 +50,97 @@ class InteractionDataPreprocessor:
 
     def __init__(
         self,
-        args: argparse.Namespace,
+        embeddings: Dict[str, np.ndarray],
+        positive_train_file: str,
+        negative_train_file: str,
+        positive_test_file: str,
+        negative_test_file: str,
         data_dir: str = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings",
     ) -> None:
         """Instantiate a BaselineDataPreprocessor object. Load data and
         embeddings.
+
+        1. We load the embeddings and pair sets
+            model embeddings
+            testing data - experimentally verified interactions
+            training data - text-derived interactions
         """
         self.data_dir = data_dir
-
-        # load embeddings
-        self.gene_embeddings = _load_pickle(args.embeddings)
+        self.gene_embeddings = embeddings
 
         # load experimental pairs
-        self.pos_pairs_with_source = _load_pickle(args.positive_pairs_file)
+        self.test_pairs_with_source = _load_pickle(positive_test_file)
 
         # casefold pairs and create a mapping of pairs to source
-        self.pair_to_source = {
+        self.test_pairs_to_source = {
             (pair[0].lower(), pair[1].lower()): pair[2]
-            for pair in self.pos_pairs_with_source
+            for pair in self.test_pairs_with_source
         }
-        self.positive_pairs = casefold_pairs(self.pos_pairs_with_source)
-        self.negative_pairs = casefold_pairs(_load_pickle(args.negative_pairs_file))
+        self.positive_test_pairs = casefold_pairs(self.test_pairs_with_source)
+        self.negative_test_pairs = casefold_pairs(_load_pickle(negative_test_file))
 
-        # load co_occurrence pairs
-        self.text_edges = set(
-            casefold_pairs(
-                [
-                    tuple(row)
-                    for row in csv.reader(open(args.text_edges_file), delimiter="\t")
-                ]
-            )
-        )
+        # load training pairs
+        self.positive_training_pairs = load_unique_pairs(positive_train_file)
+        self.negative_training_pairs = _load_pickle(negative_train_file)
+        self.negative_training_pairs = casefold_pairs(self.negative_training_pairs)
         print("Data and embeddings loaded!")
 
-    def load_and_preprocess_data(self) -> Dict[str, Any]:
+    def load_and_preprocess_data(self):
         """Load all data for training!
 
-        Returns a dictionary of the format:
-        {
-            'train_features': np.ndarray,
-            'train_targets': np.ndarray,
-            'test_features': np.ndarray,
-            'test_targets': np.ndarray,
-            'test_pairs_known': List[Tuple[str,str]],
-            'test_pairs_unknown': List[Tuple[str,str]],
-          }
+        2. We filter the pairs for those that have embeddings
+        3. We filter the test set to remove pairs that are in the training set
+        4. We remove any pairs present in both the negative training and
+           negative test sets
+        4. We return the training and test sets
+
+            Returns a dictionary of the format:
+            {
+                'train_features': np.ndarray,
+                'train_targets': np.ndarray,
+                'test_features': np.ndarray,
+                'test_targets': np.ndarray,
+                'test_pairs_known': List[Tuple[str,str]],
+                'test_pairs_unknown': List[Tuple[str,str]],
+              }
         """
         print("Filtering pairs for those with embeddings")
-        train_pos = self._filter_pairs_for_embeddings(
-            set(self.positive_pairs), self.gene_embeddings
+        train_positive_filtered = self._filter_pairs_for_embeddings(
+            self.positive_training_pairs, self.gene_embeddings
         )
-        train_neg = self._filter_pairs_for_embeddings(
-            set(self.negative_pairs), self.gene_embeddings
+        train_negative_filtered = self._filter_pairs_for_embeddings(
+            self.negative_training_pairs, self.gene_embeddings
+        )
+        test_positive_filtered = self._filter_pairs_for_embeddings(
+            set(self.positive_test_pairs), self.gene_embeddings
+        )
+        test_negative_filtered = self._filter_pairs_for_embeddings(
+            set(self.negative_test_pairs), self.gene_embeddings
         )
 
-        print("Splitting pairs into train and test sets")
-        pos_train, pos_test = self.filter_pairs_for_prior_knowledge()
+        print("Filtering pairs for prior knowledge.")
+        pos_test = self.filter_pairs_for_prior_knowledge(
+            train_positive_filtered=train_positive_filtered,
+            test_positive_filtered=test_positive_filtered,
+        )
 
-        print("Getting negative samples.")
-        neg_train, neg_test = self.split_negative_pairs(len(pos_train), len(pos_test))
+        print("Filtering negative pairs to avoid data leakage.")
+        neg_train, neg_test = self.split_negative_pairs(
+            train_negative_filtered=train_negative_filtered,
+            test_negative_filtered=test_negative_filtered,
+            pos_train_examples=len(train_positive_filtered),
+            pos_test_examples=len(pos_test),
+        )
 
         print("Preparing training data and targets.")
         train_features, train_targets = self.prepare_data_and_targets(
-            pos_train, neg_train
+            positive_pairs=list(train_positive_filtered), negative_pairs=neg_train
         )
-        test_features, test_targets = self.prepare_data_and_targets(pos_test, neg_test)
+        test_features, test_targets = self.prepare_data_and_targets(
+            positive_pairs=pos_test, negative_pairs=neg_test
+        )
 
         return (
-            self.positive_pairs,
-            self.negative_pairs,
             train_features,
             train_targets,
             test_features,
@@ -114,6 +148,60 @@ class InteractionDataPreprocessor:
             pos_test,
             neg_test,
         )
+
+    def filter_pairs_for_prior_knowledge(
+        self,
+        train_positive_filtered: Set[Tuple[str, str]],
+        test_positive_filtered: Set[Tuple[str, str]],
+    ) -> List[Tuple[str, str]]:
+        """Given the test pairs, filter them to remove any pairs that overlap
+        with the training pairs."""
+        normalized_train = {
+            self.normalize_pair(pair) for pair in train_positive_filtered
+        }
+        pos_test: List[Tuple[str, str]] = []
+
+        # only keep pairs that are not in the training set
+        for pair in test_positive_filtered:
+            normalized = self.normalize_pair(pair)
+            if normalized not in normalized_train:
+                pos_test.append(pair)
+
+        print(f"Total test positive pairs after filtering: {len(pos_test)}")
+        return pos_test
+
+    def split_negative_pairs(
+        self,
+        train_negative_filtered: Set[Tuple[str, str]],
+        test_negative_filtered: Set[Tuple[str, str]],
+        pos_train_examples: int,
+        pos_test_examples: int,
+    ) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
+        """Ensure no overlap between negative training and test sets."""
+        # check number of train and test negatives
+        print(f"Total train negative pairs: {len(train_negative_filtered)}")
+        print(f"Total test negative pairs: {len(test_negative_filtered)}")
+        normalized_test = {self.normalize_pair(pair) for pair in test_negative_filtered}
+        filtered_train: List[Tuple[str, str]] = []
+
+        filtered_train.extend(
+            pair
+            for pair in train_negative_filtered
+            if self.normalize_pair(pair) not in normalized_test
+        )
+        print(f"Total train negative pairs after filtering: {len(filtered_train)}")
+        print(f"Total test negative pairs after filtering: {len(normalized_test)}")
+        deduped_test = list(normalized_test)
+
+        # sample train and test to be commensurate
+        if len(filtered_train) > pos_train_examples:
+            filtered_train = random.sample(filtered_train, pos_train_examples)  # type: ignore
+
+        if len(normalized_test) > pos_test_examples:
+            deduped_test = random.sample(deduped_test, pos_test_examples)  # type: ignore
+
+        # ensure len of test
+        return filtered_train, deduped_test
 
     def prepare_stratified_test_data(
         self,
@@ -126,7 +214,7 @@ class InteractionDataPreprocessor:
             lambda: {"features": [], "targets": []}
         )
         for i, pair in enumerate(pos_test):
-            sources = self.pair_to_source.get(pair, ("unknown",))
+            sources = self.test_pairs_to_source.get(pair, ("unknown",))
             for source in sources:
                 stratified_test_data[source]["features"].append(test_features[i])
                 stratified_test_data[source]["targets"].append(1)
@@ -148,78 +236,16 @@ class InteractionDataPreprocessor:
             )
         return dict(stratified_test_data)
 
-    def filter_pairs_for_prior_knowledge(
-        self,
-    ) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
-        """Filter the gene pairs into two sets: those with prior knowledge, and
-        those without. Gene pairs with prior knowledge are those that exist in the
-        text_edges set, which contains edges extracted from the literature.
-
-        There's a large imbalance between the number of test / train examples,
-        so we additionally split the positive pairs (test set) 50% and ensure it
-        is split without gene leakage.
-        """
-        pos_train: List[Tuple[str, str]] = []
-        pos_test: List[Tuple[str, str]] = []
-        prior_knowledge_pairs = []
-        no_prior_knowledge_pairs = []
-
-        print(f"Total positive pairs: {len(self.positive_pairs)}")
-
-        # separate pairs with and without prior knowledge
-        for pair in self.positive_pairs:
-            if pair in self.text_edges or (pair[1], pair[0]) in self.text_edges:
-                prior_knowledge_pairs.append(pair)
-            else:
-                no_prior_knowledge_pairs.append(pair)
-
-        print(f"Positive pairs with prior knowledge: {len(prior_knowledge_pairs)}")
-        print(
-            f"Positive pairs without prior knowledge: {len(no_prior_knowledge_pairs)}"
-        )
-
-        # get gene list
-        genes: Set[str] = set()
-        for pair in prior_knowledge_pairs:
-            genes.add(pair[0])
-            genes.add(pair[1])
-
-        # split genes into disjoint sets
-        train_genes, test_genes = self.randomly_split_gene_list(list(genes))
-
-        # assign pairs to train or test based on gene sets
-        # exclude pairs with genes in both sets
-        for pair in no_prior_knowledge_pairs:
-            if pair[0] in train_genes and pair[1] in train_genes:
-                pos_train.append(pair)
-            elif pair[0] in test_genes and pair[1] in test_genes:
-                pos_test.append(pair)
-
-        pos_train.extend(prior_knowledge_pairs)
-        print(f"Total training positive pairs after splitting: {len(pos_train)}")
-        print(f"Total testing positive pairs after splitting: {len(pos_test)}")
-
-        return pos_train, pos_test
-
-    def split_negative_pairs(
-        self, n_train: int, n_test: int
-    ) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
-        """Split negative pairs into train and test sets without overlap, based
-        on the length of the positive pairs.
-        """
-        if len(self.negative_pairs) < n_train + n_test:
-            raise ValueError(
-                "Not enough negative pairs to split into train and test sets"
-            )
-        shuffled_pairs = random.sample(self.negative_pairs, len(self.negative_pairs))
-        return shuffled_pairs[:n_train], shuffled_pairs[n_train : n_train + n_test]
-
     def prepare_data_and_targets(
         self,
         positive_pairs: List[Tuple[str, str]],
         negative_pairs: List[Tuple[str, str]],
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Create feature data and target labels from gene pairs."""
+        # check that positive and negative pairs have values
+        print(f"Positive pairs: {len(positive_pairs)}")
+        print(f"Negative pairs: {len(negative_pairs)}")
+
         all_pairs = positive_pairs + negative_pairs
         genes1, genes2 = zip(*all_pairs)
 
@@ -234,6 +260,9 @@ class InteractionDataPreprocessor:
         targets = np.zeros(len(all_pairs))
         targets[: len(positive_pairs)] = 1
 
+        # check that targets have two classes
+        assert len(np.unique(targets)) == 2
+        print(f"Classes: {np.unique(targets)}")
         return data, targets
 
     @staticmethod
@@ -267,6 +296,11 @@ class InteractionDataPreprocessor:
         random.shuffle(genes)
         split_index = len(genes) // 2
         return genes[:split_index], genes[split_index:]
+
+    @staticmethod
+    def normalize_pair(pair: Tuple[str, ...]) -> Tuple[str, ...]:
+        """Normalize a pair of genes."""
+        return tuple(sorted(gene.casefold() for gene in pair))
 
 
 class CancerGeneDataPreprocessor:
