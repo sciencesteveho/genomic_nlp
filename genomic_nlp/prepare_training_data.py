@@ -23,7 +23,7 @@ actually a true positive, we ensure that negatives pairs do not exist across all
 *NOTE - while we tried to opt for a completely programmatic data download, we
 found it difficult. The OpenCell file was no longer properly linked at the time
 we tried to download it, and the coessential file at 10% fdr was available only
-as an xlsx. Thus, users will have to manually download those files."""
+as an xlsx. Users will have to manually download those files."""
 
 
 from collections import defaultdict
@@ -168,8 +168,8 @@ class PrepareTrainingData:
         # download files
         self.download_reference_files()
 
-        # Create and save individual graphs
-        graphs = {
+        # create and save individual graphs
+        save_graphs = {
             "coessential_pos": self.coessential_graph()[0],
             "coessential_neg": self.coessential_graph()[1],
             "opencell": self.opencell_graph(),
@@ -179,8 +179,8 @@ class PrepareTrainingData:
             "go": self.go_graph(),
         }
 
-        # Save individual graphs
-        for name, graph in graphs.items():
+        # save individual graphs
+        for name, graph in save_graphs.items():
             self.save_graph(graph, f"{name}_graph.pkl")
 
         # load individual graphs
@@ -196,7 +196,7 @@ class PrepareTrainingData:
             with open(self.output_dir / f"{name}_graph.pkl", "rb") as f:
                 graphs[name] = pickle.load(f)
 
-        # Create and save combined graphs
+        # create and save combined graphs
         coessential_pos = self.gene_only_edges(graphs["coessential_pos"])
         experimentally_derived_edges = self.combine_exp_derived_edges(
             (coessential_pos, "coessential"),
