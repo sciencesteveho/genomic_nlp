@@ -43,17 +43,18 @@ import mygene  # type: ignore
 import pandas as pd
 from pybedtools import BedTool  # type: ignore
 import pybedtools  # type: ignore
+from tqdm import tqdm  # type: ignore
 
 
 def count_unique_pairs(file_path: str) -> int:
     """Count the number of unique deduplicated pairs from co-occurence TSV."""
     unique_pairs = set()
-
-    reader = csv.reader(open(file_path), delimiter="\t")
-    for row in reader:
-        gene1, gene2 = row
-        pair = tuple(sorted([gene1, gene2]))
-        unique_pairs.add(pair)
+    with open(file_path, "r") as file:
+        reader = csv.reader(file, delimiter="\t")
+        for row in reader:
+            gene1, gene2 = row
+            pair = tuple(sorted([gene1, gene2]))
+            unique_pairs.add(pair)
 
     return len(unique_pairs)
 
@@ -293,14 +294,20 @@ class PrepareTrainingData:
             if edge not in all_positive_edges
         }
 
+        total_edges_to_sample = n_random_edges + len(exp_negative_edges)
+        pbar = tqdm(total=total_edges_to_sample, desc="Sampling negative edges")
+
         # randomly sample negative edges until len matched
-        while len(negative_samples) < n_random_edges + len(exp_negative_edges):
+        while len(negative_samples) < total_edges_to_sample:
             negative_edge = tuple(sorted(random.sample(all_genes, 2)))
             if (
                 negative_edge not in all_positive_edges
                 and negative_edge not in negative_samples
             ):
                 negative_samples.add(negative_edge)
+                pbar.update(1)
+
+        pbar.close()
 
         return set(itertools.islice(negative_samples, n_random_edges))
 
@@ -610,18 +617,22 @@ def main() -> None:
 
     # run negative sampler for each year
     data_dir = "/ocean/projects/bio210019p/stevesho/genomic_nlp/ppi"
-    for year in range(2003, 2024):
+    # for year in range(2003, 2024):
+    for year in [2023]:
         co_occurence = f"{data_dir}/gene_co_occurence_{year}.tsv"
         unique_pairs = count_unique_pairs(co_occurence)
         print(f"Unique pairs for {year}: {unique_pairs}")
 
         # get negative samples
+        # do unique pairs plus number of experimental edges
+        exp_edges = 96548
         negative_samples = data_prep_obect.negative_sampler(
-            n_random_edges=unique_pairs, genes_within_kb=genes_within_kb
+            n_random_edges=3 * unique_pairs + exp_edges,
+            genes_within_kb=genes_within_kb,
         )
 
         with open(
-            f"{data_dir}/negative_edges_{year}.pkl",
+            f"{data_dir}/negative_edges_training.pkl",
             "wb",
         ) as f:
             pickle.dump(negative_samples, f)

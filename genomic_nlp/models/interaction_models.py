@@ -17,7 +17,6 @@ The following are implemented:
 
 from typing import Optional, Tuple, Union
 
-from genomic_nlp.utils.constants import RANDOM_STATE
 import numpy as np
 from sklearn.base import BaseEstimator  # type: ignore
 from sklearn.base import ClassifierMixin
@@ -28,13 +27,15 @@ from sklearn.neural_network import MLPClassifier  # type: ignore
 from sklearn.svm import SVC  # type: ignore
 from xgboost import XGBClassifier
 
+from genomic_nlp.utils.constants import RANDOM_STATE
+
 
 class BaselineModel(BaseEstimator, ClassifierMixin):
     """Base class for gene interaction prediction models. Defines input
     processing, model training, and prediction methods.
     """
 
-    def __init__(self, model: BaseEstimator, binary_threshold: float = 0.7):
+    def __init__(self, model: BaseEstimator, binary_threshold: float = 0.5):
         self.model = model
         self.binary_threshold = binary_threshold
         self.input_dim: Optional[int] = None
@@ -82,6 +83,36 @@ class BaselineModel(BaseEstimator, ClassifierMixin):
             raise ValueError("Input dimension mismatch")
 
 
+class RandomBaseline(BaselineModel):
+    """A baseline that returns random probabilities for gene-gene
+    interactions.
+    """
+
+    def __init__(self, random_state: int = RANDOM_STATE, binary_threshold: float = 0.5):
+        self.random_state = random_state
+        self.rng = np.random.default_rng(self.random_state)
+        self.input_dim = None
+        super().__init__(model=self, binary_threshold=binary_threshold)
+
+    def train(
+        self, feature_data: np.ndarray, target_labels: np.ndarray
+    ) -> "RandomBaseline":
+        """Dummy training method that just sets the input dimension."""
+        if feature_data.shape[1] % 2 != 0:
+            raise ValueError("Input dimension must be even for paired vectors")
+        self.input_dim = feature_data.shape[1] // 2
+        return self
+
+    def predict_probability(
+        self, input_features: Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]
+    ) -> np.ndarray:
+        """Return random probabilities for each input sample."""
+        processed_features = self._process_input(input_features)
+        n_samples = processed_features.shape[0]
+        # generate random probabilities
+        return self.rng.random(n_samples)
+
+
 class LogisticRegressionModel(BaselineModel):
     """Logistic regression - linear classification model."""
 
@@ -120,7 +151,16 @@ class XGBoost(BaselineModel):
     """XGBoost - gradient boosting decision tree model."""
 
     def __init__(self, **kwargs):
-        model = XGBClassifier(eval_metric="logloss", **kwargs)
+        model = XGBClassifier(
+            eval_metric="aucpr",
+            n_estimators=300,
+            learning_rate=0.05,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            seed=RANDOM_STATE,
+            reg_lambda=1,
+            **kwargs,
+        )
         super().__init__(model)
 
 
@@ -134,7 +174,7 @@ class MLP(BaselineModel):
             hidden_layer_sizes=hidden_layer_sizes,
             max_iter=max_iter,
             random_state=random_state,
-            **kwargs
+            **kwargs,
         )
         super().__init__(model)
 
