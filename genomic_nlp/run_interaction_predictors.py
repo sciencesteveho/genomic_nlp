@@ -311,13 +311,15 @@ def get_gene_embeddings(
             f"{model_dir}/{args.year}/word2vec_300_dimensions_{args.year}.model"
         )
         gene_embeddings = _extract_gene_vectors(model, gene_names)
-        save_path = args.save_path
+        save_path = f"{args.save_path}/w2v/{args.year}"
+        os.makedirs(save_path, exist_ok=True)
     elif args.model_type == "n2v":
         model_path = f"{model_dir}/{args.n2v_type}/{args.year}/input_embeddings.pkl"
         with open(model_path, "rb") as f:
             embeddings = pickle.load(f)
         gene_embeddings = _extract_gene_vectors(embeddings, gene_names)
-        save_path = f"{args.save_path}/n2v/{args.n2v_type}"
+        save_path = f"{args.save_path}/n2v/{args.n2v_type}/{args.year}"
+        os.makedirs(save_path, exist_ok=True)
 
     return gene_embeddings, save_path
 
@@ -341,6 +343,7 @@ def get_training_files(
 def main() -> None:
     """Run baseline models for gene interaction prediction."""
     args = parse_args()
+    print(f"Running {args.model_type} models for {args.year} embeddings.")
 
     # load test files
     (
