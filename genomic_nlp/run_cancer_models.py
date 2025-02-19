@@ -237,7 +237,7 @@ def get_gene_embeddings(
 
     if args.model_type == "w2v":
         model = Word2Vec.load(
-            f"{args.model_dir}/{year}/word2vec_300_dimensions_{year}.model"
+            f"{model_dir}/{year}/word2vec_300_dimensions_{year}.model"
         )
         gene_embeddings = _extract_gene_vectors(model, gene_names)
         save_path = args.save_path
