@@ -31,7 +31,7 @@ from genomic_nlp.models.edge_prediction_gnn import LinkPredictionGNN
 
 # helpers
 EPOCHS = 60
-PATIENCE = 10
+PATIENCE = 8
 
 
 def create_edge_loader(
@@ -68,12 +68,12 @@ def train_model(
 
         # forward pass
         z = model(data.x.to(device), data.edge_index.to(device))
-        pos_out = model.decode(z, pos_edges.to(device))
-        neg_out = model.decode(z, neg_edges.to(device))
+        pos_logits = model.decode(z, pos_edges.to(device))
+        neg_logits = model.decode(z, neg_edges.to(device))
 
         loss = (
-            -torch.log(pos_out.sigmoid() + 1e-15).mean()
-            - torch.log(1 - neg_out.sigmoid() + 1e-15).mean()
+            -torch.log(torch.sigmoid(pos_logits) + 1e-15).mean()
+            - torch.log(1 - torch.sigmoid(neg_logits) + 1e-15).mean()
         )
 
         loss.backward()
@@ -111,8 +111,8 @@ def evaluate_model(
     )
 
     for pos_edges, neg_edges in zip(pos_edge_loader, neg_edge_loader):
-        pos_scores.append(model.decode(z, pos_edges.to(device)).sigmoid().cpu())
-        neg_scores.append(model.decode(z, neg_edges.to(device)).sigmoid().cpu())
+        pos_scores.append(torch.sigmoid(model.decode(z, pos_edges.to(device))).cpu())
+        neg_scores.append(torch.sigmoid(model.decode(z, neg_edges.to(device))).cpu())
         pbar.update(1)
 
     pbar.close()
@@ -150,19 +150,19 @@ def evaluate_and_rank_validated_predictions(
     # process positive edges
     for pos_edges in pos_edge_loader:
         pos_edges = pos_edges.to(device)
-        scores = model.decode(z, pos_edges.t()).sigmoid()
-        all_scores.append(scores.cpu())
+        scores = torch.sigmoid(model.decode(z, pos_edges)).cpu()
+        all_scores.append(scores)
         all_edges.append(pos_edges.cpu())
-        y_true.append(torch.ones(len(pos_edges)))
+        y_true.append(torch.ones(pos_edges.size(0)))
         pbar.update(1)
 
     # process negative edges
     for neg_edges in neg_edge_loader:
         neg_edges = neg_edges.to(device)
-        scores = model.decode(z, neg_edges.t()).sigmoid()
-        all_scores.append(scores.cpu())
+        scores = torch.sigmoid(model.decode(z, neg_edges)).cpu()
+        all_scores.append(scores)
         all_edges.append(neg_edges.cpu())
-        y_true.append(torch.zeros(len(neg_edges)))
+        y_true.append(torch.zeros(neg_edges.size(0)))
         pbar.update(1)
 
     pbar.close()
@@ -174,7 +174,6 @@ def evaluate_and_rank_validated_predictions(
 
     # sort edges by predicted scores and rank
     sorted_indices = torch.argsort(all_scores, descending=True)  # type: ignore
-    ranked_edges = all_edges[sorted_indices].tolist()
     ranked_scores = all_scores[sorted_indices].tolist()
     sorted_labels = y_true[sorted_indices].numpy()
 
@@ -199,7 +198,7 @@ def predict_links(
 
     # predict all possible links
     all_edges = torch_geometric.utils.to_undirected(data.edge_index)
-    all_scores = model.decode(z, all_edges).sigmoid().cpu()
+    all_scores = torch.sigmoid(model.decode(z, all_edges)).cpu()
 
     # sort edges by predicted scores and rank
     sorted_indices = torch.argsort(all_scores, descending=True)
@@ -321,7 +320,7 @@ def predict_gene_disease_links(
     ).t()  # shape: [2, num_candidates]
 
     # decode representations and get scores
-    candidate_scores = model.decode(z, candidate_pairs.to(device)).sigmoid().cpu()
+    candidate_scores = torch.sigmoid(model.decode(z, candidate_pairs.to(device))).cpu()
 
     # sort candidate pairs by predicted score (descending)
     sorted_indices = torch.argsort(candidate_scores, descending=True)

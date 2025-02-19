@@ -26,8 +26,7 @@ class LinkPredictionGNN(nn.Module):
     normalization and ReLU for its activation function. Additionally, we
     implement dropout and a linear skip connection.
 
-    The GDA graphs that this model trains on are fairly large: we use a simple
-    dot produt decoder for computational efficiency.
+    Prediction head is a simple 2-layer MLP.
     """
 
     def __init__(
@@ -53,6 +52,14 @@ class LinkPredictionGNN(nn.Module):
         # skip connection
         self.residual = nn.Linear(in_channels, out_channels)
 
+        # prediction head
+        # concatenates the node embeddings of the two nodes in the edge
+        self.prediction_head = nn.Sequential(
+            nn.Linear(2 * out_channels, out_channels),
+            nn.ReLU(),
+            nn.Linear(out_channels, 1),
+        )
+
     def encode(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
         """Encode the input graph."""
         x1 = self.dropout(self.activation(self.norm1(self.conv1(x, edge_index))))
@@ -60,8 +67,11 @@ class LinkPredictionGNN(nn.Module):
         return self.residual(x) + x2
 
     def decode(self, z: torch.Tensor, edge_label_index: torch.Tensor) -> torch.Tensor:
-        """Decode the input graph via dot product of node embeddings."""
-        return (z[edge_label_index[0]] * z[edge_label_index[1]]).sum(dim=-1)
+        """Decode the input graph via MLP."""
+        src = z[edge_label_index[0]]
+        dst = z[edge_label_index[1]]
+        edge_features = torch.cat([src, dst], dim=-1)
+        return self.prediction_head(edge_features).view(-1)
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
         """Forward pass of the network to predict links."""
