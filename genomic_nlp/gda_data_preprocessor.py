@@ -16,10 +16,12 @@ prediction model.
 
 import csv
 import random
-from typing import Dict, Set, Tuple
+from typing import Dict, List, Set, Tuple
 
+import numpy as np
 import torch
 from torch_geometric.data import Data  # type: ignore
+from tqdm import tqdm  # type: ignore
 
 from genomic_nlp.interaction_data_preprocessor import _load_pickle
 
@@ -147,17 +149,55 @@ class GDADataPreprocessor:
         and one disease at random and accepts the pair if it is not in the
         positive set.
         """
-        negative_samples: Set[Tuple[str, str]] = set()
         genes = list(unique_genes)
         diseases = list(unique_diseases)
+        num_genes = len(genes)
+        num_diseases = len(diseases)
 
+        # create dictionaries to map genes/diseases to indices
+        gene_to_idx = {gene: idx for idx, gene in enumerate(genes)}
+        disease_to_idx = {disease: idx for idx, disease in enumerate(diseases)}
+
+        # precompute a sorted hash for each positive edge
+        pos_hashes = np.empty(len(positive_edges), dtype=np.int64)
+        for i, (gene, disease) in enumerate(positive_edges):
+            pos_hashes[i] = gene_to_idx[gene] * num_diseases + disease_to_idx[disease]
+
+        pos_hashes.sort()
+
+        negative_samples: List[Tuple[str, str]] = []
+        batch_size = 10000
+
+        pbar = tqdm(total=num_samples, desc="Generating negatives")
         while len(negative_samples) < num_samples:
-            gene = random.choice(genes)
-            disease = random.choice(diseases)
-            edge = (gene, disease)
-            if edge not in positive_edges and edge not in negative_samples:
-                negative_samples.add(edge)
-        return negative_samples
+
+            # generate a batch of random indices.
+            candidate_gene_indices = np.random.randint(0, num_genes, size=batch_size)
+            candidate_disease_indices = np.random.randint(
+                0, num_diseases, size=batch_size
+            )
+
+            # compute a hash for each candidate pair
+            candidate_hashes = (
+                candidate_gene_indices * num_diseases + candidate_disease_indices
+            )
+
+            # mark candidates that are not in the positive set
+            valid_mask = ~np.isin(candidate_hashes, pos_hashes)
+
+            # select valid candidates
+            valid_gene_indices = candidate_gene_indices[valid_mask]
+            valid_disease_indices = candidate_disease_indices[valid_mask]
+
+            # convert indices back to gene/disease names
+            for g_idx, d_idx in zip(valid_gene_indices, valid_disease_indices):
+                negative_samples.append((genes[g_idx], diseases[d_idx]))
+                pbar.update(1)
+                if len(negative_samples) >= num_samples:
+                    break
+
+        pbar.close()
+        return set(negative_samples)
 
     def _get_node_features(self, node_mapping: Dict[str, int]) -> torch.Tensor:
         """Fill out node feature matrix via retrieving embeddings."""

@@ -30,7 +30,7 @@ from genomic_nlp.gda_data_preprocessor import GDADataPreprocessor
 from genomic_nlp.models.edge_prediction_gnn import LinkPredictionGNN
 
 # helpers
-EPOCHS = 100
+EPOCHS = 60
 PATIENCE = 10
 
 
