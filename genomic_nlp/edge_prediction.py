@@ -4,15 +4,9 @@
 
 
 """Train a link-prediction GNN on a base graph initialized with node embedding
-data trained from a language model. Testing is done on a separate graph of
-experimentally derived gene-gene (or protein-protein) interactions for which the
-training portion never sees.
-
-All of our derived graphs only represent positive data. To ameliorate this, we
-use a negative sampling strategy to create negative samples for training (i.e.,
-pairs of nodes that are not connected in the graph). See the GNNDataPreprocessor
-class for more details."""
-
+data trained from node2vec. The graph structure is derived from co-occurrence in
+abstracts.
+"""
 
 import argparse
 import json
@@ -32,8 +26,8 @@ from torch_geometric.data import Data  # type: ignore
 from torch_geometric.loader import DataLoader  # type: ignore
 from tqdm import tqdm  # type: ignore
 
-from genomic_nlp.gnn_data_preprocessor import GNNDataPreprocessor
-from genomic_nlp.models.interaction_models_gnn import LinkPredictionGNN
+from genomic_nlp.gda_data_preprocessor import GDADataPreprocessor
+from genomic_nlp.models.edge_prediction_gnn import LinkPredictionGNN
 
 # helpers
 EPOCHS = 100
@@ -72,7 +66,8 @@ def train_model(
     for pos_edges, neg_edges in zip(pos_edge_loader, neg_edge_loader):
         optimizer.zero_grad()
 
-        z = model(data.x.to(device), data.edge_index.to(device))  # forward pass
+        # forward pass
+        z = model(data.x.to(device), data.edge_index.to(device))
         pos_out = model.decode(z, pos_edges.to(device))
         neg_out = model.decode(z, neg_edges.to(device))
 
@@ -140,7 +135,7 @@ def evaluate_and_rank_validated_predictions(
     pos_edge_loader: torch_geometric.data.DataLoader,
     neg_edge_loader: torch_geometric.data.DataLoader,
     device: torch.device,
-) -> Tuple[float, float, List[Tuple[int, int, float]], np.ndarray, np.ndarray]:
+) -> Tuple[float, float, np.ndarray, np.ndarray]:
     """Evaluate the model on experimentally validated edges and rank them."""
     model.eval()
     model = model.to(device)
@@ -183,19 +178,13 @@ def evaluate_and_rank_validated_predictions(
     ranked_scores = all_scores[sorted_indices].tolist()
     sorted_labels = y_true[sorted_indices].numpy()
 
-    # combine edges and scores
-    ranked_predictions = [
-        (int(edge[0]), int(edge[1]), float(score))
-        for edge, score in zip(ranked_edges, ranked_scores)
-    ]
-
     # calculate metrics
     scores = all_scores.numpy()  # type: ignore
     labels = y_true.numpy()  # type: ignore
     auc = roc_auc_score(labels, scores)
     ap = average_precision_score(labels, scores)
 
-    return auc, ap, ranked_predictions, sorted_labels, np.array(ranked_scores)
+    return auc, ap, sorted_labels, np.array(ranked_scores)
 
 
 @torch.no_grad()
@@ -231,7 +220,7 @@ def evaluate_predictions(
     """Evaluate predicted links by seeing how many test edges are in the top K."""
     test_edges = set(map(tuple, test_pos_edges.t().tolist()))
 
-    # calculate precision@k and recall@k
+    # calculate precision and recall
     true_positives = sum((edge[0], edge[1]) in test_edges for edge in predictions[:k])
     precision = true_positives / k
     recall = true_positives / len(test_edges)
@@ -250,13 +239,14 @@ def save_model_and_performance(
     performances: List[Tuple[str, float]],
     model_name: str,
     save_dir: Path,
+    year: str,
 ) -> None:
     """Save model and metrics."""
     # save model
     torch.save(model.state_dict(), save_dir / f"{model_name}.pt")
 
     # save performances
-    with open(save_dir / f"{model_name}_performance.json", "w") as f:
+    with open(save_dir / f"{model_name}_performance_{year}.json", "w") as f:
         json.dump(performances, f)
 
 
@@ -306,26 +296,70 @@ def save_loss_data(losses: List[float], save_dir: Path) -> None:
     np.savetxt(save_dir / "loss_data.txt", losses)
 
 
+@torch.no_grad()
+def predict_gene_disease_links(
+    model: nn.Module,
+    data: Data,
+    device: torch.device,
+) -> List[Tuple[int, int, float]]:
+    """Predict gene-disease links in the graph by generating all possible
+    pairs.
+    """
+
+    model.eval()
+
+    # get the latent space representation of the nodes
+    z = model(data.x.to(device), data.edge_index.to(device))
+
+    # get gene and disease indices
+    gene_nodes = data.gene_nodes.to(device)
+    disease_nodes = data.disease_nodes.to(device)
+
+    # generate all possible gene-disease pairs
+    candidate_pairs = torch.cartesian_prod(
+        gene_nodes, disease_nodes
+    ).t()  # shape: [2, num_candidates]
+
+    # decode representations and get scores
+    candidate_scores = model.decode(z, candidate_pairs.to(device)).sigmoid().cpu()
+
+    # sort candidate pairs by predicted score (descending)
+    sorted_indices = torch.argsort(candidate_scores, descending=True)
+    ranked_candidate_pairs = candidate_pairs[:, sorted_indices].t().tolist()
+    ranked_scores = candidate_scores[sorted_indices].tolist()
+
+    return [
+        (int(pair[0]), int(pair[1]), float(score))
+        for pair, score in zip(ranked_candidate_pairs, ranked_scores)
+    ]
+
+
 def main() -> None:
     """Main function."""
     parser = argparse.ArgumentParser(
         description="Train and evaluate a GNN for link prediction."
     )
-    parser.add_argument("--embeddings", type=str, help="Path to embeddings file")
-    parser.add_argument("--text_edges_file", type=str, help="Path to edge list file")
-    parser.add_argument(
-        "--positive_pairs_file", type=str, help="Path to positive pairs file"
-    )
     parser.add_argument("--batch_size", type=int, default=256, help="Batch size")
+    parser.add_argument("--year", type=int, help="Year of data to use")
     args = parser.parse_args()
 
     save_dir = Path("/ocean/projects/bio210019p/stevesho/genomic_nlp/models/gnn")
+    embedding_path = (
+        "/ocean/projects/bio210019p/stevesho/genomic_nlp/models/n2v/disease"
+    )
+    text_path = "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/disease"
+
+    embedding_file = f"{embedding_path}/{args.year}/input_embeddings.pkl"
+    text_edges_file = f"{text_path}/gda_co_occurence_{args.year}.tsv"
 
     # set device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # preprocess data
-    preprocessor = GNNDataPreprocessor(args)
+    preprocessor = GDADataPreprocessor(
+        text_edges_file=text_edges_file,
+        embedding_file=embedding_file,
+    )
     data, positive_test_edges, negative_test_edges = preprocessor.preprocess_data()
 
     # loaders
@@ -345,7 +379,7 @@ def main() -> None:
 
     # initialize model, optimizer, and scheduler
     model = LinkPredictionGNN(
-        in_channels=data.num_node_features, embedding_size=256, out_channels=256
+        in_channels=data.num_node_features, embedding_size=128, out_channels=128
     ).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
     scheduler = ReduceLROnPlateau(
@@ -393,17 +427,17 @@ def main() -> None:
     save_loss_data(losses, save_dir)  # save loss data
 
     # load the best model for final evaluation
-    model.load_state_dict(torch.load(f"{save_dir}/best_model.pth", map_location=device))
+    model.load_state_dict(
+        torch.load(f"{save_dir}/best_model_{args.years}.pth", map_location=device)
+    )
 
     # evaluate on test set
-    auc, ap, ranked_predictions, y_true_sorted, y_scores_sorted = (
-        evaluate_and_rank_validated_predictions(
-            model=model,
-            data=data,
-            pos_edge_loader=test_pos_loader,
-            neg_edge_loader=test_neg_loader,
-            device=device,
-        )
+    auc, ap, y_true_sorted, y_scores_sorted = evaluate_and_rank_validated_predictions(
+        model=model,
+        data=data,
+        pos_edge_loader=test_pos_loader,
+        neg_edge_loader=test_neg_loader,
+        device=device,
     )
 
     save_roc_data(y_true_sorted, y_scores_sorted, save_dir)
@@ -411,19 +445,28 @@ def main() -> None:
     print("Final Evaluation:")
     print(f"AUC: {auc:.4f}")
     print(f"Average Precision: {ap:.4f}")
-    print("Top 10 ranked validated links:")
-    for rank, (node1, node2, score) in enumerate(ranked_predictions[:10], 1):
-        print(f"Rank {rank}: ({node1}, {node2}) - Score: {score:.4f}")
-
-    # save all ranked predictions to a file
-    with open(save_dir / "ranked_validated_predictions.txt", "w") as f:
-        for node1, node2, score in ranked_predictions:
-            f.write(f"{node1}\t{node2}\t{score:.4f}\n")
 
     # save model and performance
     save_model_and_performance(
-        model, [("AUC", auc), ("AP", ap)], "final_model", save_dir
+        model,
+        [("AUC", auc), ("AP", ap)],
+        f"final_model_{args.years}",
+        save_dir,
+        args.year,
     )
+
+    # predict gene-disease links
+    predicted_gdas = predict_gene_disease_links(model, data, device)
+
+    print("Top 10 predicted gene-disease associations:")
+    for rank, (gene_idx, disease_idx, score) in enumerate(predicted_gdas[:10], 1):
+        print(
+            f"Rank {rank}: Gene {gene_idx} -- Disease {disease_idx} | Score: {score:.4f}"
+        )
+
+    with open(save_dir / f"predicted_gdas_{args.years}.txt", "w") as f:
+        for gene_idx, disease_idx, score in predicted_gdas:
+            f.write(f"{gene_idx}\t{disease_idx}\t{score:.4f}\n")
 
 
 if __name__ == "__main__":

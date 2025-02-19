@@ -24,7 +24,10 @@ class LinkPredictionGNN(nn.Module):
 
     The model defaults to two GraphSAGE convolutional layers with graph
     normalization and ReLU for its activation function. Additionally, we
-    implement dropouut and a dense skip connection.
+    implement dropout and a linear skip connection.
+
+    The GDA graphs that this model trains on are fairly large: we use a simple
+    dot produt decoder for computational efficiency.
     """
 
     def __init__(
