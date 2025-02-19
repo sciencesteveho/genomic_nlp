@@ -29,6 +29,7 @@ from genomic_nlp.models.cancer_models import RandomBaseline
 from genomic_nlp.models.cancer_models import SVM
 from genomic_nlp.models.cancer_models import XGBoost
 from genomic_nlp.utils.constants import RANDOM_STATE
+from genomic_nlp.visualization import set_matplotlib_publication_parameters
 
 
 class CancerGenePrediction:
@@ -336,6 +337,7 @@ def run_final_model(
         explainer = shap.TreeExplainer(final_model.model)
         shap_values = explainer.shap_values(X_train)
         print("[SHAP] Generating summary plot...")
+        set_matplotlib_publication_parameters()  # set publication parameters
         shap.summary_plot(shap_values, X_train)
         plt.savefig(save_dir / "shap_summary_plot.png", dpi=450)
         plt.close()
