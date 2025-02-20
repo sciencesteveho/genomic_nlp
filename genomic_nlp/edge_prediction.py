@@ -31,7 +31,7 @@ from genomic_nlp.gda_data_preprocessor import GDADataPreprocessor
 from genomic_nlp.models.edge_prediction_gnn import LinkPredictionGNN
 
 # helpers
-EPOCHS = 15
+EPOCHS = 20
 PATIENCE = 3
 
 
@@ -414,10 +414,11 @@ def main() -> None:
     )
 
     # initialize model, optimizer, and scheduler
+    base_lr = 0.0001
     model = LinkPredictionGNN(
         in_channels=data.num_node_features, embedding_size=128, out_channels=128
     ).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=base_lr)
     scheduler = ReduceLROnPlateau(
         optimizer, mode="max", factor=0.5, patience=5, verbose=True
     )
@@ -426,8 +427,18 @@ def main() -> None:
     best_auc = float("-inf")
     patience_counter = 0
     losses = []
+    warmup_steps = EPOCHS * 0.1
 
     for epoch in range(EPOCHS):
+        # warmup learning rate for 10% training steps
+        if epoch < warmup_steps:
+            warmup_lr = base_lr * (epoch + 1) / warmup_steps
+            for param_group in optimizer.param_groups:
+                param_group["lr"] = warmup_lr
+            print(
+                f"Warmup Epoch {epoch+1}/{warmup_steps}: setting LR to {warmup_lr:.6f}"
+            )
+
         loss = train_model(
             model=model,
             optimizer=optimizer,
@@ -445,7 +456,10 @@ def main() -> None:
             neg_edge_loader=val_neg_loader,
             device=device,
         )
-        scheduler.step(auc)
+
+        if epoch >= warmup_steps:
+            scheduler.step(auc)
+
         print(f"Epoch: {epoch:03d}, Loss: {loss:.4f}, AUC: {auc:.4f}")
 
         if auc > best_auc:
