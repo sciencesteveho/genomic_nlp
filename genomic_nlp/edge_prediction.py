@@ -30,7 +30,7 @@ from genomic_nlp.gda_data_preprocessor import GDADataPreprocessor
 from genomic_nlp.models.edge_prediction_gnn import LinkPredictionGNN
 
 # helpers
-EPOCHS = 15
+EPOCHS = 20
 PATIENCE = 3
 
 
@@ -436,7 +436,7 @@ def main() -> None:
 
     # load the best model for final evaluation
     model.load_state_dict(
-        torch.load(f"{save_dir}/best_model_{args.years}.pth", map_location=device)
+        torch.load(f"{save_dir}/best_model_{args.year}.pth", map_location=device)
     )
 
     # evaluate on test set
@@ -458,7 +458,7 @@ def main() -> None:
     save_model_and_performance(
         model,
         [("AUC", auc), ("AP", ap)],
-        f"final_model_{args.years}",
+        f"final_model_{args.year}",
         save_dir,
         args.year,
     )
@@ -472,7 +472,7 @@ def main() -> None:
             f"Rank {rank}: Gene {gene_idx} -- Disease {disease_idx} | Score: {score:.4f}"
         )
 
-    with open(save_dir / f"predicted_gdas_{args.years}.txt", "w") as f:
+    with open(save_dir / f"predicted_gdas_{args.year}.txt", "w") as f:
         for gene_idx, disease_idx, score in predicted_gdas:
             f.write(f"{gene_idx}\t{disease_idx}\t{score:.4f}\n")
 
