@@ -70,10 +70,17 @@ class GDADataPreprocessor:
             )
         )
         random.shuffle(all_neg_edges)
-        train_neg = set(all_neg_edges[:train_count])
-        val_neg = set(all_neg_edges[train_count : train_count + val_count])
-        test_neg = set(all_neg_edges[train_count + val_count :])
+        neg_total = len(all_neg_edges)  # may be < total!
+        neg_train_count = int(neg_total * 0.70)
+        neg_val_count = int(neg_total * 0.15)
+
+        train_neg = set(all_neg_edges[:neg_train_count])
+        val_neg = set(all_neg_edges[neg_train_count : neg_train_count + neg_val_count])
+        test_neg = set(all_neg_edges[neg_train_count + neg_val_count :])
+
+        print("train_neg has", len(train_neg), "edges")
         print("val_neg has", len(val_neg), "edges")
+        print("test_neg has", len(test_neg), "edges")
 
         # map nodes to indices and get node features
         node_mapping = self._map_nodes_to_indices(self.edges)
