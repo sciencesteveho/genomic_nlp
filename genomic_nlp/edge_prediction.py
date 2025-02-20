@@ -21,6 +21,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.utils.data import WeightedRandomSampler
 import torch_geometric  # type: ignore
 from torch_geometric.data import Data  # type: ignore
 from torch_geometric.loader import DataLoader  # type: ignore
@@ -44,6 +45,26 @@ def create_edge_loader(
     return DataLoader(edge_dataset, batch_size=batch_size, shuffle=shuffle)
 
 
+def create_negative_loader_with_oversampling(
+    edge_index: torch.Tensor,
+    target_num_samples: int,
+    batch_size: int,
+) -> DataLoader:
+    """Create dataloader for negative edge pairs with oversampling to match
+    target samples.
+    """
+    # transpose to get pairs of nodes.
+    edge_dataset = edge_index.t()
+    num_negatives = len(edge_dataset)
+
+    # create equal weights for all negative examples.
+    weights = [1.0] * num_negatives
+    sampler = WeightedRandomSampler(
+        weights, num_samples=target_num_samples, replacement=True
+    )
+    return DataLoader(edge_dataset, batch_size=batch_size, sampler=sampler)
+
+
 def train_model(
     model: nn.Module,
     optimizer: torch.optim.Optimizer,
@@ -52,6 +73,7 @@ def train_model(
     neg_edge_loader: torch_geometric.data.DataLoader,
     device: torch.device,
     epoch: int,
+    pos_weight: float = 1.0,
 ) -> float:
     """Train the link prediction model."""
     model.train()
@@ -72,10 +94,9 @@ def train_model(
         pos_logits = model.decode(z, pos_edges.to(device))
         neg_logits = model.decode(z, neg_edges.to(device))
 
-        loss = (
-            -torch.log(torch.sigmoid(pos_logits) + 1e-15).mean()
-            - torch.log(1 - torch.sigmoid(neg_logits) + 1e-15).mean()
-        )
+        loss_pos = -torch.log(torch.sigmoid(pos_logits) + 1e-15).mean()
+        loss_neg = -torch.log(1 - torch.sigmoid(neg_logits) + 1e-15).mean()
+        loss = pos_weight * loss_pos + loss_neg
 
         loss.backward()
         optimizer.step()
@@ -105,15 +126,18 @@ def evaluate_model(
     pos_scores: List[torch.Tensor] = []
     neg_scores: List[torch.Tensor] = []
 
-    num_batches = len(pos_edge_loader)
+    num_batches = len(pos_edge_loader) + len(neg_edge_loader)
     pbar = tqdm(
         total=num_batches,
         desc="Evaluating",
     )
 
-    for pos_edges, neg_edges in zip(pos_edge_loader, neg_edge_loader):
-        pos_scores.append(torch.sigmoid(model.decode(z, pos_edges.to(device))).cpu())
-        neg_scores.append(torch.sigmoid(model.decode(z, neg_edges.to(device))).cpu())
+    for pos_edge in pos_edge_loader:
+        pos_scores.append(torch.sigmoid(model.decode(z, pos_edge.to(device))).cpu())
+        pbar.update(1)
+
+    for neg_edge in neg_edge_loader:
+        neg_scores.append(torch.sigmoid(model.decode(z, neg_edge.to(device))).cpu())
         pbar.update(1)
 
     pbar.close()
@@ -267,9 +291,13 @@ def create_loaders(
     train_pos_loader = create_edge_loader(
         data.train_pos_edge_index, batch_size=batch_size, shuffle=True
     )
-    train_neg_loader = create_edge_loader(
-        data.train_neg_edge_index, batch_size=batch_size, shuffle=True
+    num_train_pos = data.train_pos_edge_index.t().size(0)
+    train_neg_loader = create_negative_loader_with_oversampling(
+        data.train_neg_edge_index,
+        target_num_samples=num_train_pos,
+        batch_size=batch_size,
     )
+
     val_pos_loader = create_edge_loader(data.val_pos_edge_index, batch_size=batch_size)
     val_neg_loader = create_edge_loader(data.val_neg_edge_index, batch_size=batch_size)
     test_pos_loader = create_edge_loader(positive_test_edges, batch_size=batch_size)
