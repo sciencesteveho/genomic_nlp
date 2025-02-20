@@ -9,31 +9,6 @@ import random
 
 RANDOM_STATE = 42
 
-CHATGPT_CANCER_GENES = [
-    "ATAD3A",
-    "CEP164",
-    "ZBTB20",
-    "NUP98",
-    "ANKS1B",
-    "CDK5",
-    "DCAF13",
-    "LZTR1",
-    "KIF1B",
-    "RABL3",
-]
-
-
-CLAUDE_CANCER_GENES = [
-    "SIRT7",
-    "CLOCK",
-    "FOXO6",
-    "DNMT3L",
-    "HELQ",
-    "NEIL3",
-    "ALKBH8",
-    "PNPLA7",
-]
-
 
 GENERAL_SEARCH_TERMS = [
     "ATAC-seq",

@@ -16,9 +16,11 @@ import pickle
 from typing import Any, Callable, Dict, List, Set, Tuple
 
 from gensim.models import Word2Vec  # type: ignore
+import matplotlib.pyplot as plt  # type: ignore
 import numpy as np
 import psutil  # type: ignore
 from scipy import stats  # type: ignore
+import shap  # type: ignore
 from sklearn.metrics import average_precision_score  # type: ignore
 from sklearn.metrics import roc_auc_score  # type: ignore
 from sklearn.model_selection import StratifiedKFold  # type: ignore
@@ -33,6 +35,7 @@ from genomic_nlp.models.interaction_models import XGBoost
 from genomic_nlp.run_cancer_models import _extract_gene_vectors
 from genomic_nlp.utils.common import get_physical_cores
 from genomic_nlp.utils.constants import RANDOM_STATE
+from genomic_nlp.visualization import set_matplotlib_publication_parameters
 from genomic_nlp.visualization.visualizers import BaselineModelVisualizer
 
 
@@ -115,6 +118,14 @@ class GeneInterationPredictions:
         )
         print(f"Hold-out test set AUC: {test_ap:.4f}")
 
+        # SHAP analysis for tree-based model
+        shap_values = None
+        if self.model_name == "xgboost":
+            try:
+                self.run_shap(final_model)
+            except Exception as e:
+                print(f"Error generating SHAP summary plot: {str(e)}")
+
         # save model
         model_path = f"{self.model_dir}/{self.model_name}_model.pkl"
         try:
@@ -124,7 +135,30 @@ class GeneInterationPredictions:
         except Exception as e:
             print(f"Error saving model {self.model_name}: {str(e)}")
 
+        # save training features and labels
+        train_features_path = f"{self.model_dir}/{self.model_name}_train_features.npy"
+        train_targets_path = f"{self.model_dir}/{self.model_name}_train_targets.npy"
+        np.save(train_features_path, self.train_features)
+        np.save(train_targets_path, self.train_targets)
+
+        # save SHAP vals
+        if shap_values is not None:
+            shap_path = f"{self.model_dir}/{self.model_name}_shap_values.npy"
+            np.save(shap_path, shap_values)
+
         return final_model
+
+    def run_shap(self, final_model: BaselineModel) -> None:
+        """Run SHAP analysis for a tree-based model."""
+        explainer = shap.TreeExplainer(final_model.model)
+        shap_values = explainer.shap_values(self.train_features)
+        print("[SHAP) generating summary plot...")
+        set_matplotlib_publication_parameters()
+        shap.summary_plot(shap_values, self.train_features)
+        plt.savefig(
+            f"{self.model_dir}/{self.model_name}_shap_summary_plot.png", dpi=450
+        )
+        plt.close()
 
     @staticmethod
     def train_model(
@@ -393,8 +427,8 @@ def main() -> None:
     # define models
     models = {
         "xgboost": XGBoost,
-        "random_baseline": RandomBaseline,
-        "logistic_regression": LogisticRegressionModel,
+        # "random_baseline": RandomBaseline,
+        # "logistic_regression": LogisticRegressionModel,
         # "svm": SVM,
         # "mlp": MLP,
     }

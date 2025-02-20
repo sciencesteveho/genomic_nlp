@@ -29,6 +29,7 @@ from pybedtools import BedTool  # type: ignore
 from scipy import stats  # type: ignore
 from scipy.stats import pearsonr  # type: ignore
 import seaborn as sns  # type: ignore
+import shap  # type: ignore
 from sklearn.decomposition import PCA  # type: ignore
 from sklearn.model_selection import GridSearchCV  # type: ignore
 from sklearn.pipeline import Pipeline  # type: ignore
@@ -209,7 +210,9 @@ def main() -> None:
     # embedding_genes = {gene.upper() for gene in embeddings}
 
     # load w2v model
-    w2v = Word2Vec.load("word2vec_300_dimensions_2023.model")
+    w2v = Word2Vec.load(
+        "/Users/steveho/genomic_nlp/development/models/word2vec_300_dimensions_2023.model"
+    )
 
     # add symbols to df
     df["genesymbol"] = df.index.map(lambda x: symbol_lookup.get(x, x))
@@ -309,6 +312,11 @@ def main() -> None:
         predictions, y_test, savetitle="w2v_embedding_expression_prediction.png"
     )
 
+    # Best parameters found:
+    # {'xgb__colsample_bytree': 0.7, 'xgb__gamma': 0.05, 'xgb__learning_rate': 0.06, 'xgb__max_depth': 4, 'xgb__min_child_weight': 5, 'xgb__n_estimators': 550, 'xgb__reg_alpha': 1, 'xgb__reg_lambda': 1, 'xgb__subsample': 0.9}
+    # Improved Pearson Correlation: 0.6016
+    # Improved Spearman Correlation: 0.5971
+
     # run random model with best params
     best_params = {
         "xgb__colsample_bytree": 0.7,
@@ -321,6 +329,7 @@ def main() -> None:
         "xgb__reg_lambda": 1,
         "xgb__subsample": 0.9,
     }
+    xgb_params = {k.replace("xgb__", ""): v for k, v in best_params.items()}
 
     # get random vectors using xavier uniform init
     embedding_dimension = X_train.shape[1]
@@ -339,7 +348,7 @@ def main() -> None:
                     random_state=42,
                     eval_metric="rmse",
                     tree_method="hist",
-                    **best_params,  # Use the best parameters here!
+                    **xgb_params,
                 ),
             ),
         ]
@@ -363,11 +372,54 @@ def main() -> None:
         savetitle="random_embedding_expression_prediction.png",
     )
 
+    final_model = Pipeline(
+        [
+            ("scaler", StandardScaler()),
+            (
+                "xgb",
+                xgb.XGBRegressor(
+                    objective="reg:squarederror",
+                    random_state=42,
+                    eval_metric="rmse",
+                    tree_method="hist",
+                    **xgb_params,
+                ),
+            ),
+        ]
+    )
 
-# Best parameters found:
-# {'xgb__colsample_bytree': 0.7, 'xgb__gamma': 0.05, 'xgb__learning_rate': 0.06, 'xgb__max_depth': 4, 'xgb__min_child_weight': 5, 'xgb__n_estimators': 550, 'xgb__reg_alpha': 1, 'xgb__reg_lambda': 1, 'xgb__subsample': 0.9}
-# Improved Pearson Correlation: 0.6016
-# Improved Spearman Correlation: 0.5971
+    final_model.fit(X_train, y_train)
+    pearson_corr_final, _ = pearsonr(final_model.predict(X_test), y_test)
+    print(f"Pearson Correlation with FINAL model: {pearson_corr_final:.4f}")
+
+    shap.initjs()
+    try:
+        explainer = shap.TreeExplainer(final_model.named_steps["xgb"])
+        X_train_scaled = final_model.named_steps["scaler"].transform(X_train)
+        shap_values = explainer.shap_values(X_train_scaled)
+        print("[SHAP] Generating summary plot...")
+
+        set_matplotlib_publication_parameters()
+        plt.figure()
+        shap.summary_plot(shap_values, X_train_scaled, show=False)
+        fig = plt.gcf()
+        fig.set_size_inches(6.5, 5)
+        plt.tight_layout()
+        plt.savefig("shap_summary_plot.png", dpi=450)
+        plt.close()
+    except Exception as e:
+        print(f"[SHAP] Error: {e}")
+
+    with open("xgboost_final_2023.pkl", "wb") as f:
+        pickle.dump(final_model, f)
+
+    # save training features and labels
+    np.save("x_train.npy", X_train)
+    np.save("y_train.npy", y_train)
+
+    # save shap vals
+    if "shap_values" in locals() and shap_values is not None:
+        np.save("shap_values.npy", shap_values)
 
 
 if __name__ == "__main__":
