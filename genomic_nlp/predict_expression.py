@@ -421,6 +421,23 @@ def main() -> None:
     if "shap_values" in locals() and shap_values is not None:
         np.save("shap_values.npy", shap_values)
 
+    # get 100 best predicted genes >=1 log2 TPM
+    test_df = df[df["split"] == "test"].copy()
+    predictions_test = final_model.predict(X_test)
+    test_df["predicted_log2TPM"] = predictions_test
+    test_df["abs_error"] = abs(test_df["predicted_log2TPM"] - test_df["all_tissues"])
+
+    filtered_df = test_df[test_df["predicted_log2TPM"] >= 1]
+    top100_best = filtered_df.sort_values(by="abs_error", ascending=True).head(100)
+
+    # fully capitalize the gene symbols
+    top100_best["genesymbol"] = top100_best["genesymbol"].map(lambda x: x.upper())
+
+    # print top 100 genes
+    print("Top 100 best predicted genes:")
+    for gene in top100_best["genesymbol"]:
+        print(gene)
+
 
 if __name__ == "__main__":
     main()

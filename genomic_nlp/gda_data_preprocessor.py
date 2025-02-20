@@ -73,6 +73,7 @@ class GDADataPreprocessor:
         train_neg = set(all_neg_edges[:train_count])
         val_neg = set(all_neg_edges[train_count : train_count + val_count])
         test_neg = set(all_neg_edges[train_count + val_count :])
+        print("val_neg has", len(val_neg), "edges")
 
         # map nodes to indices and get node features
         node_mapping = self._map_nodes_to_indices(self.edges)
@@ -159,44 +160,50 @@ class GDADataPreprocessor:
         disease_to_idx = {disease: idx for idx, disease in enumerate(diseases)}
 
         # precompute a sorted hash for each positive edge
-        pos_hashes = np.empty(len(positive_edges), dtype=np.int64)
-        for i, (gene, disease) in enumerate(positive_edges):
-            pos_hashes[i] = gene_to_idx[gene] * num_diseases + disease_to_idx[disease]
+        pos_hashes = set()
+        for gene_str, disease_str in positive_edges:
+            g_idx = gene_to_idx[gene_str]
+            d_idx = disease_to_idx[disease_str]
+            pos_hashes.add(g_idx * num_diseases + d_idx)
 
-        pos_hashes.sort()
+        # the maximum number of distinct negatives possible
+        max_possible_neg = (num_genes * num_diseases) - len(pos_hashes)
+        if num_samples > max_possible_neg:
+            print(
+                f"Warning: Requested {num_samples} negatives but only {max_possible_neg} "
+                "distinct negatives exist. Clamping to the maximum possible."
+            )
+            num_samples = max_possible_neg
 
         negative_samples: List[Tuple[str, str]] = []
-        batch_size = 10000
+        used_hashes = set(pos_hashes)
+        batch_size = 50000
 
-        pbar = tqdm(total=num_samples, desc="Generating negatives")
-        while len(negative_samples) < num_samples:
+        with tqdm(total=num_samples, desc="Generating negatives") as pbar:
+            while len(negative_samples) < num_samples:
+                # generate a batch of random indices
+                candidate_gene_indices = np.random.randint(
+                    0, num_genes, size=batch_size
+                )
+                candidate_disease_indices = np.random.randint(
+                    0, num_diseases, size=batch_size
+                )
 
-            # generate a batch of random indices.
-            candidate_gene_indices = np.random.randint(0, num_genes, size=batch_size)
-            candidate_disease_indices = np.random.randint(
-                0, num_diseases, size=batch_size
-            )
+                # check not in positive and also not used
+                for g_idx, d_idx in zip(
+                    candidate_gene_indices, candidate_disease_indices
+                ):
+                    neg_hash = g_idx * num_diseases + d_idx
+                    if neg_hash not in used_hashes:
+                        # add if frensh
+                        used_hashes.add(neg_hash)
+                        negative_samples.append((genes[g_idx], diseases[d_idx]))
+                        pbar.update(1)
 
-            # compute a hash for each candidate pair
-            candidate_hashes = (
-                candidate_gene_indices * num_diseases + candidate_disease_indices
-            )
+                        # stop if we have enough
+                        if len(negative_samples) >= num_samples:
+                            break
 
-            # mark candidates that are not in the positive set
-            valid_mask = ~np.isin(candidate_hashes, pos_hashes)
-
-            # select valid candidates
-            valid_gene_indices = candidate_gene_indices[valid_mask]
-            valid_disease_indices = candidate_disease_indices[valid_mask]
-
-            # convert indices back to gene/disease names
-            for g_idx, d_idx in zip(valid_gene_indices, valid_disease_indices):
-                negative_samples.append((genes[g_idx], diseases[d_idx]))
-                pbar.update(1)
-                if len(negative_samples) >= num_samples:
-                    break
-
-        pbar.close()
         return set(negative_samples)
 
     def _get_node_features(self, node_mapping: Dict[str, int]) -> torch.Tensor:

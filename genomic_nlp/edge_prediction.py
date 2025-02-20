@@ -30,8 +30,8 @@ from genomic_nlp.gda_data_preprocessor import GDADataPreprocessor
 from genomic_nlp.models.edge_prediction_gnn import LinkPredictionGNN
 
 # helpers
-EPOCHS = 60
-PATIENCE = 8
+EPOCHS = 15
+PATIENCE = 3
 
 
 def create_edge_loader(
@@ -61,6 +61,7 @@ def train_model(
     pbar = tqdm(
         total=num_batches,
         desc=f"Training Epoch {epoch}",
+        leave=False,
     )
 
     for pos_edges, neg_edges in zip(pos_edge_loader, neg_edge_loader):
@@ -274,6 +275,14 @@ def create_loaders(
     test_pos_loader = create_edge_loader(positive_test_edges, batch_size=batch_size)
     test_neg_loader = create_edge_loader(negative_test_edges, batch_size=batch_size)
 
+    # verify that the loaders are correct
+    print("Train pos loader:", len(train_pos_loader))
+    print("Train neg loader:", len(train_neg_loader))
+    print("Val   pos loader:", len(val_pos_loader))
+    print("Val   neg loader:", len(val_neg_loader))
+    print("Test  pos loader:", len(test_pos_loader))
+    print("Test  neg loader:", len(test_neg_loader))
+
     return (
         train_pos_loader,
         train_neg_loader,
@@ -338,7 +347,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Train and evaluate a GNN for link prediction."
     )
-    parser.add_argument("--batch_size", type=int, default=256, help="Batch size")
+    parser.add_argument("--batch_size", type=int, default=1024, help="Batch size")
     parser.add_argument("--year", type=int, help="Year of data to use")
     args = parser.parse_args()
 
