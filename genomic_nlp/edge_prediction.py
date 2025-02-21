@@ -73,8 +73,11 @@ def train_model(
     neg_edge_loader: torch_geometric.data.DataLoader,
     device: torch.device,
     epoch: int,
+    global_step: int,
+    warmup_steps: int,
+    base_lr: float,
     pos_weight: float = 1.0,
-) -> float:
+) -> Tuple[float, int]:
     """Train the link prediction model."""
     model.train()
     total_loss = 0.0
@@ -87,6 +90,15 @@ def train_model(
     )
 
     for pos_edges, neg_edges in zip(pos_edge_loader, neg_edge_loader):
+        optimizer.zero_grad()
+
+        # warmup learning rate for 10% training steps
+        if global_step < warmup_steps:
+            # linearly scale from 0 -> base_lr over warmup_steps
+            warmup_lr = base_lr * float(global_step + 1) / float(warmup_steps)
+            for param_group in optimizer.param_groups:
+                param_group["lr"] = warmup_lr
+
         optimizer.zero_grad()
 
         # forward pass
@@ -106,9 +118,11 @@ def train_model(
 
         pbar.set_postfix({"loss": f"{avg_loss:.4f}"})
         pbar.update(1)
+        global_step += 1
 
     pbar.close()
-    return total_loss / num_batches
+    epoch_loss = total_loss / num_batches
+    return epoch_loss, global_step
 
 
 @torch.no_grad()
@@ -418,28 +432,23 @@ def main() -> None:
     model = LinkPredictionGNN(
         in_channels=data.num_node_features, embedding_size=128, out_channels=128
     ).to(device)
+
     optimizer = torch.optim.Adam(model.parameters(), lr=base_lr)
     scheduler = ReduceLROnPlateau(
         optimizer, mode="max", factor=0.5, patience=5, verbose=True
     )
 
     # training loop
+    total_steps = EPOCHS * len(train_pos_loader)
+    warmup_steps = int(total_steps * 0.1)
+
+    global_step = 0
     best_auc = float("-inf")
     patience_counter = 0
     losses = []
-    warmup_steps = EPOCHS * 0.1
 
     for epoch in range(EPOCHS):
-        # warmup learning rate for 10% training steps
-        if epoch < warmup_steps:
-            warmup_lr = base_lr * (epoch + 1) / warmup_steps
-            for param_group in optimizer.param_groups:
-                param_group["lr"] = warmup_lr
-            print(
-                f"Warmup Epoch {epoch+1}/{warmup_steps}: setting LR to {warmup_lr:.6f}"
-            )
-
-        loss = train_model(
+        loss, global_step = train_model(
             model=model,
             optimizer=optimizer,
             data=data,
@@ -447,8 +456,12 @@ def main() -> None:
             neg_edge_loader=train_neg_loader,
             device=device,
             epoch=epoch,
+            global_step=global_step,
+            warmup_steps=warmup_steps,
+            base_lr=base_lr,
         )
         losses.append(loss)
+
         auc = evaluate_model(
             model=model,
             data=data,
@@ -457,7 +470,7 @@ def main() -> None:
             device=device,
         )
 
-        if epoch >= warmup_steps:
+        if global_step >= warmup_steps:
             scheduler.step(auc)
 
         print(f"Epoch: {epoch:03d}, Loss: {loss:.4f}, AUC: {auc:.4f}")
