@@ -477,7 +477,7 @@ def main() -> None:
 
         if auc > best_auc:
             best_auc = auc
-            torch.save(model.state_dict(), "best_model.pth")
+            torch.save(model.state_dict(), f"{save_dir}/best_model_{args.year}.pth")
             patience_counter = 0
         else:
             patience_counter += 1
