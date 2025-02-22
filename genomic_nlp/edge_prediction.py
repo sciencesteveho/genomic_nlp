@@ -435,7 +435,7 @@ def main() -> None:
 
     optimizer = torch.optim.Adam(model.parameters(), lr=base_lr)
     scheduler = ReduceLROnPlateau(
-        optimizer, mode="max", factor=0.5, patience=5, verbose=True
+        optimizer, mode="max", factor=0.5, patience=2, verbose=True
     )
 
     # training loop
