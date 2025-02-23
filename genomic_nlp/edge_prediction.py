@@ -42,7 +42,7 @@ def create_edge_loader(
 ) -> torch_geometric.data.DataLoader:
     """Create a DataLoader for edge pairs."""
     edge_dataset = edge_index.t()  # transpose to get pairs of nodes
-    return DataLoader(edge_dataset, batch_size=batch_size, shuffle=shuffle)
+    return DataLoader(edge_index, batch_size=batch_size, shuffle=shuffle)
 
 
 def create_negative_loader_with_oversampling(
@@ -389,7 +389,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Train and evaluate a GNN for link prediction."
     )
-    parser.add_argument("--batch_size", type=int, default=1024, help="Batch size")
+    parser.add_argument("--batch_size", type=int, default=2048, help="Batch size")
     parser.add_argument("--year", type=int, help="Year of data to use")
     args = parser.parse_args()
 

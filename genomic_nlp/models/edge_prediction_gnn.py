@@ -68,8 +68,8 @@ class LinkPredictionGNN(nn.Module):
 
     def decode(self, z: torch.Tensor, edge_label_index: torch.Tensor) -> torch.Tensor:
         """Decode the input graph via MLP."""
-        src = z[edge_label_index[0]]
-        dst = z[edge_label_index[1]]
+        src = z[edge_label_index[:, 0]]
+        dst = z[edge_label_index[:, 1]]
         edge_features = torch.cat([src, dst], dim=-1)
         return self.prediction_head(edge_features).view(-1)
 
