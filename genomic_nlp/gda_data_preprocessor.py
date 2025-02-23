@@ -215,9 +215,8 @@ class GDADataPreprocessor:
 
     def _get_node_features(self, node_mapping: Dict[str, int]) -> torch.Tensor:
         """Fill out node feature matrix via retrieving embeddings."""
-        return torch.tensor(
-            [self.gene_embeddings[gene] for gene in node_mapping], dtype=torch.float
-        )
+        features = np.array([self.gene_embeddings[gene] for gene in node_mapping])
+        return torch.from_numpy(features).float()
 
     @staticmethod
     def _map_nodes_to_indices(edges: Set[Tuple[str, str]]) -> Dict[str, int]:
@@ -231,6 +230,7 @@ class GDADataPreprocessor:
         node_mapping: Dict[str, int],
     ) -> torch.Tensor:
         """Convert (str) edges to tensor of indices."""
-        return torch.tensor(
-            [[node_mapping[e1], node_mapping[e2]] for e1, e2 in edges], dtype=torch.long
-        ).t()
+        edge_index = np.array(
+            [[node_mapping[e1], node_mapping[e2]] for e1, e2 in edges]
+        )
+        return torch.from_numpy(edge_index).long().t()
