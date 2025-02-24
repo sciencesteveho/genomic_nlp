@@ -353,36 +353,53 @@ def predict_gene_disease_links(
     model: nn.Module,
     data: Data,
     device: torch.device,
+    chunk_size: int = 100000,
 ) -> List[Tuple[int, int, float]]:
     """Predict gene-disease links in the graph by generating all possible
     pairs.
     """
-
     model.eval()
 
-    # get the latent space representation of the nodes
+    # get latent representation
     z = model(data.x.to(device), data.edge_index.to(device))
 
-    # get gene and disease indices
+    # get gene/disease node indices on device
     gene_nodes = data.gene_nodes.to(device)
     disease_nodes = data.disease_nodes.to(device)
+    inv_map = data.inv_node_mapping
 
-    # generate all possible gene-disease pairs
-    candidate_pairs = torch.cartesian_prod(
-        gene_nodes, disease_nodes
-    ).t()  # shape: [2, num_candidates]
+    all_pairs_cpu = []
+    all_scores_cpu = []
+    genes = gene_nodes.tolist()
+    diseases = disease_nodes.tolist()
+    total_pairs = len(genes) * len(diseases)
+    print(f"Total candidate gene-disease pairs: {total_pairs:,}")
 
-    # decode representations and get scores
-    candidate_scores = torch.sigmoid(model.decode(z, candidate_pairs.to(device))).cpu()
+    start = 0
+    while start < len(genes):
+        end = min(start + chunk_size, len(genes))
+        chunk_gene_nodes = torch.tensor(genes[start:end], device=device)
 
-    # sort candidate pairs by predicted score (descending)
-    sorted_indices = torch.argsort(candidate_scores, descending=True)
-    ranked_candidate_pairs = candidate_pairs[:, sorted_indices].t().tolist()
-    ranked_scores = candidate_scores[sorted_indices].tolist()
+        # cartesian product: shape [chunk_size * len(disease_nodes), 2]
+        chunk_pairs = torch.cartesian_prod(chunk_gene_nodes, disease_nodes)
+        chunk_pairs_t = chunk_pairs.t()
+        chunk_scores = torch.sigmoid(model.decode(z, chunk_pairs_t)).cpu()
+
+        all_pairs_cpu.append(chunk_pairs.cpu())
+        all_scores_cpu.append(chunk_scores)
+
+        print(f"Processed chunk of {end - start} genes → {chunk_scores.size(0)} edges.")
+        start = end
+
+    cat_pairs = torch.cat(all_pairs_cpu, dim=0)  # shape [total_pairs, 2]
+    cat_scores = torch.cat(all_scores_cpu, dim=0)  # shape [total_pairs]
+    sorted_idx = torch.argsort(cat_scores, descending=True)
+    cat_pairs = cat_pairs[sorted_idx]
+    cat_scores = cat_scores[sorted_idx]
 
     return [
-        (int(pair[0]), int(pair[1]), float(score))
-        for pair, score in zip(ranked_candidate_pairs, ranked_scores)
+        (inv_map[g_idx], inv_map[d_idx], score)
+        for (g_idx, d_idx), score in zip(cat_pairs.tolist(), cat_scores.tolist())
     ]
 
 
@@ -392,7 +409,7 @@ def main() -> None:
         description="Train and evaluate a GNN for link prediction."
     )
     parser.add_argument("--batch_size", type=int, default=2048, help="Batch size")
-    parser.add_argument("--year", type=int, help="Year of data to use")
+    parser.add_argument("--year", type=int, help="Year of data to use", default=2008)
     args = parser.parse_args()
 
     save_dir = Path("/ocean/projects/bio210019p/stevesho/genomic_nlp/models/gnn")

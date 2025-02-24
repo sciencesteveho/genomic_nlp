@@ -86,6 +86,11 @@ class GDADataPreprocessor:
         node_mapping = self._map_nodes_to_indices(self.edges)
         x = self._get_node_features(node_mapping)
 
+        # inverse node mapping for later
+        inv_node_mapping = [None] * len(node_mapping)
+        for node_str, idx in node_mapping.items():
+            inv_node_mapping[idx] = node_str
+
         # compute gda node indices
         gene_node_indices = sorted({node_mapping[gene] for gene, _ in self.edges})
         disease_node_indices = sorted(
@@ -126,6 +131,7 @@ class GDADataPreprocessor:
         # add gene and disease node indices
         data.gene_nodes = torch.tensor(gene_node_indices, dtype=torch.long)
         data.disease_nodes = torch.tensor(disease_node_indices, dtype=torch.long)
+        data.inv_node_mapping = inv_node_mapping
 
         # sanity check
         print("Total edges read from file:", len(all_pos_edges))  # ~50M
