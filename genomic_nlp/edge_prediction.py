@@ -335,15 +335,17 @@ def create_loaders(
     )
 
 
-def save_roc_data(y_true: np.ndarray, y_scores: np.ndarray, save_dir: Path) -> None:
+def save_roc_data(
+    y_true: np.ndarray, y_scores: np.ndarray, save_dir: Path, year: str
+) -> None:
     """Save ROC curve data."""
     fpr, tpr, thresholds = roc_curve(y_true, y_scores)
-    np.savez(save_dir / "roc_data.npz", fpr=fpr, tpr=tpr, thresholds=thresholds)
+    np.savez(save_dir / f"{year}_roc_data.npz", fpr=fpr, tpr=tpr, thresholds=thresholds)
 
 
-def save_loss_data(losses: List[float], save_dir: Path) -> None:
+def save_loss_data(losses: List[float], save_dir: Path, year: str) -> None:
     """Save loss curve data."""
-    np.savetxt(save_dir / "loss_data.txt", losses)
+    np.savetxt(save_dir / f"{year}_loss_data.txt", losses)
 
 
 @torch.no_grad()
@@ -447,47 +449,48 @@ def main() -> None:
     patience_counter = 0
     losses = []
 
-    for epoch in range(EPOCHS):
-        loss, global_step = train_model(
-            model=model,
-            optimizer=optimizer,
-            data=data,
-            pos_edge_loader=train_pos_loader,
-            neg_edge_loader=train_neg_loader,
-            device=device,
-            epoch=epoch,
-            global_step=global_step,
-            warmup_steps=warmup_steps,
-            base_lr=base_lr,
-        )
-        losses.append(loss)
+    # training loop!
+    # for epoch in range(EPOCHS):
+    #     loss, global_step = train_model(
+    #         model=model,
+    #         optimizer=optimizer,
+    #         data=data,
+    #         pos_edge_loader=train_pos_loader,
+    #         neg_edge_loader=train_neg_loader,
+    #         device=device,
+    #         epoch=epoch,
+    #         global_step=global_step,
+    #         warmup_steps=warmup_steps,
+    #         base_lr=base_lr,
+    #     )
+    #     losses.append(loss)
 
-        auc = evaluate_model(
-            model=model,
-            data=data,
-            pos_edge_loader=val_pos_loader,
-            neg_edge_loader=val_neg_loader,
-            device=device,
-        )
+    #     auc = evaluate_model(
+    #         model=model,
+    #         data=data,
+    #         pos_edge_loader=val_pos_loader,
+    #         neg_edge_loader=val_neg_loader,
+    #         device=device,
+    #     )
 
-        if global_step >= warmup_steps:
-            scheduler.step(auc)
+    #     if global_step >= warmup_steps:
+    #         scheduler.step(auc)
 
-        print(f"Epoch: {epoch:03d}, Loss: {loss:.4f}, AUC: {auc:.4f}")
+    #     print(f"Epoch: {epoch:03d}, Loss: {loss:.4f}, AUC: {auc:.4f}")
 
-        if auc > best_auc:
-            best_auc = auc
-            torch.save(model.state_dict(), f"{save_dir}/best_model_{args.year}.pth")
-            patience_counter = 0
-        else:
-            patience_counter += 1
+    #     if auc > best_auc:
+    #         best_auc = auc
+    #         torch.save(model.state_dict(), f"{save_dir}/best_model_{args.year}.pth")
+    #         patience_counter = 0
+    #     else:
+    #         patience_counter += 1
 
-        if patience_counter >= PATIENCE:
-            print(f"Early stopping triggered after {epoch + 1} epochs")
-            break
+    #     if patience_counter >= PATIENCE:
+    #         print(f"Early stopping triggered after {epoch + 1} epochs")
+    #         break
 
     print(f"Best AUC: {best_auc:.4f}")
-    save_loss_data(losses, save_dir)  # save loss data
+    save_loss_data(losses, save_dir, str(args.year))
 
     # load the best model for final evaluation
     model.load_state_dict(
@@ -503,7 +506,7 @@ def main() -> None:
         device=device,
     )
 
-    save_roc_data(y_true_sorted, y_scores_sorted, save_dir)
+    save_roc_data(y_true_sorted, y_scores_sorted, save_dir, str(args.year))
 
     print("Final Evaluation:")
     print(f"AUC: {auc:.4f}")

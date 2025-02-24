@@ -127,6 +127,14 @@ class GDADataPreprocessor:
         data.gene_nodes = torch.tensor(gene_node_indices, dtype=torch.long)
         data.disease_nodes = torch.tensor(disease_node_indices, dtype=torch.long)
 
+        # sanity check
+        print("Total edges read from file:", len(all_pos_edges))  # ~50M
+        print("Unique edges after set:", len(self.edges))
+        print("Number of unique nodes after map:", len(node_mapping))
+        print("node feature matrix shape:", x.shape)
+        print("Gene nodes:", data.gene_nodes.shape)
+        print("Disease nodes:", data.disease_nodes.shape)
+
         return data, test_pos_edge_index, test_neg_edge_index
 
     @staticmethod
@@ -215,6 +223,13 @@ class GDADataPreprocessor:
 
     def _get_node_features(self, node_mapping: Dict[str, int]) -> torch.Tensor:
         """Fill out node feature matrix via retrieving embeddings."""
+        print("DEBUG: gene_embeddings has size", len(self.gene_embeddings))
+        print("DEBUG: node_mapping has size", len(node_mapping))
+
+        # check for missing embeddings
+        missing = sum(node_str not in self.gene_embeddings for node_str in node_mapping)
+        print("DEBUG: # missing embeddings:", missing)
+
         features = np.array([self.gene_embeddings[gene] for gene in node_mapping])
         return torch.from_numpy(features).float()
 
