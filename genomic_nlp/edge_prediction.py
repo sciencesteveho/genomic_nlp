@@ -353,7 +353,7 @@ def predict_gene_disease_links(
     model: nn.Module,
     data: Data,
     device: torch.device,
-    chunk_size: int = 100000,
+    chunk_size: int = 10000,
 ) -> List[Tuple[int, int, float]]:
     """Predict gene-disease links in the graph by generating all possible
     pairs.
@@ -380,25 +380,37 @@ def predict_gene_disease_links(
         end = min(start + chunk_size, len(genes))
         chunk_gene_nodes = torch.tensor(genes[start:end], device=device)
 
-        # cartesian product: shape [chunk_size * len(disease_nodes), 2]
+        # cartesian_prod => shape [chunk_size * len(diseases), 2]
         chunk_pairs = torch.cartesian_prod(chunk_gene_nodes, disease_nodes)
-        chunk_pairs_t = chunk_pairs.t()
-        chunk_scores = torch.sigmoid(model.decode(z, chunk_pairs_t)).cpu()
+        print(
+            f"  cartesian_prod: chunk_pairs.shape = {tuple(chunk_pairs.shape)} "
+            f"(should be [N, 2])"
+        )
+
+        chunk_scores = torch.sigmoid(model.decode(z, chunk_pairs)).cpu()
 
         all_pairs_cpu.append(chunk_pairs.cpu())
         all_scores_cpu.append(chunk_scores)
 
-        print(f"Processed chunk of {end - start} genes → {chunk_scores.size(0)} edges.")
+        print(f"Processed chunk of {end - start} genes → {chunk_scores.size(0)} edges")
         start = end
 
-    cat_pairs = torch.cat(all_pairs_cpu, dim=0)  # shape [total_pairs, 2]
-    cat_scores = torch.cat(all_scores_cpu, dim=0)  # shape [total_pairs]
+    # concatenate
+    cat_pairs = torch.cat(all_pairs_cpu, dim=0)
+    cat_scores = torch.cat(all_scores_cpu, dim=0)
+    print("cat_pairs final shape =", cat_pairs.shape)
+    print("cat_scores final shape =", cat_scores.shape)
+
+    # sort descending
     sorted_idx = torch.argsort(cat_scores, descending=True)
     cat_pairs = cat_pairs[sorted_idx]
     cat_scores = cat_scores[sorted_idx]
 
+    # only keep scores > 0.5
+    cat_pairs = cat_pairs[cat_scores > 0.5]
+
     return [
-        (inv_map[g_idx], inv_map[d_idx], score)
+        (inv_map[g_idx], inv_map[d_idx], float(score))
         for (g_idx, d_idx), score in zip(cat_pairs.tolist(), cat_scores.tolist())
     ]
 
