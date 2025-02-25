@@ -5,20 +5,25 @@
 """Embedding visualization."""
 
 
+from pathlib import Path
 import pickle
 import random
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
+from gensim.models import Word2Vec  # type: ignore
 import matplotlib.pyplot as plt  # type: ignore
 import numpy as np
 import phate  # type: ignore
+from pybedtools import BedTool  # type: ignore
 from sklearn.cluster import KMeans  # type: ignore
 from sklearn.metrics import auc  # type: ignore
 from sklearn.metrics import roc_curve  # type: ignore
-import umap  # type: ignore
 
 from genomic_nlp.utils.constants import census_oncogenes
 from genomic_nlp.utils.constants import RANDOM_STATE
+from genomic_nlp.visualization import set_matplotlib_publication_parameters
+
+# import umap  # type: ignore
 
 
 def load_roc_data(filename: str) -> Tuple[np.ndarray, np.ndarray]:
@@ -116,23 +121,24 @@ def compute_phate(
     return reduced_vectors, words
 
 
-def compute_umap(
-    word_embeddings: Dict[str, np.ndarray], n_components: int = 2
-) -> Tuple[np.ndarray, List]:
-    """Apply UMAP to reduce dimensionality of word embeddings."""
-    words = list(word_embeddings.keys())
-    vectors = np.array(list(word_embeddings.values()))
-    reducer = umap.UMAP(
-        min_dist=0.05, n_components=n_components, random_state=RANDOM_STATE
-    )
-    reduced_vectors = reducer.fit_transform(vectors)
-    return reduced_vectors, words
+# def compute_umap(
+#     word_embeddings: Dict[str, np.ndarray], n_components: int = 2
+# ) -> Tuple[np.ndarray, List]:
+#     """Apply UMAP to reduce dimensionality of word embeddings."""
+#     words = list(word_embeddings.keys())
+#     vectors = np.array(list(word_embeddings.values()))
+#     reducer = umap.UMAP(
+#         min_dist=0.05, n_components=n_components, random_state=RANDOM_STATE
+#     )
+#     reduced_vectors = reducer.fit_transform(vectors)
+#     return reduced_vectors, words
 
 
 def plot_reduction_with_clusters(
     reduced_vectors: np.ndarray,
     words: List[str],
     n_clusters: int = 5,
+    year: int = 2023,
     words_to_annotate: Optional[List[str]] = None,
     cmap: str = "viridis",
     reduction: str = "PHATE",
@@ -183,7 +189,8 @@ def plot_reduction_with_clusters(
     )
     plt.xlabel(f"{reduction} 1")
     plt.ylabel(f"{reduction} 2")
-    plt.show()
+    plt.savefig(f"{reduction.lower()}_kmeans_clusters_{year}.png", dpi=450)
+    plt.close()
 
 
 def visualize_word_embeddings(
@@ -192,6 +199,7 @@ def visualize_word_embeddings(
     n_clusters: int = 5,
     words_to_annotate: Optional[List[str]] = None,
     reduction: str = "PHATE",
+    year: int = 2023,
 ) -> None:
     """
     Full pipeline to visualize word embeddings using PHATE and KMeans clustering.
@@ -208,35 +216,84 @@ def visualize_word_embeddings(
     if reduction == "PHATE":
         reduced_vectors, words = compute_phate(word_embeddings, n_components)
     elif reduction == "UMAP":
-        reduced_vectors, words = compute_umap(word_embeddings, n_components)
+        # reduced_vectors, words = compute_umap(word_embeddings, n_components)
+        raise NotImplementedError("UMAP not implemented.")
     else:
         raise ValueError("Invalid reduction method specified. Use 'PHATE' or 'UMAP'.")
     plot_reduction_with_clusters(
-        reduced_vectors, words, n_clusters, words_to_annotate, reduction=reduction
+        reduced_vectors, words, n_clusters, year, words_to_annotate, reduction=reduction
     )
+
+
+def get_genes(
+    gencode_bed: Path,
+) -> List[str]:
+    """Filter rna_seq data by TPM"""
+    gencode = BedTool(gencode_bed)
+    return [
+        feature[3] for feature in gencode if feature[0] not in ["chrX", "chrY", "chrM"]
+    ]
+
+
+def load_gencode_lookup(filepath: str) -> Dict[str, str]:
+    """Load the Gencode-to-gene-symbol lookup table."""
+    gencode_to_symbol = {}
+    with open(filepath, "r") as f:
+        for line in f:
+            gencode, symbol = line.strip().split("\t")
+            gencode_to_symbol[symbol] = gencode
+    return gencode_to_symbol
 
 
 def main() -> None:
     """Main function."""
-    embedding_file = "w2v_filtered_embeddings.pkl"
+    set_matplotlib_publication_parameters()
+
+    working_dir = "/Users/steveho/genomic_nlp/development/expression"
+    gencode_bed = "/Users/steveho/ogl/development/recap/gencode_v26_genes_only_with_GTEx_targets.bed"
+    avg_activity_pkl = f"{working_dir}/gtex_tpm_median_across_all_tissues.pkl"
+    protein_coding_bed = f"{working_dir}/gencode_v26_protein_coding.bed"
+    gencode_to_genesymbol = "/Users/steveho/gnn_plots/graph_resources/local/gencode_to_genesymbol_lookup_table.txt"
+
+    gencode_lookup = load_gencode_lookup(gencode_to_genesymbol)
+    symbol_lookup = {v: k for k, v in gencode_lookup.items()}
+    genes = get_genes(Path(gencode_bed))
+    genes = [gene for gene in genes if "_" not in gene]
+
+    working_dir = "/Users/steveho/genomic_nlp/development/expression"
+    gencode_bed = "/Users/steveho/ogl/development/recap/gencode_v26_genes_only_with_GTEx_targets.bed"
+
+    genes = get_genes(Path(gencode_bed))
+    genes = [gene for gene in genes if "_" not in gene]
+    # change genes to genesymbols
+    genes = [symbol_lookup[gene].casefold() for gene in genes if gene in symbol_lookup]
+
+    # embedding_file = "w2v_filtered_embeddings.pkl"
     # embedding_file = "n2v_embeddings.pkl"
     # embedding_file = "genept_embeddings.pkl"
     # embedding_file = "biowordvec_embeddings.pkl"
 
-    with open(embedding_file, "rb") as file:
-        word_embeddings = pickle.load(file)
+    # model = Word2Vec.load("word2vec_300_dimensions_2023.model")
 
-    words = list(word_embeddings.keys())
-    # oncogenes = [gene.upper() for gene in census_oncogenes if gene.upper() in words]
-    oncogenes = [gene for gene in census_oncogenes if gene in words]
+    # with open(embedding_file, "rb") as file:
+    #     word_embeddings = pickle.load(file)
+    # load w2v model
+    for year in range(2003, 2024):
+        w2v = Word2Vec.load(
+            f"/Users/steveho/genomic_nlp/development/models/word2vec_300_dimensions_{year}.model"
+        )
 
-    # load gene to go process mapping
-    with open("go_processes.pkl", "rb") as file:
-        gene_to_go = pickle.load(file)
+        # get genes in the model
+        word_embeddings = {gene: w2v.wv[gene] for gene in genes if gene in w2v.wv}
 
-    visualize_word_embeddings(
-        word_embeddings=word_embeddings,
-        n_clusters=6,
-        words_to_annotate=oncogenes,
-        reduction="UMAP",
-    )
+        words = list(word_embeddings.keys())
+        # oncogenes = [gene.upper() for gene in census_oncogenes if gene.upper() in words]
+        oncogenes = [gene for gene in census_oncogenes if gene in words]
+
+        visualize_word_embeddings(
+            word_embeddings=word_embeddings,
+            n_clusters=6,
+            words_to_annotate=oncogenes,
+            reduction="PHATE",
+            year=year,
+        )

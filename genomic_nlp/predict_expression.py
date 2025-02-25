@@ -19,6 +19,7 @@ from pathlib import Path
 import pickle
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
+from adjustText import adjust_text  # type: ignore
 from gensim.models import Word2Vec  # type: ignore
 from matplotlib.colors import LogNorm  # type: ignore
 from matplotlib.figure import Figure  # type: ignore
@@ -30,7 +31,9 @@ from scipy import stats  # type: ignore
 from scipy.stats import pearsonr  # type: ignore
 import seaborn as sns  # type: ignore
 import shap  # type: ignore
+from sklearn.cluster import KMeans  # type: ignore
 from sklearn.decomposition import PCA  # type: ignore
+from sklearn.metrics.pairwise import cosine_similarity  # type: ignore
 from sklearn.model_selection import GridSearchCV  # type: ignore
 from sklearn.pipeline import Pipeline  # type: ignore
 from sklearn.preprocessing import StandardScaler  # type: ignore
@@ -261,56 +264,56 @@ def main() -> None:
     X_test = np.array(test_df["embedding"].tolist())
     y_test = test_df["all_tissues"].values
 
-    pipe = Pipeline(
-        [
-            ("scaler", StandardScaler()),
-            (
-                "xgb",
-                xgb.XGBRegressor(
-                    objective="reg:squarederror",
-                    random_state=42,
-                    eval_metric="rmse",
-                    tree_method="hist",
-                ),
-            ),
-        ]
-    )
+    # pipe = Pipeline(
+    #     [
+    #         ("scaler", StandardScaler()),
+    #         (
+    #             "xgb",
+    #             xgb.XGBRegressor(
+    #                 objective="reg:squarederror",
+    #                 random_state=42,
+    #                 eval_metric="rmse",
+    #                 tree_method="hist",
+    #             ),
+    #         ),
+    #     ]
+    # )
 
-    param_grid = {
-        "xgb__n_estimators": [500, 550],
-        "xgb__max_depth": [4],
-        "xgb__learning_rate": [
-            0.06,
-            0.065,
-            0.07,
-        ],
-        "xgb__subsample": [0.9, 0.95],
-        "xgb__colsample_bytree": [0.7],
-        "xgb__min_child_weight": [5],
-        "xgb__gamma": [0.05, 0.1],
-        "xgb__reg_alpha": [1, 1.2, 1.4],
-        "xgb__reg_lambda": [1, 1.5, 2],
-    }
+    # param_grid = {
+    #     "xgb__n_estimators": [500, 550],
+    #     "xgb__max_depth": [4],
+    #     "xgb__learning_rate": [
+    #         0.06,
+    #         0.065,
+    #         0.07,
+    #     ],
+    #     "xgb__subsample": [0.9, 0.95],
+    #     "xgb__colsample_bytree": [0.7],
+    #     "xgb__min_child_weight": [5],
+    #     "xgb__gamma": [0.05, 0.1],
+    #     "xgb__reg_alpha": [1, 1.2, 1.4],
+    #     "xgb__reg_lambda": [1, 1.5, 2],
+    # }
 
-    # set up grid search with 5-fold cv
-    grid_search = GridSearchCV(
-        pipe, param_grid, cv=5, scoring="r2", verbose=1, n_jobs=8
-    )
-    grid_search.fit(X_train, y_train)
+    # # set up grid search with 5-fold cv
+    # grid_search = GridSearchCV(
+    #     pipe, param_grid, cv=5, scoring="r2", verbose=1, n_jobs=8
+    # )
+    # grid_search.fit(X_train, y_train)
 
-    print("Best parameters found:")
-    print(grid_search.best_params_)
+    # print("Best parameters found:")
+    # print(grid_search.best_params_)
 
-    predictions = grid_search.predict(X_test)
-    pearson_corr, _ = pearsonr(predictions, y_test)
-    print(f"Improved Pearson Correlation: {pearson_corr:.4f}")
+    # predictions = grid_search.predict(X_test)
+    # pearson_corr, _ = pearsonr(predictions, y_test)
+    # print(f"Improved Pearson Correlation: {pearson_corr:.4f}")
 
-    spearman_corr, _ = stats.spearmanr(predictions, y_test)
-    print(f"Improved Spearman Correlation: {spearman_corr:.4f}")
+    # spearman_corr, _ = stats.spearmanr(predictions, y_test)
+    # print(f"Improved Spearman Correlation: {spearman_corr:.4f}")
 
-    plot_predicted_versus_expected(
-        predictions, y_test, savetitle="w2v_embedding_expression_prediction.png"
-    )
+    # plot_predicted_versus_expected(
+    #     predictions, y_test, savetitle="w2v_embedding_expression_prediction.png"
+    # )
 
     # Best parameters found:
     # {'xgb__colsample_bytree': 0.7, 'xgb__gamma': 0.05, 'xgb__learning_rate': 0.06, 'xgb__max_depth': 4, 'xgb__min_child_weight': 5, 'xgb__n_estimators': 550, 'xgb__reg_alpha': 1, 'xgb__reg_lambda': 1, 'xgb__subsample': 0.9}
@@ -331,46 +334,46 @@ def main() -> None:
     }
     xgb_params = {k.replace("xgb__", ""): v for k, v in best_params.items()}
 
-    # get random vectors using xavier uniform init
-    embedding_dimension = X_train.shape[1]
-    num_train_genes = X_train.shape[0]
-    X_train_random = xavier_uniform_initialization(
-        (num_train_genes, embedding_dimension)
-    )
+    # # get random vectors using xavier uniform init
+    # embedding_dimension = X_train.shape[1]
+    # num_train_genes = X_train.shape[0]
+    # X_train_random = xavier_uniform_initialization(
+    #     (num_train_genes, embedding_dimension)
+    # )
 
-    pipe_random_embedding = Pipeline(
-        [
-            ("scaler", StandardScaler()),
-            (
-                "xgb",
-                xgb.XGBRegressor(
-                    objective="reg:squarederror",
-                    random_state=42,
-                    eval_metric="rmse",
-                    tree_method="hist",
-                    **xgb_params,
-                ),
-            ),
-        ]
-    )
+    # pipe_random_embedding = Pipeline(
+    #     [
+    #         ("scaler", StandardScaler()),
+    #         (
+    #             "xgb",
+    #             xgb.XGBRegressor(
+    #                 objective="reg:squarederror",
+    #                 random_state=42,
+    #                 eval_metric="rmse",
+    #                 tree_method="hist",
+    #                 **xgb_params,
+    #             ),
+    #         ),
+    #     ]
+    # )
 
-    print("Training XGBoost with RANDOM embeddings...")
-    pipe_random_embedding.fit(X_train_random, y_train)
+    # print("Training XGBoost with RANDOM embeddings...")
+    # pipe_random_embedding.fit(X_train_random, y_train)
 
-    print("Making predictions with RANDOM embeddings...")
-    predictions_random = pipe_random_embedding.predict(X_test)
+    # print("Making predictions with RANDOM embeddings...")
+    # predictions_random = pipe_random_embedding.predict(X_test)
 
-    pearson_corr_random, _ = pearsonr(predictions_random, y_test)
-    print(f"Pearson Correlation with RANDOM Embeddings: {pearson_corr_random:.4f}")
+    # pearson_corr_random, _ = pearsonr(predictions_random, y_test)
+    # print(f"Pearson Correlation with RANDOM Embeddings: {pearson_corr_random:.4f}")
 
-    spearman_corr_random, _ = stats.spearmanr(predictions_random, y_test)
-    print(f"Spearman Correlation with RANDOM Embeddings: {spearman_corr_random:.4f}")
+    # spearman_corr_random, _ = stats.spearmanr(predictions_random, y_test)
+    # print(f"Spearman Correlation with RANDOM Embeddings: {spearman_corr_random:.4f}")
 
-    plot_predicted_versus_expected(
-        predictions_random,
-        y_test,
-        savetitle="random_embedding_expression_prediction.png",
-    )
+    # plot_predicted_versus_expected(
+    #     predictions_random,
+    #     y_test,
+    #     savetitle="random_embedding_expression_prediction.png",
+    # )
 
     final_model = Pipeline(
         [
@@ -401,9 +404,16 @@ def main() -> None:
 
         set_matplotlib_publication_parameters()
         plt.figure()
-        shap.summary_plot(shap_values, X_train_scaled, show=False)
+        shap.summary_plot(shap_values, X_train_scaled, show=False, plot_size=(3, 3.5))
         fig = plt.gcf()
-        fig.set_size_inches(6.5, 5)
+        for ax in fig.get_axes():
+            ax.tick_params(axis="both", which="major", labelsize=7)
+            ax.tick_params(axis="both", which="minor", labelsize=7)
+            ax.xaxis.label.set_fontsize(7)
+            ax.yaxis.label.set_fontsize(7)
+            if ax.get_title():
+                ax.title.set_fontsize(7)
+        # fig.set_size_inches(4, 3)
         plt.tight_layout()
         plt.savefig("shap_summary_plot.png", dpi=450)
         plt.close()
@@ -437,6 +447,115 @@ def main() -> None:
     print("Top 100 best predicted genes:")
     for gene in top100_best["genesymbol"]:
         print(gene)
+
+    # 1. Compute average absolute SHAP importances from your expression model's training data
+    mean_abs_shap = np.mean(np.abs(shap_values), axis=0)  # shape: (n_features,)
+    top_k = 10  # number of top features
+    top_features_idx = np.argsort(mean_abs_shap)[::-1][:top_k]
+    print("Top feature indices (from expression model SHAP):", top_features_idx)
+    print("Corresponding mean absolute SHAP values:", mean_abs_shap[top_features_idx])
+
+    # 2. Compute a reference vector from the expression training set using these top dimensions
+    reference_vector = np.mean(X_train_scaled[:, top_features_idx], axis=0).reshape(
+        1, -1
+    )
+
+    # 3. Get all embeddings from the full Word2Vec model
+    all_embeddings = {gene: w2v.wv[gene] for gene in w2v.wv.index_to_key}
+    genes_full = list(all_embeddings.keys())
+    X_full = np.array(list(all_embeddings.values()))
+    print(f"Total embeddings in full Word2Vec model: {len(genes_full)}")
+
+    # 4. Scale the full embeddings using the scaler from your final model
+    X_full_scaled = final_model.named_steps["scaler"].transform(X_full)
+
+    # 5. Subset the scaled full embeddings to only the top features
+    X_full_top = X_full_scaled[:, top_features_idx]
+
+    # 6. Compute cosine similarity between each gene's vector and the reference vector
+    similarity_scores = cosine_similarity(X_full_top, reference_vector).flatten()
+
+    # Diagnostic: Print range and a simple histogram of similarity scores
+    print(
+        "Similarity scores range: min =",
+        similarity_scores.min(),
+        ", max =",
+        similarity_scores.max(),
+    )
+    plt.figure(figsize=(6, 4))
+    sns.histplot(similarity_scores, bins=50, kde=True)
+    plt.title("Distribution of Cosine Similarity Scores")
+    plt.xlabel("Cosine Similarity")
+    plt.ylabel("Frequency")
+    plt.tight_layout()
+    plt.savefig("cosine_similarity_scores.png", dpi=450)
+    plt.close()
+
+    # Option B: Alternatively, select the top-N genes by similarity
+    top_N = 100  # select top 100 genes
+    filtered_indices_topN = np.argsort(similarity_scores)[::-1][:top_N]
+    print("Number of genes selected by top-N strategy:", len(filtered_indices_topN))
+
+    # Choose one filtering method:
+    # For instance, using the top-N approach:
+    filtered_indices = filtered_indices_topN
+
+    # Get filtered genes and their corresponding embeddings in the top-feature space
+    filtered_genes = [genes_full[i] for i in filtered_indices]
+    filtered_embeddings = X_full_top[filtered_indices]
+    print(f"Number of genes filtered: {len(filtered_genes)}")
+
+    # 7. Cluster the filtered embeddings using K-Means
+    num_clusters = 3  # or choose based on your domain knowledge
+    kmeans = KMeans(n_clusters=num_clusters, random_state=42)
+    filtered_cluster_labels = kmeans.fit_predict(filtered_embeddings)
+
+    # 8. Visualize the filtered and clustered genes using PCA to reduce to 2D
+    pca = PCA(n_components=2, random_state=42)
+    filtered_pca = pca.fit_transform(filtered_embeddings)
+
+    # names to annotate
+    special_genes = [
+        "microvascular_angina",
+        "thalassemia",
+        "foxb2",
+        "apototic",
+        "nfe2l1",
+        "hudep",
+        "linc01774",
+        "linc00886",
+        "immunopotentiators",
+        "azoramide",
+    ]
+
+    plt.figure(figsize=(4, 3))
+    sns.scatterplot(
+        x=filtered_pca[:, 0],
+        y=filtered_pca[:, 1],
+        hue=filtered_cluster_labels,
+        palette="viridis",
+        alpha=1,
+        s=10,
+        edgecolor=None,
+        legend=False,
+    )
+
+    # add text annotations
+    texts = []
+    texts.extend(
+        plt.text(filtered_pca[i, 0], filtered_pca[i, 1], gene)
+        for i, gene in enumerate(filtered_genes)
+        if gene in special_genes
+    )
+    # Then let adjust_text do the work
+    adjust_text(texts, arrowprops=dict(arrowstyle="-", color="gray", alpha=0.5))
+
+    plt.title("Embeddings similar to expression model top features")
+    plt.xlabel("First principal component")
+    plt.ylabel("Second principal component")
+    plt.tight_layout()
+    plt.savefig("clusters_filtered_by_similarity.png", dpi=300)
+    plt.close()
 
 
 if __name__ == "__main__":

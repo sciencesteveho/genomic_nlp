@@ -353,7 +353,7 @@ def predict_gene_disease_links(
     model: nn.Module,
     data: Data,
     device: torch.device,
-    chunk_size: int = 10000,
+    chunk_size: int = 2048,
 ) -> List[Tuple[int, int, float]]:
     """Predict gene-disease links in the graph by generating all possible
     pairs.
