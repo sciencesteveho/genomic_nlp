@@ -50,6 +50,8 @@ class CancerGenePrediction:
         model_name: str,
         save_dir: Path,
         year: int,
+        train_gene_names: List[str],
+        test_gene_names: List[str],
         cancer_genes: Set[str],
         horizon: Optional[int] = None,
     ) -> None:
@@ -66,9 +68,12 @@ class CancerGenePrediction:
         self.cancer_genes = cancer_genes
         self.horizon = horizon
 
+        self.train_gene_names = train_gene_names
+        self.test_gene_names = test_gene_names
+
         self.model: Optional[CancerBaseModel] = None
 
-    def train_and_evaluate_once(self, **kwargs) -> None:
+    def train_and_evaluate(self, **kwargs) -> None:
         """Train on (train_features, train_targets) and evaluate once on
         (test_features, test_targets). Save model artifacts/metrics.
         """
@@ -82,6 +87,15 @@ class CancerGenePrediction:
 
         # predict test set
         test_probabilities = self.model.predict_probability(self.test_features)
+        test_predictions = dict(zip(self.test_gene_names, test_probabilities))
+
+        # save predictions on test set
+        save_predictions_name = (
+            f"test_predictions_{self.year}_horizon_{self.horizon}"
+            if self.horizon
+            else f"test_predictions_{self.year}"
+        )
+        self.save_data(test_predictions, save_predictions_name)
 
         # calculate PR AUC
         pr_auc = average_precision_score(self.test_targets, test_probabilities)
@@ -174,8 +188,10 @@ def prepare_data(
 ) -> Tuple[
     np.ndarray,
     np.ndarray,
+    List[str],
     np.ndarray,
     np.ndarray,
+    List[str],
     Path,
     Dict[str, np.ndarray],
     Set[str],
@@ -185,9 +201,14 @@ def prepare_data(
     preprocessor = CancerGeneDataPreprocessor(gene_embeddings=gene_embeddings)
 
     # load data
-    train_features, train_targets, test_features, test_targets = (
-        preprocessor.preprocess_data_by_year(year=year, horizon=horizon)
-    )
+    (
+        train_features,
+        train_targets,
+        train_gene_names,
+        test_features,
+        test_targets,
+        test_gene_names,
+    ) = preprocessor.preprocess_data_by_year(year=year, horizon=horizon)
 
     # create save directory
     save_dir = Path(save_path) / str(year)
@@ -196,8 +217,10 @@ def prepare_data(
     return (
         train_features,
         train_targets,
+        train_gene_names,
         test_features,
         test_targets,
+        test_gene_names,
         save_dir,
         preprocessor.gene_embeddings,
         preprocessor.cancer_genes,
@@ -463,66 +486,70 @@ def main() -> None:
     #         )
 
     #         # train and evaluate
-    #         trainer.train_and_evaluate_once()
+    #         trainer.train_and_evaluate()
 
     #         # predict all genes
     #         final_predictions = trainer.predict_all_genes()
     #         trainer.save_data(final_predictions, f"final_predictions_{year}_horizon")
 
-    # # train and test models via temporal split without horizon
-    # for year in range(2003, 2020):
-    #     print(f"Running models for year {year}...")
+    # train and test models via temporal split without horizon
+    for year in range(2003, 2020):
+        print(f"Running models for year {year}...")
 
-    #     # load gene embeddings
-    #     gene_embeddings, save_path = get_gene_embeddings(
-    #         args=args, gene_names=gene_names, year=year
-    #     )
+        # load gene embeddings
+        gene_embeddings, save_path = get_gene_embeddings(
+            args=args, gene_names=gene_names, year=year
+        )
 
-    #     # prepare
-    #     (
-    #         train_features,
-    #         train_targets,
-    #         test_features,
-    #         test_targets,
-    #         save_dir,
-    #         gene_embeddings,
-    #         cancer_genes,
-    #     ) = prepare_data(
-    #         save_path=save_path,
-    #         gene_embeddings=gene_embeddings,
-    #         year=year,
-    #         horizon=None,
-    #     )
-    #     print(f"Total number of genes in training data: {len(train_features)}")
-    #     print(f"Total number of genes in test data: {len(test_features)}")
+        # prepare
+        (
+            train_features,
+            train_targets,
+            train_gene_names,
+            test_features,
+            test_targets,
+            test_gene_names,
+            save_dir,
+            gene_embeddings,
+            cancer_genes,
+        ) = prepare_data(
+            save_path=save_path,
+            gene_embeddings=gene_embeddings,
+            year=year,
+            horizon=None,
+        )
+        print(f"Total number of genes in training data: {len(train_features)}")
+        print(f"Total number of genes in test data: {len(test_features)}")
 
-    #     # define models
-    #     models = define_models()
+        # define models
+        models = define_models()
 
-    #     print("Running models (single train/test).")
-    #     for name, model_class in models.items():
-    #         print(f"\nRunning {name} model...")
+        print("Running models (single train/test).")
+        for name, model_class in models.items():
+            print(f"\nRunning {name} model...")
 
-    #         # initialize trainer
-    #         trainer = CancerGenePrediction(
-    #             model_class=model_class,
-    #             train_features=train_features,
-    #             train_targets=train_targets,
-    #             test_features=test_features,
-    #             test_targets=test_targets,
-    #             gene_embeddings=gene_embeddings,
-    #             model_name=name,
-    #             save_dir=save_dir,
-    #             year=year,
-    #             cancer_genes=cancer_genes,
-    #         )
+            # initialize trainer
+            trainer = CancerGenePrediction(
+                model_class=model_class,
+                train_features=train_features,
+                train_targets=train_targets,
+                test_features=test_features,
+                test_targets=test_targets,
+                gene_embeddings=gene_embeddings,
+                model_name=name,
+                save_dir=save_dir,
+                year=year,
+                cancer_genes=cancer_genes,
+                train_gene_names=train_gene_names,
+                test_gene_names=test_gene_names,
+            )
 
-    #         # train and evaluate
-    #         trainer.train_and_evaluate_once()
+            # train and evaluate
+            trainer.train_and_evaluate()
 
-    #         # predict all genes
-    #         final_predictions = trainer.predict_all_genes()
-    #         trainer.save_data(final_predictions, f"final_predictions_{year}")
+            # predict all genes
+            final_predictions = trainer.predict_all_genes()
+            trainer.save_data(final_predictions, f"final_predictions_{year}")
 
     # run final model for 2023
     run_final_model(args=args, gene_names=gene_names)

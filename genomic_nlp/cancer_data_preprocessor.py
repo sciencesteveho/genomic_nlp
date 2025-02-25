@@ -8,7 +8,7 @@
 
 from pathlib import Path
 import random
-from typing import Dict, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import numpy as np
 import pandas as pd
@@ -99,20 +99,22 @@ class CancerGeneDataPreprocessor:
         self,
         positive_samples: Set[str],
         negative_samples: Set[str],
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> Tuple[np.ndarray, np.ndarray, List[str]]:
         """Create feature data and target labels for cancer related genes."""
-        data, targets = [], []
-        for gene in positive_samples.union(negative_samples):
-            vec = self.gene_embeddings[gene]
-            data.append(vec)
+        data = []
+        targets = []
+        gene_names = []
+        for gene in sorted(positive_samples.union(negative_samples)):
+            data.append(self.gene_embeddings[gene])
             targets.append(1 if gene in positive_samples else 0)
-        return np.array(data), np.array(targets)
+            gene_names.append(gene)
+        return np.array(data), np.array(targets), gene_names
 
     def preprocess_data_by_year(
         self,
         year: int,
         horizon: Optional[int],
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    ) -> Tuple[np.ndarray, np.ndarray, List[str], np.ndarray, np.ndarray, List[str]]:
         """For each year in 2001+=2019, we train a separate model.
         For test data due to size imbalance, we only consider a fixed lookahead
         window, testing the models's ability to capture cancer genes with
@@ -168,17 +170,18 @@ class CancerGeneDataPreprocessor:
         print("Neg train:", len(neg_train_samples))
         print("Neg test:", len(neg_test_samples))
 
-        train_features, train_targets = self.format_data_and_targets(
+        train_features, train_targets, train_gene_names = self.format_data_and_targets(
             pos_train, neg_train_samples
         )
-
-        test_features, test_targets = self.format_data_and_targets(
+        test_features, test_targets, test_gene_names = self.format_data_and_targets(
             pos_test, neg_test_samples
         )
 
         return (
             train_features,
             train_targets,
+            train_gene_names,
             test_features,
             test_targets,
+            test_gene_names,
         )
