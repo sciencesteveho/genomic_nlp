@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 from typing import List, Tuple
 
+from gensim.models import Word2Vec  # type: ignore
 import numpy as np
 from sklearn.metrics import average_precision_score  # type: ignore
 from sklearn.metrics import roc_auc_score  # type: ignore
@@ -425,13 +426,16 @@ def main() -> None:
     args = parser.parse_args()
 
     save_dir = Path("/ocean/projects/bio210019p/stevesho/genomic_nlp/models/gnn")
-    embedding_path = (
-        "/ocean/projects/bio210019p/stevesho/genomic_nlp/models/n2v/disease"
-    )
+    embedding_path = "/ocean/projects/bio210019p/stevesho/genomic_nlp/models/w2v"
     text_path = "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/disease"
-
-    embedding_file = f"{embedding_path}/{args.year}/input_embeddings.pkl"
+    w2vmodel_file = (
+        f"{embedding_path}/{args.year}/word2vec_300_dimensions_{args.year}.model"
+    )
     text_edges_file = f"{text_path}/gda_co_occurence_{args.year}.tsv"
+
+    # load w2v model and get embeddings (dictionary of word: embedding)
+    w2v_model = Word2Vec.load(w2vmodel_file)
+    embeddings = {word: w2v_model.wv[word] for word in w2v_model.wv.index_to_key}
 
     # set device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -439,7 +443,7 @@ def main() -> None:
     # preprocess data
     preprocessor = GDADataPreprocessor(
         text_edges_file=text_edges_file,
-        embedding_file=embedding_file,
+        embeddings=embeddings,
     )
     data, positive_test_edges, negative_test_edges = preprocessor.preprocess_data()
 
@@ -479,44 +483,44 @@ def main() -> None:
     losses = []
 
     # training loop!
-    # for epoch in range(EPOCHS):
-    #     loss, global_step = train_model(
-    #         model=model,
-    #         optimizer=optimizer,
-    #         data=data,
-    #         pos_edge_loader=train_pos_loader,
-    #         neg_edge_loader=train_neg_loader,
-    #         device=device,
-    #         epoch=epoch,
-    #         global_step=global_step,
-    #         warmup_steps=warmup_steps,
-    #         base_lr=base_lr,
-    #     )
-    #     losses.append(loss)
+    for epoch in range(EPOCHS):
+        loss, global_step = train_model(
+            model=model,
+            optimizer=optimizer,
+            data=data,
+            pos_edge_loader=train_pos_loader,
+            neg_edge_loader=train_neg_loader,
+            device=device,
+            epoch=epoch,
+            global_step=global_step,
+            warmup_steps=warmup_steps,
+            base_lr=base_lr,
+        )
+        losses.append(loss)
 
-    #     auc = evaluate_model(
-    #         model=model,
-    #         data=data,
-    #         pos_edge_loader=val_pos_loader,
-    #         neg_edge_loader=val_neg_loader,
-    #         device=device,
-    #     )
+        auc = evaluate_model(
+            model=model,
+            data=data,
+            pos_edge_loader=val_pos_loader,
+            neg_edge_loader=val_neg_loader,
+            device=device,
+        )
 
-    #     if global_step >= warmup_steps:
-    #         scheduler.step(auc)
+        if global_step >= warmup_steps:
+            scheduler.step(auc)
 
-    #     print(f"Epoch: {epoch:03d}, Loss: {loss:.4f}, AUC: {auc:.4f}")
+        print(f"Epoch: {epoch:03d}, Loss: {loss:.4f}, AUC: {auc:.4f}")
 
-    #     if auc > best_auc:
-    #         best_auc = auc
-    #         torch.save(model.state_dict(), f"{save_dir}/best_model_{args.year}.pth")
-    #         patience_counter = 0
-    #     else:
-    #         patience_counter += 1
+        if auc > best_auc:
+            best_auc = auc
+            torch.save(model.state_dict(), f"{save_dir}/best_model_{args.year}.pth")
+            patience_counter = 0
+        else:
+            patience_counter += 1
 
-    #     if patience_counter >= PATIENCE:
-    #         print(f"Early stopping triggered after {epoch + 1} epochs")
-    #         break
+        if patience_counter >= PATIENCE:
+            print(f"Early stopping triggered after {epoch + 1} epochs")
+            break
 
     print(f"Best AUC: {best_auc:.4f}")
     save_loss_data(losses, save_dir, str(args.year))

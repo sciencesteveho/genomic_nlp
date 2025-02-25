@@ -15,6 +15,7 @@ prediction model.
 
 
 import csv
+import pickle
 import random
 from typing import Dict, List, Set, Tuple
 
@@ -23,28 +24,50 @@ import torch
 from torch_geometric.data import Data  # type: ignore
 from tqdm import tqdm  # type: ignore
 
-from genomic_nlp.interaction_data_preprocessor import _load_pickle
-
 
 class GDADataPreprocessor:
     """Preprocess data for GNN link prediction model."""
 
     def __init__(
         self,
-        embedding_file: str,
+        embeddings: Dict[str, np.ndarray],
         text_edges_file: str,
+        disease_synonyms_file: str = "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/disease/disease_synonyms.pkl",
+        gene_synonyms_file: str = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_synonyms.pkl",
     ) -> None:
         """Initialize a GNNDataPreprocessor object. Load data and
         embeddings.
         """
-        self.gene_embeddings = _load_pickle(embedding_file)
+        # load gene and diseases names
+        with open(disease_synonyms_file, "rb") as f:
+            disease_names = pickle.load(f)
 
-        text_edges = [
-            tuple(row) for row in csv.reader(open(text_edges_file), delimiter="\t")
-        ]
+        with open(gene_synonyms_file, "rb") as f:
+            gene_names = pickle.load(f)
 
-        self.edges = set(text_edges)
+        # load gene-disease pairs
+        with open(text_edges_file, "r") as file:
+            text_edges = [tuple(row) for row in csv.reader(file, delimiter="\t")]
+
+        # load embeddings and get edges
+        self.embeddings = embeddings
+
+        # filter out edges with missing embeddings
+        self.edges = {
+            (gene, disease)
+            for gene, disease in text_edges
+            if gene in self.embeddings and disease in self.embeddings
+        }
+
+        # only keep genes and diseases with embeddings
+        self.available_diseases = {
+            disease for disease in disease_names if disease in self.embeddings
+        }
+        self.available_genes = {gene for gene in gene_names if gene in self.embeddings}
         print("Data and embeddings loaded!")
+        print(f"Total filtered edges: {len(self.edges)}")
+        print(f"Available genes: {len(self.available_genes)}")
+        print(f"Available diseases: {len(self.available_diseases)}")
 
     def preprocess_data(self) -> Tuple[Data, torch.Tensor, torch.Tensor]:
         """Preprocess data for GNN link prediction model."""
@@ -63,14 +86,12 @@ class GDADataPreprocessor:
         total_neg_samples = total
         all_neg_edges = list(
             self._negative_sampling(
-                unique_genes={gene for gene, _ in self.edges},
-                unique_diseases={disease for _, disease in self.edges},
                 positive_edges=self.edges,
                 num_samples=total_neg_samples,
             )
         )
         random.shuffle(all_neg_edges)
-        neg_total = len(all_neg_edges)  # may be < total!
+        neg_total = len(all_neg_edges)
         neg_train_count = int(neg_total * 0.70)
         neg_val_count = int(neg_total * 0.15)
 
@@ -78,23 +99,39 @@ class GDADataPreprocessor:
         val_neg = set(all_neg_edges[neg_train_count : neg_train_count + neg_val_count])
         test_neg = set(all_neg_edges[neg_train_count + neg_val_count :])
 
+        print("train_pos has", len(train_edges), "edges")
+        print("val_pos has", len(val_edges), "edges")
+        print("test_pos has", len(test_edges), "edges")
         print("train_neg has", len(train_neg), "edges")
         print("val_neg has", len(val_neg), "edges")
         print("test_neg has", len(test_neg), "edges")
 
         # map nodes to indices and get node features
-        node_mapping = self._map_nodes_to_indices(self.edges)
+        all_current_edges = (
+            train_edges.union(val_edges)
+            .union(test_edges)
+            .union(train_neg)
+            .union(val_neg)
+            .union(test_neg)
+        )
+        node_mapping = self._map_nodes_to_indices(all_current_edges)
         x = self._get_node_features(node_mapping)
 
         # inverse node mapping for later
-        inv_node_mapping = [None] * len(node_mapping)
+        inv_node_mapping = [""] * len(node_mapping)
         for node_str, idx in node_mapping.items():
             inv_node_mapping[idx] = node_str
 
         # compute gda node indices
-        gene_node_indices = sorted({node_mapping[gene] for gene, _ in self.edges})
+        gene_node_indices = sorted(
+            {node_mapping[gene] for gene, _ in self.edges if (gene, _) in node_mapping}
+        )
         disease_node_indices = sorted(
-            {node_mapping[disease] for _, disease in self.edges}
+            {
+                node_mapping[disease]
+                for _, disease in self.edges
+                if (_, disease) in node_mapping
+            }
         )
 
         # convert edges to PyG tensors
@@ -162,8 +199,6 @@ class GDADataPreprocessor:
 
     def _negative_sampling(
         self,
-        unique_genes: Set[str],
-        unique_diseases: Set[str],
         positive_edges: Set[Tuple[str, str]],
         num_samples: int,
     ) -> Set[Tuple[str, str]]:
@@ -171,8 +206,8 @@ class GDADataPreprocessor:
         and one disease at random and accepts the pair if it is not in the
         positive set.
         """
-        genes = list(unique_genes)
-        diseases = list(unique_diseases)
+        genes = list(self.available_genes)
+        diseases = list(self.available_diseases)
         num_genes = len(genes)
         num_diseases = len(diseases)
 
@@ -183,9 +218,10 @@ class GDADataPreprocessor:
         # precompute a sorted hash for each positive edge
         pos_hashes = set()
         for gene_str, disease_str in positive_edges:
-            g_idx = gene_to_idx[gene_str]
-            d_idx = disease_to_idx[disease_str]
-            pos_hashes.add(g_idx * num_diseases + d_idx)
+            if gene_str in gene_to_idx and disease_str in disease_to_idx:
+                g_idx = gene_to_idx[gene_str]
+                d_idx = disease_to_idx[disease_str]
+                pos_hashes.add(g_idx * num_diseases + d_idx)
 
         # the maximum number of distinct negatives possible
         max_possible_neg = (num_genes * num_diseases) - len(pos_hashes)
@@ -229,14 +265,14 @@ class GDADataPreprocessor:
 
     def _get_node_features(self, node_mapping: Dict[str, int]) -> torch.Tensor:
         """Fill out node feature matrix via retrieving embeddings."""
-        print("DEBUG: gene_embeddings has size", len(self.gene_embeddings))
+        print("DEBUG: gene_embeddings has size", len(self.embeddings))
         print("DEBUG: node_mapping has size", len(node_mapping))
 
         # check for missing embeddings
-        missing = sum(node_str not in self.gene_embeddings for node_str in node_mapping)
+        missing = sum(node_str not in self.embeddings for node_str in node_mapping)
         print("DEBUG: # missing embeddings:", missing)
 
-        features = np.array([self.gene_embeddings[gene] for gene in node_mapping])
+        features = np.array([self.embeddings[gene] for gene in node_mapping])
         return torch.from_numpy(features).float()
 
     @staticmethod
