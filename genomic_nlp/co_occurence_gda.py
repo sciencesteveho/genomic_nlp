@@ -149,7 +149,7 @@ def main() -> None:
 
     combined_genes = combine_synonyms(hgnc_synonyms, genes)
     alias_to_gene = create_alias_to_gene_mapping(combined_genes)
-    alias_to_disease = create_alias_to_gene_mapping(disease_synonyms)
+    alias_to_disease = {disease: disease for disease in disease_synonyms.keys()}
 
     # run text extraction for each year model
     for year in range(2003, 2023 + 1):
