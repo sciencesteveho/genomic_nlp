@@ -409,8 +409,6 @@ def main() -> None:
         test_targets,
         test_gene_pairs,
     ) = data_preprocessor.load_and_preprocess_data()
-    pos_test = data_preprocessor.positive_test_pairs
-    neg_test = data_preprocessor.negative_test_pairs
 
     print(f"No. of training examples: {len(train_features)}")
     print(f"Train features shape: {train_features.shape}")
@@ -419,16 +417,10 @@ def main() -> None:
     print(f"Test targets shape: {test_targets.shape}")
 
     # prepare stratified test data
-    print(
-        f"Length of pos_test BEFORE prepare_stratified_test_data call in main: {len(pos_test)}"
-    )
-    print(
-        f"Length of neg_test BEFORE prepare_stratified_test_data call in main: {len(neg_test)}"
-    )
     stratified_test_data = data_preprocessor.prepare_stratified_test_data(
-        pos_test=pos_test,
+        pos_test=data_preprocessor.positive_test_pairs,
         test_features=test_features,
-        neg_test=neg_test,
+        neg_test=data_preprocessor.negative_test_pairs,
     )
 
     # define models

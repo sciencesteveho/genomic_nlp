@@ -199,6 +199,8 @@ class InteractionDataPreprocessor:
                 print(
                     "WARNING: test_features was longer than test_gene_pairs. Truncating features and targets to match pairs. Investigate data preprocessing!"
                 )
+        self.positive_test_pairs = pos_test
+        self.negative_test_pairs = neg_test
 
         return (
             train_features,
