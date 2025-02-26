@@ -417,6 +417,12 @@ def main() -> None:
     print(f"Test targets shape: {test_targets.shape}")
 
     # prepare stratified test data
+    print(
+        f"Length of pos_test BEFORE prepare_stratified_test_data call in main: {len(data_preprocessor.positive_test_pairs)}"
+    )
+    print(
+        f"Length of neg_test BEFORE prepare_stratified_test_data call in main: {len(data_preprocessor.negative_test_pairs)}"
+    )
     stratified_test_data = data_preprocessor.prepare_stratified_test_data(
         pos_test=data_preprocessor.positive_test_pairs,
         test_features=test_features,
