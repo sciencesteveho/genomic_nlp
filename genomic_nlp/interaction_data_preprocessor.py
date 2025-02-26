@@ -268,24 +268,32 @@ class InteractionDataPreprocessor:
         test_features: np.ndarray,
         neg_test: List[Tuple[str, str]],
     ) -> Dict[str, Dict[str, Any]]:
-        """Strafity the test data by source."""
+        """Stratify the test data by source."""
         stratified_test_data: Dict[str, Any] = defaultdict(
             lambda: {"features": [], "targets": []}
         )
+
+        # process positive test samples
         for i, pair in enumerate(pos_test):
             sources = self.test_pairs_to_source.get(pair, ("unknown",))
+            features_for_pair = test_features[i]
             for source in sources:
-                stratified_test_data[source]["features"].append(test_features[i])
+                stratified_test_data[source]["features"].append(features_for_pair)
                 stratified_test_data[source]["targets"].append(1)
 
+        # process negative test samples
         for source in stratified_test_data:
             n_pos = len(stratified_test_data[source]["features"])
             neg_indices = np.random.choice(len(neg_test), n_pos, replace=False)
-            stratified_test_data[source]["features"].extend(
-                test_features[neg_index] for neg_index in neg_indices
-            )
-            stratified_test_data[source]["targets"].extend([0] * n_pos)
 
+            for neg_index in neg_indices:
+                feature_index = len(pos_test) + neg_index
+                stratified_test_data[source]["features"].append(
+                    test_features[feature_index]
+                )
+                stratified_test_data[source]["targets"].append(0)
+
+        # convert feature lists to arrays
         for source in stratified_test_data:
             stratified_test_data[source]["features"] = np.array(
                 stratified_test_data[source]["features"]

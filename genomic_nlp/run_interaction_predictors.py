@@ -127,6 +127,8 @@ class GeneInterationPredictions:
             shap_path = f"{self.model_dir}/{self.model_name}_shap_values.npy"
             np.save(shap_path, shap_values)
 
+        print(f"Length of test_gene_pairs: {len(self.test_gene_pairs)}")
+        print(f"Length of test_predictions: {len(test_predictions)}")
         predictions_out = {
             pair: test_predictions[i] for i, pair in enumerate(self.test_gene_pairs)
         }
@@ -476,6 +478,11 @@ def main() -> None:
     visualizer.plot_pr_curve(
         models=trained_models, test_features=test_features, test_labels=test_targets
     )
+
+    # save stratified results
+    stratified_results_path = f"{out_path}/stratified_results_{args.year}.pkl"
+    with open(stratified_results_path, "wb") as f:
+        pickle.dump(stratified_results, f)
 
     # # bootstrap evaluation
     # print("\nBootstrapping evaluation:")
