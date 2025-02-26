@@ -124,16 +124,19 @@ class GDADataPreprocessor:
 
         # compute gda node indices
         gene_node_indices = sorted(
-            {node_mapping[gene] for gene, _ in self.edges if (gene, _) in node_mapping}
+            {
+                node_mapping[gene]
+                for gene, _ in self.edges
+                if gene in self.available_genes
+            }
         )
         disease_node_indices = sorted(
             {
                 node_mapping[disease]
                 for _, disease in self.edges
-                if (_, disease) in node_mapping
+                if disease in self.available_diseases
             }
         )
-
         # convert edges to PyG tensors
         train_pos_edge_index = self._get_edge_index_tensor(
             edges=train_edges, node_mapping=node_mapping
