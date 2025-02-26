@@ -140,6 +140,17 @@ class InteractionDataPreprocessor:
             positive_pairs=list(train_positive_filtered), negative_pairs=neg_train
         )
 
+        # prepare test data and targets BEFORE processing original case pairs
+        print("\n--- Before processing original case pairs ---")
+        print(f"Length of pos_test: {len(pos_test)}")
+        print(f"Length of neg_test: {len(neg_test)}")
+        print("Preparing test features and targets...")
+        test_features, test_targets = self.prepare_data_and_targets(
+            positive_pairs=pos_test, negative_pairs=neg_test
+        )
+        print(f"Length of test_features: {len(test_features)}")
+        print(f"Length of test_targets: {len(test_targets)}")
+
         # get the original case gene pairs for the filtered positive test set
         original_case_map = {}
         for original_case_pair in self.positive_test_pairs_original_case:
@@ -154,30 +165,40 @@ class InteractionDataPreprocessor:
             if normalized_pair in original_case_map:
                 original_case_pos_test_pairs.append(original_case_map[normalized_pair])
             else:
-                original_case_pos_test_pairs.append(pair)
+                print(
+                    f"Warning: Normalized pair {normalized_pair} not found in original case map. Using casefolded pair."
+                )
+                original_case_pos_test_pairs.append(
+                    pair
+                )  # Fallback to casefolded if original not found
 
         if len(original_case_pos_test_pairs) != len(pos_test):
             print(
                 f"WARNING: Length mismatch! original_case_pos_test_pairs: {len(original_case_pos_test_pairs)}, pos_test: {len(pos_test)}"
             )
-            # fall back to using pos_test directly if there's a mismatch
             original_case_pos_test_pairs = pos_test
 
-        # combine positive and negative test pairs to maintain order with
-        # features
+        # combine positive and negative test pairs to maintain order with features
         test_gene_pairs = original_case_pos_test_pairs + list(neg_test)
 
-        test_features, test_targets = self.prepare_data_and_targets(
-            positive_pairs=pos_test, negative_pairs=neg_test
-        )
+        print("\n--- After processing original case pairs ---")
+        print(f"Length of test_gene_pairs: {len(test_gene_pairs)}")
+        print(f"Length of test_features: {len(test_features)}")
+        print(f"Length of test_targets: {len(test_targets)}")
 
-        # verify final lengths match
+        # verify final lengths match - CRITICAL CHECK
         if len(test_gene_pairs) != len(test_features):
             print(
                 f"CRITICAL ERROR: Final length mismatch! test_gene_pairs: {len(test_gene_pairs)}, test_features: {len(test_features)}"
             )
             if len(test_gene_pairs) > len(test_features):
                 test_gene_pairs = test_gene_pairs[: len(test_features)]
+            else:
+                test_features = test_features[: len(test_gene_pairs)]
+                test_targets = test_targets[: len(test_gene_pairs)]
+                print(
+                    "WARNING: test_features was longer than test_gene_pairs. Truncating features and targets to match pairs. Investigate data preprocessing!"
+                )
 
         return (
             train_features,
