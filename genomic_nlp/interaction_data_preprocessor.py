@@ -279,12 +279,16 @@ class InteractionDataPreprocessor:
             f"Length of pos_test INSIDE prepare_stratified_test_data: {len(pos_test)}"
         )
         # process positive test samples
-        for i, pair in enumerate(pos_test):
-            sources = self.test_pairs_to_source.get(pair, ("unknown",))
-            features_for_pair = test_features[i]
-            for source in sources:
-                stratified_test_data[source]["features"].append(features_for_pair)
-                stratified_test_data[source]["targets"].append(1)
+        for i in range(len(test_features)):
+            if i < len(pos_test):
+                pair = pos_test[i]
+                sources = self.test_pairs_to_source.get(pair, ("unknown",))
+                features_for_pair = test_features[i]
+                for source in sources:
+                    stratified_test_data[source]["features"].append(features_for_pair)
+                    stratified_test_data[source]["targets"].append(1)
+            else:
+                continue
 
         # process negative test samples
         for source in stratified_test_data:
