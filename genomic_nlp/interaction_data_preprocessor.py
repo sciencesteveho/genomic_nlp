@@ -237,7 +237,7 @@ class InteractionDataPreprocessor:
             n_pos = len(stratified_test_data[source]["features"])
             neg_indices = np.random.choice(len(neg_test), n_pos, replace=False)
             stratified_test_data[source]["features"].extend(
-                test_features[len(pos_test) + i] for i in neg_indices
+                test_features[neg_index] for neg_index in neg_indices
             )
             stratified_test_data[source]["targets"].extend([0] * n_pos)
 
