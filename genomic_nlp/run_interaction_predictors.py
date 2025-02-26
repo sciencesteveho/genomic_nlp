@@ -431,7 +431,7 @@ def main() -> None:
     trained_models = {}
     train_results = {}
     test_results = {}
-    # stratified_results: Dict[str, Dict[Any, Any]] = {model: {} for model in models}
+    stratified_results: Dict[str, Dict[Any, Any]] = {model: {} for model in models}
 
     for name, model_class in models.items():
         gene_interaction_predictor = GeneInterationPredictions(
@@ -456,20 +456,20 @@ def main() -> None:
         )
 
         # evaluate on stratified test sets
-        # for source, data in stratified_test_data.items():
-        #     stratified_results[name][source] = (
-        #         gene_interaction_predictor.evaluate_model(
-        #             model=trained_model,
-        #             features=data["features"],
-        #             labels=data["targets"],
-        #         )
-        #     )
+        for source, data in stratified_test_data.items():
+            stratified_results[name][source] = (
+                gene_interaction_predictor.evaluate_model(
+                    model=trained_model,
+                    features=data["features"],
+                    labels=data["targets"],
+                )
+            )
 
     visualizer = BaselineModelVisualizer(output_path=out_path)
     visualizer.plot_model_performances(
         train_results=train_results, test_results=test_results
     )
-    # visualizer.plot_stratified_performance(stratified_results=stratified_results)
+    visualizer.plot_stratified_performance(stratified_results=stratified_results)
     visualizer.plot_pr_curve(
         models=trained_models, test_features=test_features, test_labels=test_targets
     )
