@@ -450,82 +450,82 @@ def main() -> None:
     total_steps = EPOCHS * len(train_pos_loader)
     warmup_steps = int(total_steps * 0.1)
 
-    global_step = 0
-    best_auc = float("-inf")
-    patience_counter = 0
-    losses = []
+    # global_step = 0
+    # best_auc = float("-inf")
+    # patience_counter = 0
+    # losses = []
 
-    # training loop!
-    for epoch in range(EPOCHS):
-        loss, global_step = train_model(
-            model=model,
-            optimizer=optimizer,
-            data=data,
-            pos_edge_loader=train_pos_loader,
-            neg_edge_loader=train_neg_loader,
-            device=device,
-            epoch=epoch,
-            global_step=global_step,
-            warmup_steps=warmup_steps,
-            base_lr=base_lr,
-        )
-        losses.append(loss)
+    # # training loop!
+    # for epoch in range(EPOCHS):
+    #     loss, global_step = train_model(
+    #         model=model,
+    #         optimizer=optimizer,
+    #         data=data,
+    #         pos_edge_loader=train_pos_loader,
+    #         neg_edge_loader=train_neg_loader,
+    #         device=device,
+    #         epoch=epoch,
+    #         global_step=global_step,
+    #         warmup_steps=warmup_steps,
+    #         base_lr=base_lr,
+    #     )
+    #     losses.append(loss)
 
-        auc = evaluate_model(
-            model=model,
-            data=data,
-            pos_edge_loader=val_pos_loader,
-            neg_edge_loader=val_neg_loader,
-            device=device,
-        )
+    #     auc = evaluate_model(
+    #         model=model,
+    #         data=data,
+    #         pos_edge_loader=val_pos_loader,
+    #         neg_edge_loader=val_neg_loader,
+    #         device=device,
+    #     )
 
-        if global_step >= warmup_steps:
-            scheduler.step(auc)
+    #     if global_step >= warmup_steps:
+    #         scheduler.step(auc)
 
-        print(f"Epoch: {epoch:03d}, Loss: {loss:.4f}, AUC: {auc:.4f}")
+    #     print(f"Epoch: {epoch:03d}, Loss: {loss:.4f}, AUC: {auc:.4f}")
 
-        if auc > best_auc:
-            best_auc = auc
-            torch.save(model.state_dict(), f"{save_dir}/best_model_{args.year}.pth")
-            patience_counter = 0
-        else:
-            patience_counter += 1
+    #     if auc > best_auc:
+    #         best_auc = auc
+    #         torch.save(model.state_dict(), f"{save_dir}/best_model_{args.year}.pth")
+    #         patience_counter = 0
+    #     else:
+    #         patience_counter += 1
 
-        if patience_counter >= PATIENCE:
-            print(f"Early stopping triggered after {epoch + 1} epochs")
-            break
+    #     if patience_counter >= PATIENCE:
+    #         print(f"Early stopping triggered after {epoch + 1} epochs")
+    #         break
 
-    print(f"Best AUC: {best_auc:.4f}")
-    save_loss_data(losses, save_dir, str(args.year))
+    # print(f"Best AUC: {best_auc:.4f}")
+    # save_loss_data(losses, save_dir, str(args.year))
 
     # load the best model for final evaluation
     model.load_state_dict(
         torch.load(f"{save_dir}/best_model_{args.year}.pth", map_location=device)
     )
 
-    # evaluate on test set
-    auc, ap, y_true_sorted, y_scores_sorted = evaluate_and_rank_validated_predictions(
-        model=model,
-        data=data,
-        pos_edge_loader=test_pos_loader,
-        neg_edge_loader=test_neg_loader,
-        device=device,
-    )
+    # # evaluate on test set
+    # auc, ap, y_true_sorted, y_scores_sorted = evaluate_and_rank_validated_predictions(
+    #     model=model,
+    #     data=data,
+    #     pos_edge_loader=test_pos_loader,
+    #     neg_edge_loader=test_neg_loader,
+    #     device=device,
+    # )
 
-    save_roc_data(y_true_sorted, y_scores_sorted, save_dir, str(args.year))
+    # save_roc_data(y_true_sorted, y_scores_sorted, save_dir, str(args.year))
 
-    print("Final Evaluation:")
-    print(f"AUC: {auc:.4f}")
-    print(f"Average Precision: {ap:.4f}")
+    # print("Final Evaluation:")
+    # print(f"AUC: {auc:.4f}")
+    # print(f"Average Precision: {ap:.4f}")
 
-    # save model and performance
-    save_model_and_performance(
-        model,
-        [("AUC", auc), ("AP", ap)],
-        f"final_model_{args.year}",
-        save_dir,
-        args.year,
-    )
+    # # save model and performance
+    # save_model_and_performance(
+    #     model,
+    #     [("AUC", auc), ("AP", ap)],
+    #     f"final_model_{args.year}",
+    #     save_dir,
+    #     args.year,
+    # )
 
     # predict gene-disease links
     predicted_gdas = predict_gene_disease_links(model, data, device)
