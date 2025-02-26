@@ -22,7 +22,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torch.utils.data import WeightedRandomSampler
 import torch_geometric  # type: ignore
 from torch_geometric.data import Data  # type: ignore
 from torch_geometric.loader import DataLoader  # type: ignore
@@ -44,26 +43,6 @@ def create_edge_loader(
     """Create a DataLoader for edge pairs."""
     edge_dataset = edge_index.t()  # transpose to get pairs of nodes
     return DataLoader(edge_dataset, batch_size=batch_size, shuffle=shuffle)
-
-
-def create_negative_loader_with_oversampling(
-    edge_index: torch.Tensor,
-    target_num_samples: int,
-    batch_size: int,
-) -> DataLoader:
-    """Create dataloader for negative edge pairs with oversampling to match
-    target samples.
-    """
-    # transpose to get pairs of nodes.
-    edge_dataset = edge_index.t()
-    num_negatives = len(edge_dataset)
-
-    # create equal weights for all negative examples.
-    weights = [1.0] * num_negatives
-    sampler = WeightedRandomSampler(
-        weights, num_samples=target_num_samples, replacement=True
-    )
-    return DataLoader(edge_dataset, batch_size=batch_size, sampler=sampler)
 
 
 def train_model(
@@ -306,13 +285,9 @@ def create_loaders(
     train_pos_loader = create_edge_loader(
         data.train_pos_edge_index, batch_size=batch_size, shuffle=True
     )
-    num_train_pos = data.train_pos_edge_index.t().size(0)
-    train_neg_loader = create_negative_loader_with_oversampling(
-        data.train_neg_edge_index,
-        target_num_samples=num_train_pos,
-        batch_size=batch_size,
+    train_neg_loader = create_edge_loader(
+        data.train_neg_edge_index, batch_size=batch_size, shuffle=True
     )
-
     val_pos_loader = create_edge_loader(data.val_pos_edge_index, batch_size=batch_size)
     val_neg_loader = create_edge_loader(data.val_neg_edge_index, batch_size=batch_size)
     test_pos_loader = create_edge_loader(positive_test_edges, batch_size=batch_size)
@@ -465,13 +440,11 @@ def main() -> None:
     # initialize model, optimizer, and scheduler
     base_lr = 0.0001
     model = LinkPredictionGNN(
-        in_channels=data.num_node_features, embedding_size=128, out_channels=128
+        in_channels=data.num_node_features, embedding_size=300, out_channels=300
     ).to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=base_lr)
-    scheduler = ReduceLROnPlateau(
-        optimizer, mode="max", factor=0.5, patience=2, verbose=True
-    )
+    scheduler = ReduceLROnPlateau(optimizer, mode="max", factor=0.5, patience=2)
 
     # training loop
     total_steps = EPOCHS * len(train_pos_loader)
