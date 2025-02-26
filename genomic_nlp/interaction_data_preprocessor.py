@@ -272,7 +272,12 @@ class InteractionDataPreprocessor:
         stratified_test_data: Dict[str, Any] = defaultdict(
             lambda: {"features": [], "targets": []}
         )
-
+        print(
+            f"Shape of test_features INSIDE prepare_stratified_test_data: {test_features.shape}"
+        )
+        print(
+            f"Length of pos_test INSIDE prepare_stratified_test_data: {len(pos_test)}"
+        )
         # process positive test samples
         for i, pair in enumerate(pos_test):
             sources = self.test_pairs_to_source.get(pair, ("unknown",))
