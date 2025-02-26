@@ -278,9 +278,11 @@ class InteractionDataPreprocessor:
         print(
             f"Length of pos_test INSIDE prepare_stratified_test_data: {len(pos_test)}"
         )
+        original_pos_test_len = len(pos_test)
+
         # process positive test samples
         for i in range(len(test_features)):
-            if i < len(pos_test):
+            if i < original_pos_test_len:
                 pair = pos_test[i]
                 sources = self.test_pairs_to_source.get(pair, ("unknown",))
                 features_for_pair = test_features[i]
@@ -296,7 +298,7 @@ class InteractionDataPreprocessor:
             neg_indices = np.random.choice(len(neg_test), n_pos, replace=False)
 
             for neg_index in neg_indices:
-                feature_index = len(pos_test) + neg_index
+                feature_index = original_pos_test_len + neg_index
                 stratified_test_data[source]["features"].append(
                     test_features[feature_index]
                 )
