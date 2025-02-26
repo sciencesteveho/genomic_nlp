@@ -76,6 +76,9 @@ class InteractionDataPreprocessor:
             (pair[0].lower(), pair[1].lower()): pair[2]
             for pair in self.test_pairs_with_source
         }
+        self.positive_test_pairs_original_case = [
+            tuple(pair[:2]) for pair in self.test_pairs_with_source
+        ]
         self.positive_test_pairs = casefold_pairs(self.test_pairs_with_source)
         self.negative_test_pairs = casefold_pairs(_load_pickle(negative_test_file))
 
@@ -140,13 +143,24 @@ class InteractionDataPreprocessor:
             positive_pairs=pos_test, negative_pairs=neg_test
         )
 
+        # get the original case gene pairs for the filtered positive test set
+        original_case_pos_test_pairs = []
+        casefolded_pos_test = set(pos_test)
+        for original_case_pair in self.positive_test_pairs_original_case:
+            casefolded_pair = self.normalize_pair(original_case_pair)
+            if casefolded_pair in casefolded_pos_test:
+                original_case_pos_test_pairs.append(original_case_pair)
+
+        # combine positive and negative test pairs to maintain order with
+        # features
+        test_gene_pairs = original_case_pos_test_pairs + list(neg_test)
+
         return (
             train_features,
             train_targets,
             test_features,
             test_targets,
-            pos_test,
-            neg_test,
+            test_gene_pairs,
         )
 
     def filter_pairs_for_prior_knowledge(
@@ -191,7 +205,7 @@ class InteractionDataPreprocessor:
         )
         print(f"Total train negative pairs after filtering: {len(filtered_train)}")
         print(f"Total test negative pairs after filtering: {len(normalized_test)}")
-        deduped_test = list(normalized_test)
+        deduped_test = [pair for pair in normalized_test if len(pair) == 2]
 
         # sample train and test to be commensurate
         if len(filtered_train) > pos_train_examples:
@@ -301,148 +315,6 @@ class InteractionDataPreprocessor:
     def normalize_pair(pair: Tuple[str, ...]) -> Tuple[str, ...]:
         """Normalize a pair of genes."""
         return tuple(sorted(gene.casefold() for gene in pair))
-
-
-class CancerGeneDataPreprocessor:
-    """Preprocess data for oncogenicity prediction models.
-
-    For each year (i.e. 2003) we get all of the cancer drivers that happen from
-    that year, and before. Then, we get all of the cancer drivers after that
-    year.
-    """
-
-    def __init__(self, gene_embeddings: Dict[str, np.ndarray]) -> None:
-        """Instantiate an OncogenicDataPreprocessor object. Load data and embeddings."""
-        self.gene_embeddings = gene_embeddings
-
-        # hardcoded, to fix later
-        self.resource_dir = Path(
-            "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/cancer"
-        )
-
-        self.cancer_genes = self._get_known_cancer_genes()
-
-        # load provenance data
-        self.provenance = self._load_provenance()
-
-        # get genes that appear in the entire provenance dataset (any year)
-        self.discovered_any_time = set(self.provenance["Gene"].str.lower())
-
-    def _get_known_cancer_genes(self) -> Set[str]:
-        """Get the positive test set of cancer related genes.
-
-        Positive genes are are the union of
-        - COSMIC
-        - NCG
-        - Intogen
-        """
-        cosmic_genes = self._load_cosmic()
-        ncg_genes = self._load_ncg()
-        intogen_genes = self._load_intogen()
-        return cosmic_genes.union(ncg_genes).union(intogen_genes)
-
-    def _load_cosmic(self) -> Set[str]:
-        """Load COSMIC gene_symbols."""
-        data = pd.read_csv(
-            self.resource_dir / "Cosmic_CancerGeneCensus_v100_GRCh38.tsv",
-            delimiter="\t",
-            header=[0],
-        )
-        return set(data["GENE_SYMBOL"].str.lower())
-
-    def _load_ncg(self) -> Set[str]:
-        """Load NCG gene_symbols."""
-        data = pd.read_csv(
-            self.resource_dir / "NCG_cancerdrivers_annotation_supporting_evidence.tsv",
-            delimiter="\t",
-            header=[0],
-        )
-        return set(data["symbol"].str.lower())
-
-    def _load_intogen(self) -> Set[str]:
-        """Load Intogen cancer driver genes."""
-        data = pd.read_csv(
-            self.resource_dir / "Compendium_Cancer_Genes.tsv",
-            delimiter="\t",
-            header=[0],
-        )
-        return set(data["SYMBOL"].str.lower())
-
-    def _load_provenance(self) -> pd.DataFrame:
-        """Load provenance data."""
-        data = pd.read_csv(
-            f"{self.resource_dir}/cancer_normalized.txt",
-            sep="\s+",
-            names=["Gene", "Year"],
-        )
-        return data.sort_values("Year")
-
-    def get_cancer_genes_by_year(self, year: int) -> Tuple[pd.DataFrame, pd.DataFrame]:
-        """Get cancer genes by year."""
-        # get genes from year, inclusive
-        genes_before = self.provenance[self.provenance["Year"] <= year]
-        after = self.provenance[self.provenance["Year"] > year]
-        return genes_before, after
-
-    def format_data_and_targets(
-        self,
-        cancer_genes: Set[str],
-        negative_samples: Set[str],
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """Create feature data and target labels for cancer related genes."""
-        data, targets = [], []
-        for gene in cancer_genes.union(negative_samples):
-            vec = self.gene_embeddings[gene]
-            data.append(vec)
-            targets.append(1 if gene in cancer_genes else 0)
-        return np.array(data), np.array(targets)
-
-    def preprocess_data_by_year(
-        self, year: int
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """For each year in 2001+=2019, we train a separate model"""
-        # get cancer genes by year
-        before, after = self.get_cancer_genes_by_year(year)
-
-        # filter cancer genes for those with embeddings
-        cancer_genes = {
-            gene for gene in self.cancer_genes if gene in self.gene_embeddings
-        }
-
-        # split into training and test sets
-        # training = year inclusive and all previous
-        # test = years after
-        pos_train = set(before["Gene"].str.lower())
-        pos_test = set(after["Gene"].str.lower())
-
-        # generate negative samples
-        # any sample not in the positive set or known cancer gene
-        # but if it's in the provenance in the future, it's fine
-        all_genes = set(self.gene_embeddings.keys())
-        negative_train = (all_genes - pos_train) - cancer_genes
-
-        # negative samples for the test set
-        # true negatives - so not in cancer genes, and never discovered
-        negative_test = (all_genes - self.discovered_any_time) - cancer_genes
-
-        # sample negatives
-        neg_train_samples = set(random.sample(negative_train, len(pos_train)))
-        neg_test_samples = set(random.sample(negative_test, len(pos_test)))
-
-        train_features, train_targets = self.format_data_and_targets(
-            pos_train, neg_train_samples
-        )
-
-        test_features, test_targets = self.format_data_and_targets(
-            pos_test, neg_test_samples
-        )
-
-        return (
-            train_features,
-            train_targets,
-            test_features,
-            test_targets,
-        )
 
 
 def _load_pickle(pickle_file: Any) -> Any:

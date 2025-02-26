@@ -13,7 +13,7 @@ import csv
 import multiprocessing as mp
 import os
 import pickle
-from typing import Any, Callable, Dict, List, Set, Tuple
+from typing import Any, Callable, Dict, List, Set, Tuple, Union
 
 from gensim.models import Word2Vec  # type: ignore
 import matplotlib.pyplot as plt  # type: ignore
@@ -52,6 +52,7 @@ class GeneInterationPredictions:
         train_targets: np.ndarray,
         test_features: np.ndarray,
         test_targets: np.ndarray,
+        test_gene_pairs: List[Tuple[str, str]],
         model_name: str,
         model_dir: str,
     ) -> None:
@@ -61,45 +62,15 @@ class GeneInterationPredictions:
         self.train_targets = train_targets
         self.test_features = test_features
         self.test_targets = test_targets
+        self.test_gene_pairs = test_gene_pairs
         self.model_name = model_name
         self.model_dir = model_dir
-
-    # def perform_cross_validation(
-    #     self,
-    #     n_splits: int,
-    #     **kwargs,
-    # ) -> List[float]:
-    #     """Perform stratified k-fold cross-validation and return AUC scores."""
-    #     folds = StratifiedKFold(
-    #         n_splits=n_splits, shuffle=True, random_state=RANDOM_STATE
-    #     )
-    #     return [
-    #         self.evaluate_model(
-    #             model=self.train_model(
-    #                 model_class=self.model_class,
-    #                 features=self.train_features[train_index],
-    #                 labels=self.train_targets[train_index],
-    #                 **kwargs,
-    #             ),
-    #             features=self.train_features[test_index],
-    #             labels=self.train_targets[test_index],
-    #         )
-    #         for train_index, test_index in folds.split(
-    #             X=self.train_features, y=self.train_targets
-    #         )
-    #     ]
 
     def train_and_evaluate_model(
         self,
     ) -> BaselineModel:
         """Train a model, evaluate, and save results."""
         print(f"\nTraining and evaluating {self.model_name}:")
-
-        # # perform 5-fold CV
-        # cv_scores = self.perform_cross_validation(n_splits=5)
-        # mean_cv_auc = np.mean(cv_scores)
-        # std_cv_auc = np.std(cv_scores)
-        # print(f"Cross-validation Mean AUC: {mean_cv_auc:.4f} (+/- {std_cv_auc:.4f})")
 
         # train final model on entire training set
         final_model = self.train_model(
@@ -108,13 +79,20 @@ class GeneInterationPredictions:
 
         # evaluate on training set
         train_ap = self.evaluate_model(
-            final_model, self.train_features, self.train_targets
+            final_model,
+            self.train_features,
+            self.train_targets,
+        )
+        test_ap_plot = self.evaluate_model(
+            final_model,
+            self.test_features,
+            self.test_targets,
         )
         print(f"Training set AUC: {train_ap:.4f}")
 
         # evaluate on hold-out test set
-        test_ap = self.evaluate_model(
-            final_model, self.test_features, self.test_targets
+        test_ap, test_predictions = self.evaluate_model(
+            final_model, self.test_features, self.test_targets, return_predictions=True
         )
         print(f"Hold-out test set AUC: {test_ap:.4f}")
 
@@ -146,6 +124,15 @@ class GeneInterationPredictions:
             shap_path = f"{self.model_dir}/{self.model_name}_shap_values.npy"
             np.save(shap_path, shap_values)
 
+        predictions_out = {
+            pair: test_predictions[i] for i, pair in enumerate(self.test_gene_pairs)
+        }
+        predictions_path = f"{self.model_dir}/{self.model_name}_test_predictions.pkl"
+        with open(predictions_path, "wb") as f:
+            pickle.dump(predictions_out, f)
+
+        print(f"Test set predictions saved to {predictions_path}")
+
         return final_model
 
     def run_shap(self, final_model: BaselineModel) -> None:
@@ -174,11 +161,17 @@ class GeneInterationPredictions:
 
     @staticmethod
     def evaluate_model(
-        model: BaselineModel, features: np.ndarray, labels: np.ndarray
-    ) -> float:
+        model: BaselineModel,
+        features: np.ndarray,
+        labels: np.ndarray,
+        return_predictions: bool = False,
+    ) -> Union[float, Tuple[float, np.ndarray]]:
         """Evaluate a model and return its AUC score."""
         predicted_probabilities = model.predict_probability(features)
-        return average_precision_score(labels, predicted_probabilities)
+        ap_score = average_precision_score(labels, predicted_probabilities)
+        if return_predictions:
+            return ap_score, predicted_probabilities
+        return ap_score
 
 
 class BootstrapEvaluator:
@@ -409,8 +402,7 @@ def main() -> None:
         train_targets,
         test_features,
         test_targets,
-        pos_test,
-        neg_test,
+        test_gene_pairs,
     ) = data_preprocessor.load_and_preprocess_data()
 
     print(f"No. of training examples: {len(train_features)}")
@@ -421,14 +413,16 @@ def main() -> None:
 
     # prepare stratified test data
     stratified_test_data = data_preprocessor.prepare_stratified_test_data(
-        pos_test=pos_test, test_features=test_features, neg_test=neg_test
+        pos_test=data_preprocessor.positive_test_pairs,
+        test_features=test_features,
+        neg_test=data_preprocessor.negative_test_pairs,
     )
 
     # define models
     models = {
         "xgboost": XGBoost,
-        # "random_baseline": RandomBaseline,
-        # "logistic_regression": LogisticRegressionModel,
+        "random_baseline": RandomBaseline,
+        "logistic_regression": LogisticRegressionModel,
         # "svm": SVM,
         # "mlp": MLP,
     }
@@ -446,6 +440,7 @@ def main() -> None:
             train_targets=train_targets,
             test_features=test_features,
             test_targets=test_targets,
+            test_gene_pairs=test_gene_pairs,
             model_name=name,
             model_dir=out_path,
         )

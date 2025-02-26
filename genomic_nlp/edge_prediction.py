@@ -396,7 +396,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Train and evaluate a GNN for link prediction."
     )
-    parser.add_argument("--batch_size", type=int, default=2048, help="Batch size")
+    parser.add_argument("--batch_size", type=int, default=1024, help="Batch size")
     parser.add_argument("--year", type=int, help="Year of data to use", default=2008)
     args = parser.parse_args()
 
