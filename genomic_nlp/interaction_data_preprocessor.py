@@ -262,58 +262,6 @@ class InteractionDataPreprocessor:
         # ensure len of test
         return filtered_train, deduped_test
 
-    # def prepare_stratified_test_data(
-    #     self,
-    #     pos_test: List[Tuple[str, str]],
-    #     test_features: np.ndarray,
-    #     neg_test: List[Tuple[str, str]],
-    # ) -> Dict[str, Dict[str, Any]]:
-    #     """Stratify the test data by source."""
-    #     stratified_test_data: Dict[str, Any] = defaultdict(
-    #         lambda: {"features": [], "targets": []}
-    #     )
-    #     print(
-    #         f"Shape of test_features INSIDE prepare_stratified_test_data: {test_features.shape}"
-    #     )
-    #     print(
-    #         f"Length of pos_test INSIDE prepare_stratified_test_data: {len(pos_test)}"
-    #     )
-    #     original_pos_test_len = len(pos_test)
-
-    #     # process positive test samples
-    #     for i in range(len(test_features)):
-    #         if i < original_pos_test_len:
-    #             pair = pos_test[i]
-    #             sources = self.test_pairs_to_source.get(pair, ("unknown",))
-    #             features_for_pair = test_features[i]
-    #             for source in sources:
-    #                 stratified_test_data[source]["features"].append(features_for_pair)
-    #                 stratified_test_data[source]["targets"].append(1)
-    #         else:
-    #             continue
-
-    #     # process negative test samples
-    #     for source in stratified_test_data:
-    #         n_pos = len(stratified_test_data[source]["features"])
-    #         neg_indices = np.random.choice(len(neg_test), n_pos, replace=False)
-
-    #         for neg_index in neg_indices:
-    #             feature_index = original_pos_test_len + neg_index
-    #             stratified_test_data[source]["features"].append(
-    #                 test_features[feature_index]
-    #             )
-    #             stratified_test_data[source]["targets"].append(0)
-
-    #     # convert feature lists to arrays
-    #     for source in stratified_test_data:
-    #         stratified_test_data[source]["features"] = np.array(
-    #             stratified_test_data[source]["features"]
-    #         )
-    #         stratified_test_data[source]["targets"] = np.array(
-    #             stratified_test_data[source]["targets"]
-    #         )
-    #     return dict(stratified_test_data)
-
     def prepare_stratified_test_data(
         self,
         pos_test: List[Tuple[str, str]],
@@ -324,20 +272,37 @@ class InteractionDataPreprocessor:
         stratified_test_data: Dict[str, Any] = defaultdict(
             lambda: {"features": [], "targets": []}
         )
-
-        # process positive test samples ONLY - TEMPORARY SIMPLIFICATION
-        for i in range(len(pos_test)):  # Iterate based on pos_test length for now
-            pair = pos_test[i]
-            sources = self.test_pairs_to_source.get(pair, ("unknown",))
-            features_for_pair = test_features[i]
-            for source in sources:
-                stratified_test_data[source]["features"].append(features_for_pair)
-                stratified_test_data[source]["targets"].append(1)
-
-        # SKIP NEGATIVE SAMPLE PROCESSING FOR NOW - DEBUGGING ONLY
         print(
-            "WARNING: Skipping negative sample processing in prepare_stratified_test_data (DEBUGGING)"
+            f"Shape of test_features INSIDE prepare_stratified_test_data: {test_features.shape}"
         )
+        print(
+            f"Length of pos_test INSIDE prepare_stratified_test_data: {len(pos_test)}"
+        )
+        original_pos_test_len = len(pos_test)
+
+        # process positive test samples
+        for i in range(len(test_features)):
+            if i < original_pos_test_len:
+                pair = pos_test[i]
+                sources = self.test_pairs_to_source.get(pair, ("unknown",))
+                features_for_pair = test_features[i]
+                for source in sources:
+                    stratified_test_data[source]["features"].append(features_for_pair)
+                    stratified_test_data[source]["targets"].append(1)
+            else:
+                continue
+
+        # process negative test samples
+        for source in stratified_test_data:
+            n_pos = len(stratified_test_data[source]["features"])
+            neg_indices = np.random.choice(len(neg_test), n_pos, replace=False)
+
+            for neg_index in neg_indices:
+                feature_index = original_pos_test_len + neg_index
+                stratified_test_data[source]["features"].append(
+                    test_features[feature_index]
+                )
+                stratified_test_data[source]["targets"].append(0)
 
         # convert feature lists to arrays
         for source in stratified_test_data:
