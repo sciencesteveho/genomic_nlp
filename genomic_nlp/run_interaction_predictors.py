@@ -92,7 +92,10 @@ class GeneInterationPredictions:
 
         # evaluate on hold-out test set
         test_ap, test_predictions = self.evaluate_model(
-            final_model, self.test_features, self.test_targets, return_predictions=True
+            model=final_model,
+            features=self.test_features,
+            labels=self.test_targets,
+            return_predictions=True,
         )
         print(f"Hold-out test set AUC: {test_ap:.4f}")
 
@@ -412,11 +415,11 @@ def main() -> None:
     print(f"Test targets shape: {test_targets.shape}")
 
     # prepare stratified test data
-    # stratified_test_data = data_preprocessor.prepare_stratified_test_data(
-    #     pos_test=data_preprocessor.positive_test_pairs,
-    #     test_features=test_features,
-    #     neg_test=data_preprocessor.negative_test_pairs,
-    # )
+    stratified_test_data = data_preprocessor.prepare_stratified_test_data(
+        pos_test=data_preprocessor.positive_test_pairs,
+        test_features=test_features,
+        neg_test=data_preprocessor.negative_test_pairs,
+    )
 
     # define models
     models = {

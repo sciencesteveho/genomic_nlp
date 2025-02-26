@@ -139,21 +139,45 @@ class InteractionDataPreprocessor:
         train_features, train_targets = self.prepare_data_and_targets(
             positive_pairs=list(train_positive_filtered), negative_pairs=neg_train
         )
-        test_features, test_targets = self.prepare_data_and_targets(
-            positive_pairs=pos_test, negative_pairs=neg_test
-        )
 
         # get the original case gene pairs for the filtered positive test set
-        original_case_pos_test_pairs = []
-        casefolded_pos_test = set(pos_test)
+        original_case_map = {}
         for original_case_pair in self.positive_test_pairs_original_case:
-            casefolded_pair = self.normalize_pair(original_case_pair)
-            if casefolded_pair in casefolded_pos_test:
-                original_case_pos_test_pairs.append(original_case_pair)
+            normalized_pair = self.normalize_pair(original_case_pair)
+            original_case_map[normalized_pair] = original_case_pair
+
+        # ensure original_case_pos_test_pairs maintains exact same order as
+        # pos_test
+        original_case_pos_test_pairs = []
+        for pair in pos_test:
+            normalized_pair = self.normalize_pair(pair)
+            if normalized_pair in original_case_map:
+                original_case_pos_test_pairs.append(original_case_map[normalized_pair])
+            else:
+                original_case_pos_test_pairs.append(pair)
+
+        if len(original_case_pos_test_pairs) != len(pos_test):
+            print(
+                f"WARNING: Length mismatch! original_case_pos_test_pairs: {len(original_case_pos_test_pairs)}, pos_test: {len(pos_test)}"
+            )
+            # fall back to using pos_test directly if there's a mismatch
+            original_case_pos_test_pairs = pos_test
 
         # combine positive and negative test pairs to maintain order with
         # features
         test_gene_pairs = original_case_pos_test_pairs + list(neg_test)
+
+        test_features, test_targets = self.prepare_data_and_targets(
+            positive_pairs=pos_test, negative_pairs=neg_test
+        )
+
+        # verify final lengths match
+        if len(test_gene_pairs) != len(test_features):
+            print(
+                f"CRITICAL ERROR: Final length mismatch! test_gene_pairs: {len(test_gene_pairs)}, test_features: {len(test_features)}"
+            )
+            if len(test_gene_pairs) > len(test_features):
+                test_gene_pairs = test_gene_pairs[: len(test_features)]
 
         return (
             train_features,
