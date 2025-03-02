@@ -155,9 +155,9 @@ def main() -> None:
     alias_to_disease = create_alias_to_gene_mapping(disease_synonyms)
 
     # run text extraction for each year model
-    # for year in range(2003, 2023 + 1):
-    for year in range(1):
-        year = 2007
+    for year in range(2003, 2023 + 1):
+        # for year in range(1):
+        # year = 2007
         print(f"Processing year {year}")
         gene_edges = extract_gda_edges_from_abstracts(
             alias_to_gene=alias_to_gene, alias_to_disease=alias_to_disease, year=year
