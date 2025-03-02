@@ -59,16 +59,24 @@ def main():
         type=str,
         default="/ocean/projects/bio210019p/stevesho/genomic_nlp/models/disease",
     )
+    parser.add_argument("--model", type=str, default="w2v")
     args = parser.parse_args()
 
+    if args.model == "n2v":
+        model_path = f"/ocean/projects/bio210019p/stevesho/genomic_nlp/models/n2v/ppi/{args.year}/input_embeddings.pkl"
+        with open(model_path, "rb") as f:
+            embeddings = pickle.load(f)
+    else:
+        w2vmodel_file = (
+            f"{embedding_path}/{args.year}/word2vec_300_dimensions_{args.year}.model"
+        )
+        w2v_model = Word2Vec.load(w2vmodel_file)
+        embeddings = {word: w2v_model.wv[word] for word in w2v_model.wv.index_to_key}
+
+    save_dir = f"{args.save_dir}/{args.model}"
     save_dir = Path(args.save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
     embedding_path = "/ocean/projects/bio210019p/stevesho/genomic_nlp/models/w2v"
-    w2vmodel_file = (
-        f"{embedding_path}/{args.year}/word2vec_300_dimensions_{args.year}.model"
-    )
-    w2v_model = Word2Vec.load(w2vmodel_file)
-    embeddings = {word: w2v_model.wv[word] for word in w2v_model.wv.index_to_key}
 
     text_path = "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/disease"
     text_edges_file = f"{text_path}/gda_co_occurence_{args.year}.tsv"
@@ -161,19 +169,31 @@ def main():
         seed=42,
         reg_lambda=1,
     )
+
     print("Training XGBoost...")
+
     xgb_clf.fit(X_train, y_train)
     probs_test = xgb_clf.predict_proba(X_test)[:, 1]
     auc = roc_auc_score(y_test, probs_test)
     ap = average_precision_score(y_test, probs_test)
     pr_curve = precision_recall_curve(y_test, probs_test)
+    precision, recall, thresholds = pr_curve
     print(f"Test AUC = {auc:.4f}")
     print(f"Test Average Precision = {ap:.4f}")
-    np.save(save_dir / f"pr_curve_{args.year}.npy", pr_curve)
+
+    np.savez(
+        save_dir / f"pr_curve_{args.year}.npz",
+        precision=precision,
+        recall=recall,
+        thresholds=thresholds,
+    )
+
     model_path = save_dir / f"xgboost_gda_{args.year}.pkl"
     with open(model_path, "wb") as f:
         pickle.dump(xgb_clf, f)
+
     print(f"Saved XGBoost model to {model_path}")
+
     probs_test_named = []
     for idx, (g, d) in enumerate(test_positive_pairs + test_negative_pairs):
         probs_test_named.append((g, d, probs_test[idx]))
@@ -186,21 +206,32 @@ def main():
     # train Logistic Regression
     lr_clf = LogisticRegression()
     print("Training Logistic Regression...")
+
     lr_clf.fit(X_train, y_train)
     probs_test_lr = lr_clf.predict_proba(X_test)[:, 1]
     auc_lr = roc_auc_score(y_test, probs_test_lr)
     ap_lr = average_precision_score(y_test, probs_test_lr)
     pr_curve_lr = precision_recall_curve(y_test, probs_test_lr)
+    precision_lr, recall_lr, thresholds_lr = pr_curve_lr
+
     print(f"Test AUC (LR) = {auc_lr:.4f}")
     print(f"Test Average Precision (LR) = {ap_lr:.4f}")
-    np.save(save_dir / f"pr_curve_lr_{args.year}.npy", pr_curve_lr)
+    np.savez(
+        save_dir / f"pr_curve_lr_{args.year}.npz",
+        precision=precision_lr,
+        recall=recall_lr,
+        thresholds=thresholds_lr,
+    )
+
     model_path_lr = save_dir / f"lr_gda_{args.year}.pkl"
     with open(model_path_lr, "wb") as f:
         pickle.dump(lr_clf, f)
+
     print(f"Saved Logistic Regression model to {model_path_lr}")
     probs_test_named_lr = []
     for idx, (g, d) in enumerate(test_positive_pairs + test_negative_pairs):
         probs_test_named_lr.append((g, d, probs_test_lr[idx]))
+
     with open(save_dir / f"probs_test_lr_{args.year}.tsv", "w") as f:
         writer = csv.writer(f, delimiter="\t")
         writer.writerow(["gene", "disease", "probability"])
@@ -232,12 +263,21 @@ def main():
     auc_rand = roc_auc_score(y_test, probs_test_rand)
     ap_rand = average_precision_score(y_test, probs_test_rand)
     pr_curve_rand = precision_recall_curve(y_test, probs_test_rand)
+    precision_rand, recall_rand, thresholds_rand = pr_curve_rand
+
     print(f"Test AUC (Random Baseline) = {auc_rand:.4f}")
     print(f"Test Average Precision (Random Baseline) = {ap_rand:.4f}")
-    np.save(save_dir / f"pr_curve_rand_{args.year}.npy", pr_curve_rand)
+    np.savez(
+        save_dir / f"pr_curve_rand_{args.year}.npz",
+        precision=precision_rand,
+        recall=recall_rand,
+        thresholds=thresholds_rand,
+    )
+
     probs_test_named_rand = []
     for idx, (g, d) in enumerate(test_positive_pairs + test_negative_pairs):
         probs_test_named_rand.append((g, d, probs_test_rand[idx]))
+
     with open(save_dir / f"probs_test_rand_{args.year}.tsv", "w") as f:
         writer = csv.writer(f, delimiter="\t")
         writer.writerow(["gene", "disease", "probability"])
