@@ -440,10 +440,10 @@ def main() -> None:
     # initialize model, optimizer, and scheduler
     base_lr = 0.0001
     model = LinkPredictionGNN(
-        in_channels=data.num_node_features, embedding_size=64, out_channels=64
+        in_channels=data.num_node_features, embedding_size=32, out_channels=32
     ).to(device)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=base_lr, weight_decay=1e-4)
+    optimizer = torch.optim.Adam(model.parameters(), lr=base_lr, weight_decay=5e-3)
     scheduler = ReduceLROnPlateau(optimizer, mode="max", factor=0.5, patience=2)
 
     # training loop

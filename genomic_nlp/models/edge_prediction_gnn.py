@@ -34,7 +34,7 @@ class LinkPredictionGNN(nn.Module):
         in_channels: int,
         embedding_size: int,
         out_channels: int,
-        dropout: float = 0.2,
+        dropout: float = 0.5,
     ) -> None:
         """Instantiate the model."""
         super(LinkPredictionGNN, self).__init__()
