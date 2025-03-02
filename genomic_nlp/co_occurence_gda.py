@@ -7,7 +7,6 @@ token/alias-based approach for genes and a HunFlair2 for diseases.
 """
 
 
-import itertools
 import multiprocessing as mp
 import pickle
 from typing import Dict, List, Set, Tuple
@@ -18,13 +17,17 @@ from tqdm import tqdm  # type: ignore
 from genomic_nlp.utils.common import gencode_genes
 
 
-def gene_disease_edges(
-    gene_set: List[Set[str]], disease_set: List[Set[str]]
+def gene_disease_edges_per_abstract(
+    gene_sets: List[Set[str]], disease_sets: List[Set[str]]
 ) -> Set[Tuple[str, str]]:
-    """For each gene in gene_set, pair it with each disease in disease_set."""
-    flattened_genes = {gene for genes in gene_set for gene in genes}
-    flattened_diseases = {disease for diseases in disease_set for disease in diseases}
-    return set(itertools.product(flattened_genes, flattened_diseases))
+    """Generate gene-disease edges for a single abstract."""
+    all_pairs = set()
+    for gset, dset in zip(gene_sets, disease_sets):
+        # cartesian product for that abstract
+        for g in gset:
+            for d in dset:
+                all_pairs.add((g, d))
+    return all_pairs
 
 
 def combine_synonyms(
@@ -91,7 +94,7 @@ def process_abstract_file(
     abstracts = abstracts[abstracts["year"] <= year]
     gene_relationships = mentions_per_abstract(abstracts, alias_to_gene)
     disease_relationships = mentions_per_abstract(abstracts, alias_to_disease)
-    return gene_disease_edges(gene_relationships, disease_relationships)
+    return gene_disease_edges_per_abstract(gene_relationships, disease_relationships)
 
 
 def extract_gda_edges_from_abstracts(

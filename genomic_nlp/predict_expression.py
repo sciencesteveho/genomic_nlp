@@ -217,6 +217,17 @@ def main() -> None:
         "/Users/steveho/genomic_nlp/development/models/word2vec_300_dimensions_2023.model"
     )
 
+    # load genePT
+    with open(
+        "/Users/steveho/genomic_nlp/development/plots/GenePT_emebdding_v2/GenePT_gene_embedding_ada_text.pickle",
+        "rb",
+    ) as f:
+        gene_pt_raw = pickle.load(f)
+
+    gene_pt = {
+        gene.casefold(): np.array(embedding) for gene, embedding in gene_pt_raw.items()
+    }
+
     # add symbols to df
     df["genesymbol"] = df.index.map(lambda x: symbol_lookup.get(x, x))
     genes_symbols = {gene.lower() for gene in list(df["genesymbol"])}
@@ -224,6 +235,10 @@ def main() -> None:
     # filter for valid genes
     valid_genes = [gene for gene in genes_symbols if gene in w2v.wv]
     w2v_genes = {gene: w2v.wv[gene] for gene in valid_genes}
+
+    # filter for valid genes in genePT
+    valid_genes = [gene for gene in genes_symbols if gene in gene_pt]
+    gene_pt_genes = {gene: gene_pt[gene] for gene in valid_genes}
 
     # assign train, test, val based on chr_map
     df["split"] = df.index.map(lambda x: assign_split(x, chr_map))
@@ -239,11 +254,13 @@ def main() -> None:
     # df = df[df["genesymbol"].isin(embedding_genes)]
     # convert to lower first
     df["genesymbol"] = df["genesymbol"].map(lambda x: x.lower())
-    df = df[df["genesymbol"].isin(w2v_genes)]
+    # df = df[df["genesymbol"].isin(w2v_genes)]
+    df = df[df["genesymbol"].isin(gene_pt_genes)]
 
     # add embeddings to df
     # df["embedding"] = df["genesymbol"].map(lambda x: embeddings.get(x))
-    df["embedding"] = df["genesymbol"].map(lambda x: w2v_genes.get(x))
+    # df["embedding"] = df["genesymbol"].map(lambda x: w2v_genes.get(x))
+    df["embedding"] = df["genesymbol"].map(lambda x: gene_pt_genes.get(x))
 
     # check how many train, test, val
     split_counts = df["split"].value_counts()
@@ -374,6 +391,7 @@ def main() -> None:
     #     y_test,
     #     savetitle="random_embedding_expression_prediction.png",
     # )
+    predictions_genept = final_model.predict(X_test)
 
     final_model = Pipeline(
         [

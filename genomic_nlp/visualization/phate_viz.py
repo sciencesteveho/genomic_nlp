@@ -279,9 +279,7 @@ def main() -> None:
     #     word_embeddings = pickle.load(file)
     # load w2v model
     for year in range(2003, 2024):
-        w2v = Word2Vec.load(
-            f"/Users/steveho/genomic_nlp/development/models/word2vec_300_dimensions_{year}.model"
-        )
+        w2v = Word2Vec.load(f"word2vec_300_dimensions_{year}.model")
 
         # get genes in the model
         word_embeddings = {gene: w2v.wv[gene] for gene in genes if gene in w2v.wv}
