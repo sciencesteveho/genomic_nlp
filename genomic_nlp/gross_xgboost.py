@@ -64,7 +64,7 @@ def main():
     embedding_path = "/ocean/projects/bio210019p/stevesho/genomic_nlp/models/w2v"
 
     if args.model == "n2v":
-        model_path = f"/ocean/projects/bio210019p/stevesho/genomic_nlp/models/n2v/ppi/{args.year}/input_embeddings.pkl"
+        model_path = f"/ocean/projects/bio210019p/stevesho/genomic_nlp/models/n2v/disease/{args.year}/input_embeddings.pkl"
         with open(model_path, "rb") as f:
             embeddings = pickle.load(f)
     else:
