@@ -75,7 +75,7 @@ def main():
         embeddings = {word: w2v_model.wv[word] for word in w2v_model.wv.index_to_key}
 
     save_dir = f"{args.save_dir}/{args.model}"
-    save_dir = Path(args.save_dir)
+    save_dir = Path(save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
 
     text_path = "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/disease"
