@@ -397,7 +397,7 @@ def main() -> None:
         description="Train and evaluate a GNN for link prediction."
     )
     parser.add_argument("--batch_size", type=int, default=1024, help="Batch size")
-    parser.add_argument("--year", type=int, help="Year of data to use", default=2008)
+    parser.add_argument("--year", type=int, help="Year of data to use", default=2007)
     args = parser.parse_args()
 
     save_dir = Path("/ocean/projects/bio210019p/stevesho/genomic_nlp/models/gnn")
@@ -440,10 +440,10 @@ def main() -> None:
     # initialize model, optimizer, and scheduler
     base_lr = 0.0001
     model = LinkPredictionGNN(
-        in_channels=data.num_node_features, embedding_size=300, out_channels=300
+        in_channels=data.num_node_features, embedding_size=64, out_channels=64
     ).to(device)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=base_lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=base_lr, weight_decay=1e-4)
     scheduler = ReduceLROnPlateau(optimizer, mode="max", factor=0.5, patience=2)
 
     # training loop
