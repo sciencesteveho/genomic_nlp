@@ -24,6 +24,28 @@ import torch
 from torch_geometric.data import Data  # type: ignore
 from tqdm import tqdm  # type: ignore
 
+REMOVE_DISEASES = [
+    "immune_suppression",
+    "wiskott_aldrich_syndrome",
+    "angelman_syndrome",
+    "aniridia",
+    "ataxia_telangiectasia",
+    "crouzon_syndrome_with_acanthosis_nigricans",
+    "precursor_cell_lymphoblastic_leukemia_lymphoma",
+    "disease",
+    "sprains_and_strains",
+    "infections",
+    # "retinitis_pigmentosa_27",
+    # "wounds_and_injuries",
+    # "hamartoma_syndrome_multiple",
+    # "van_der_woude_syndrome",
+    # "neoplasm_metastasis",
+    # "neoplasms",
+    # "cone_rod_dystrophy_2",
+    # "distal_myopathy_nonaka_type",
+    # "lecithin_cholesterol_acyltransferase_deficiency",
+]
+
 
 class GDADataPreprocessor:
     """Preprocess data for GNN link prediction model."""
@@ -63,6 +85,9 @@ class GDADataPreprocessor:
         self.available_diseases = {
             disease for disease in disease_names if disease in self.embeddings
         }
+        # remove diseases in remove_diseases
+        self.available_diseases = self.available_diseases - set(REMOVE_DISEASES)
+
         self.available_genes = {gene for gene in gene_names if gene in self.embeddings}
         print("Data and embeddings loaded!")
         print(f"Total filtered edges: {len(self.edges)}")
