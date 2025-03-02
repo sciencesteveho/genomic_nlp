@@ -61,6 +61,7 @@ def main():
     )
     parser.add_argument("--model", type=str, default="w2v")
     args = parser.parse_args()
+    embedding_path = "/ocean/projects/bio210019p/stevesho/genomic_nlp/models/w2v"
 
     if args.model == "n2v":
         model_path = f"/ocean/projects/bio210019p/stevesho/genomic_nlp/models/n2v/ppi/{args.year}/input_embeddings.pkl"
@@ -76,7 +77,6 @@ def main():
     save_dir = f"{args.save_dir}/{args.model}"
     save_dir = Path(args.save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
-    embedding_path = "/ocean/projects/bio210019p/stevesho/genomic_nlp/models/w2v"
 
     text_path = "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/disease"
     text_edges_file = f"{text_path}/gda_co_occurence_{args.year}.tsv"
