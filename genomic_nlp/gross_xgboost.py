@@ -109,6 +109,18 @@ def main():
         f"[INFO] After removing duplicates, {len(test_positive_pairs)} positive test pairs remain."
     )
 
+    # remove any test pairs that are in the training data
+    train_pos_edges = data.train_pos_edge_index.numpy().T
+    train_neg_edges = data.train_neg_edge_index.numpy().T
+    train_edges = np.concatenate([train_pos_edges, train_neg_edges], axis=0)
+    train_edges_set = {
+        (data.inv_node_mapping[src], data.inv_node_mapping[dst])
+        for src, dst in train_edges
+    }
+    test_positive_pairs = [
+        (g, d) for g, d in test_positive_pairs if (g, d) not in train_edges_set
+    ]
+
     all_genes = [k for k in embeddings if k in preprocessor.available_genes]
     all_diseases = [k for k in embeddings if k in preprocessor.available_diseases]
     test_positive_set = set(test_positive_pairs)
