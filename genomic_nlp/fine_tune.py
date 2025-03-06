@@ -56,8 +56,8 @@ def _get_total_steps(
 
 def custom_gene_tokenizer(
     normalized_tokens: Set[str],
-    base_model_name: str = "microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract",
-    save_dir: str = "/ocean/projects/bio210019p/stevesho/genomic_nlp/models/biomedbert/gene_tokenizer",
+    base_model_name: str,
+    save_dir: str,
 ) -> BertTokenizerFast:
     """Create a custom tokenizer and add NEN tokens to ensure consistent
     vocabulary.
@@ -117,7 +117,11 @@ def main() -> None:
     gene_tokens = load_tokens(gene_token_file)
     disease_tokens = load_tokens(disease_token_file)
     all_entity_tokens = gene_tokens.union(disease_tokens)
-    tokenizer = custom_gene_tokenizer(normalized_tokens=all_entity_tokens)
+    tokenizer = custom_gene_tokenizer(
+        normalized_tokens=all_entity_tokens,
+        base_model_name=model_name,
+        save_dir=f"{args.root_dir}/models/finetuned_biomedbert/gene_tokenizer",
+    )
 
     # load biomedbert model
     model = BertForMaskedLM.from_pretrained(model_name)
