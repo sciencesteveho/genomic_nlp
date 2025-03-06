@@ -13,7 +13,7 @@
       "device": "none"
     }
  },
- "bp16": {
+ "bf16": {
     "enabled": "auto",
     "auto_cast": true,
     "loss_scale": 0,
@@ -35,12 +35,12 @@
     }
  },
  "zero_allow_untested_optimizer": true,
- "train_batch_size": 1024,
+ "train_batch_size": 2048,
  "train_micro_batch_size_per_gpu": 256,
  "gradient_accumulation_steps": 1,
  "gradient_clipping": 1.0,
  "steps_per_print": 100,
  "wall_clock_breakdown": false,
- "communication_data_type": "bp16",
+ "communication_data_type": "bf16",
  "prescale_gradients": false
 }
