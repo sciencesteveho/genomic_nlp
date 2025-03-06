@@ -7,3 +7,4 @@ data/abstracts
 data/plots
 data/embeddings
 genomic_nlp.egg-info/
+genomic_nlp/embedding_utils/
