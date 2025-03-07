@@ -35,7 +35,7 @@
     }
  },
  "zero_allow_untested_optimizer": true,
- "train_batch_size": 2048,
+ "train_batch_size": 1024,
  "train_micro_batch_size_per_gpu": 256,
  "gradient_accumulation_steps": 1,
  "gradient_clipping": 1.0,
