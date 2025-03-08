@@ -21,12 +21,14 @@ import torch  # type: ignore
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
+from torch.utils.data import DistributedSampler
 from tqdm import tqdm  # type: ignore
 from transformers import BertForMaskedLM  # type: ignore
 from transformers import BertTokenizerFast  # type: ignore
 from transformers import DataCollatorForLanguageModeling  # type: ignore
 from transformers import get_linear_schedule_with_warmup  # type: ignore
 
+from genomic_nlp.utils.streaming_corpus import MLMTextDataset
 from genomic_nlp.utils.streaming_corpus import StreamingCorpus
 
 logging.basicConfig(level=logging.INFO)
@@ -126,24 +128,50 @@ def main() -> None:
     # load biomedbert model
     model = BertForMaskedLM.from_pretrained(model_name)
     model.resize_token_embeddings(len(tokenizer))
-    model.gradient_checkpointing_enable()
+
+    # force contiguity of model parameters
+    for name, param in model.named_parameters():
+        if not param.data.is_contiguous():
+            param.data = param.data.contiguous()
+
+    # model.gradient_checkpointing_enable()
     logging.info(
         f"Loaded DeBERTa model and resized token embeddings to {len(tokenizer)}"
     )
 
     # load dataset generator
-    streaming_dataset = StreamingCorpus(
+    # streaming_dataset = StreamingCorpus(
+    #     file_path=abstracts,
+    #     tokenizer=tokenizer,
+    #     max_length=512,
+    # )
+    # logging.info(f"Created StreamingCorpus with {len(streaming_dataset)} abstracts")
+    streaming_dataset = MLMTextDataset(
         file_path=abstracts,
         tokenizer=tokenizer,
         max_length=512,
     )
-    logging.info(f"Created StreamingCorpus with {len(streaming_dataset)} abstracts")
+    logging.info(f"Created MLMTextDataset with {len(streaming_dataset)} abstracts")
 
-    # scheduler with warmup
-    total_steps = len(streaming_dataset) // (
-        torch.distributed.get_world_size() * train_micro_batch_size_per_gpu
+    # get total steps from dataset size
+    total_abstracts = len(streaming_dataset)
+    num_gpus = (
+        torch.distributed.get_world_size() if torch.distributed.is_initialized() else 1
+    )
+    num_epochs = 3
+    total_steps = _get_total_steps(
+        num_gpus, num_epochs, train_micro_batch_size_per_gpu, total_abstracts
     )
     warmup_steps = int(0.1 * total_steps)
+    logging.info(f"total steps: {total_steps}, warmup steps: {warmup_steps}")
+
+    # create distributed sampler if in multi-gpu mode
+    if torch.distributed.is_initialized():
+        sampler = DistributedSampler(streaming_dataset, shuffle=True)  # type: ignore
+        print("Distributed Sampler")
+    else:
+        sampler = None
+        print("No Distributed Sampler")
 
     # set up DeepSpeed
     model_engine, optimizer, _, _ = deepspeed.initialize(
@@ -168,24 +196,32 @@ def main() -> None:
     dataloader = DataLoader(
         streaming_dataset,
         batch_size=model_engine.train_micro_batch_size_per_gpu(),
+        sampler=sampler,
         num_workers=4,
         collate_fn=data_collator,
         pin_memory=True,
-        prefetch_factor=4,
+        # prefetch_factor=4,
         persistent_workers=True,
-        shuffle=False,
     )
 
     # training loop!
-    for epoch in range(3):
+    for epoch in range(num_epochs):
         model_engine.train()
+
+        if sampler is not None:
+            sampler.set_epoch(epoch)
+
         if args.local_rank in {0, -1}:
             epoch_iterator = tqdm(
-                total=total_steps,
+                dataloader,
                 desc=f"Epoch {epoch+1}",
                 position=0,
                 leave=True,
+                total=len(dataloader),
             )
+        else:
+            epoch_iterator = dataloader
+
         for step, batch in enumerate(dataloader):
             # move batch to device
             batch = {k: v.to(model_engine.local_rank) for k, v in batch.items()}
@@ -201,19 +237,14 @@ def main() -> None:
 
             # update progress bar on main process
             if args.local_rank in {0, -1}:
-                epoch_iterator.update(1)
                 epoch_iterator.set_postfix({"loss": f"{loss.item():.4f}"})
-
                 if step % 100 == 0:
-                    logging.info(f"Epoch {epoch}, Step {step}, Loss: {loss.item():.4f}")
-
-            # break if we've processed all steps
-            if step >= total_steps:
-                break
+                    logging.info(f"epoch {epoch}, step {step}, loss: {loss.item():.4f}")
 
     # save the model
     if args.local_rank in {0, -1}:
         model_engine.save_checkpoint(model_out)
+        logging.info(f"Final model saved to {model_out}")
 
 
 if __name__ == "__main__":

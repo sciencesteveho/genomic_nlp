@@ -15,8 +15,60 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 import numpy as np
 import torch
+from torch.utils.data import Dataset
 from torch.utils.data import IterableDataset
 from transformers import PreTrainedTokenizer  # type: ignore
+
+
+class MLMTextDataset(Dataset):
+    """Map-style dataset for mlm."""
+
+    def __init__(
+        self, file_path: str, tokenizer: PreTrainedTokenizer, max_length: int = 512
+    ) -> None:
+        """Initialize the MLMTextDataset."""
+        super().__init__()
+        self.file_path: str = file_path
+        self.tokenizer: PreTrainedTokenizer = tokenizer
+        self.max_length: int = max_length
+
+        logging.info(f"Counting lines in: {file_path}")
+        with open(file_path, "rb") as f:
+            self.num_lines: int = 0
+            chunk_size: int = 1024 * 1024
+            while chunk := f.read(chunk_size):
+                self.num_lines += chunk.count(b"\n")
+
+        logging.info(f"{self.num_lines} lines found in {file_path}.")
+
+    def __len__(self) -> int:
+        """Return the number of lines in the file."""
+        return self.num_lines
+
+    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+        """Get the tokenized example for a given index."""
+        raw_line: str = linecache.getline(self.file_path, idx + 1)
+        if not raw_line:
+            raise IndexError(f"line index {idx} out of range in {self.file_path}")
+
+        line: str = raw_line.strip()
+        if not line:
+            return {
+                "input_ids": torch.zeros(self.max_length, dtype=torch.long),
+                "attention_mask": torch.zeros(self.max_length, dtype=torch.long),
+            }
+
+        encoded = self.tokenizer.encode_plus(
+            line,
+            max_length=self.max_length,
+            padding="max_length",
+            truncation=True,
+            return_tensors="pt",
+        )
+        return {
+            "input_ids": encoded["input_ids"].squeeze(0),
+            "attention_mask": encoded["attention_mask"].squeeze(0),
+        }
 
 
 class StreamingCorpus(IterableDataset):
