@@ -222,7 +222,7 @@ def main() -> None:
         else:
             epoch_iterator = dataloader
 
-        for step, batch in enumerate(dataloader):
+        for step, batch in enumerate(epoch_iterator):
             # move batch to device
             batch = {k: v.to(model_engine.local_rank) for k, v in batch.items()}
 
