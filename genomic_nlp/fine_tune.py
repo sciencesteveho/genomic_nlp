@@ -14,6 +14,7 @@ custom tokenizer that adds gene names to the vocabulary."""
 import argparse
 import json
 import logging
+import os
 from typing import Set
 
 import deepspeed  # type: ignore
@@ -107,6 +108,8 @@ def main() -> None:
     abstracts_dir = f"{args.root_dir}/data"
     abstracts = f"{abstracts_dir}/combined/processed_abstracts_finetune_combined.txt"
     model_out = f"{args.root_dir}/models/finetuned_biomedbert"
+    best_model_out_dir = os.path.join(model_out, "best_model")
+    final_model_out_dir = os.path.join(model_out, "final_model")
 
     # get val needed for total steps calculation
     parsed_config = parse_deepspeed_config(ds_config_file)
@@ -204,6 +207,11 @@ def main() -> None:
         persistent_workers=True,
     )
 
+    # early stopping parameters
+    best_train_loss = float("inf")
+    patience = 30  # total steps to wait = patience * 100
+    steps_since_last_improvement = 0
+
     # training loop!
     for epoch in range(num_epochs):
         model_engine.train()
@@ -214,7 +222,7 @@ def main() -> None:
         if args.local_rank in {0, -1}:
             epoch_iterator = tqdm(
                 dataloader,
-                desc=f"Epoch {epoch+1}",
+                desc=f"epoch {epoch+1}",
                 position=0,
                 leave=True,
                 total=len(dataloader),
@@ -239,12 +247,54 @@ def main() -> None:
             if args.local_rank in {0, -1}:
                 epoch_iterator.set_postfix({"loss": f"{loss.item():.4f}"})
                 if step % 100 == 0:
-                    logging.info(f"epoch {epoch}, step {step}, loss: {loss.item():.4f}")
+                    current_loss = loss.item()
+                    logging.info(
+                        f"epoch {epoch}, step {step}, loss: {current_loss:.4f}"
+                    )
 
-    # save the model
+                    # early stopping check
+                    if current_loss < best_train_loss:
+                        best_train_loss = current_loss
+                        steps_since_last_improvement = 0
+                        # save best model so far
+                        if args.local_rank in {0, -1}:
+                            model_engine.save_checkpoint(
+                                best_model_out_dir
+                            )  # save to best_model directory
+                            logging.info(
+                                f"best model updated at step {step}, "
+                                f"loss: {best_train_loss:.4f}, "
+                                f"saved to {best_model_out_dir}"
+                            )
+                    else:
+                        steps_since_last_improvement += 1
+                        logging.info(
+                            "no improvement in training loss for "
+                            f"{steps_since_last_improvement} checks."
+                        )
+                        if steps_since_last_improvement >= patience:
+                            logging.info(
+                                f"early stopping triggered at step {step} "
+                                f"due to no improvement in training loss for {patience} checks."
+                            )
+                            if args.local_rank in {0, -1}:
+                                logging.info(
+                                    f"loading best model from {best_model_out_dir}..."
+                                )
+                                model_engine.load_checkpoint(best_model_out_dir)
+                            break
+
+        else:
+            continue
+        break
+
     if args.local_rank in {0, -1}:
-        model_engine.save_checkpoint(model_out)
-        logging.info(f"Final model saved to {model_out}")
+        model_engine.save_checkpoint(final_model_out_dir)
+        logging.info(f"final model saved to {final_model_out_dir}")
+        logging.info(
+            "best model (based on training loss during training) "
+            f"saved to {best_model_out_dir}"
+        )
 
 
 if __name__ == "__main__":
