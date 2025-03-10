@@ -56,7 +56,7 @@ class SaveBestTrainingLossCallback(TrainerCallback):
                         logging.info(
                             f"Training loss improved at step {state.global_step} to {self.best_loss:.4f}. Saving model..."
                         )
-                        kwargs["model"].save_pretrained(self.save_path)
+                        kwargs["model"].save_pretrained(self.save_path)  # type: ignore
                 else:
                     logging.warning(
                         f"Loss key not found in log history at step {state.global_step}"
@@ -215,7 +215,7 @@ def main() -> None:
         learning_rate=2e-5,
         warmup_ratio=0.1,
         weight_decay=0.01,
-        logging_steps=100,
+        logging_steps=1000,
         save_strategy="epoch",
         save_total_limit=2,
         dataloader_num_workers=4,
