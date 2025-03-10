@@ -17,6 +17,7 @@ from transformers import DataCollatorForLanguageModeling  # type: ignore
 from transformers import get_linear_schedule_with_warmup  # type: ignore
 from transformers import Trainer  # type: ignore
 from transformers import TrainerCallback  # type: ignore
+from transformers import TrainerControl  # type: ignore
 from transformers import TrainerState  # type: ignore
 from transformers import TrainingArguments  # type: ignore
 
@@ -38,6 +39,7 @@ class SaveBestTrainingLossCallback(TrainerCallback):
         self,
         args: TrainingArguments,
         state: TrainerState,
+        control: TrainerControl,
         **kwargs: Dict[str, Any],
     ) -> None:
         """
