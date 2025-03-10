@@ -116,6 +116,9 @@ def main() -> None:
     local_rank = int(os.environ.get("LOCAL_RANK", "0"))
     rank = int(os.environ.get("RANK", "0"))
 
+    if world_size > 1:
+        torch.distributed.init_process_group(backend="nccl")
+
     gene_tokens = load_tokens(gene_token_file)
     disease_tokens = load_tokens(disease_token_file)
     all_entity_tokens = gene_tokens.union(disease_tokens)
