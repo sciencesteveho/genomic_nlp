@@ -16,11 +16,29 @@ from transformers import BertTokenizerFast  # type: ignore
 from transformers import DataCollatorForLanguageModeling  # type: ignore
 from transformers import get_linear_schedule_with_warmup  # type: ignore
 from transformers import Trainer  # type: ignore
+from transformers import TrainerCallback  # type: ignore
 from transformers import TrainingArguments  # type: ignore
 
 from genomic_nlp.utils.streaming_corpus import MLMTextDataset
 
 logging.basicConfig(level=logging.INFO)
+
+
+class SaveBestTrainingLossCallback(TrainerCallback):
+    def __init__(self, save_path):
+        self.best_loss = float("inf")
+        self.save_path = save_path
+
+    def on_step_end(self, args, state, control, **kwargs):
+        if control.global_step % args.logging_steps == 0:
+            current_loss = state.log_history[-1]["loss"]
+            if current_loss < self.best_loss:
+                self.best_loss = current_loss
+                logging.info(
+                    "Training loss improved at step "
+                    f"{control.global_step} to {self.best_loss:.4f}. Saving model..."
+                )
+                kwargs["model"].save_pretrained(self.save_path)
 
 
 def load_tokens(filename: str) -> Set[str]:
@@ -101,8 +119,6 @@ def main() -> None:
     model_out = f"{args.root_dir}/models/finetuned_biomedbert_hf"
     best_model_out_dir = os.path.join(model_out, "best_model")
     final_model_out_dir = os.path.join(model_out, "final_model")
-
-    train_micro_batch_size_per_gpu = 64
     world_size = int(os.environ.get("WORLD_SIZE", "1"))
     rank = int(os.environ.get("RANK", "0"))
 
@@ -146,9 +162,8 @@ def main() -> None:
 
     num_epochs = 3
     train_batch_size = 128
-    gradient_accumulation_steps = train_batch_size // (
-        train_micro_batch_size_per_gpu * world_size
-    )
+    train_micro_batch_size_per_gpu = 32
+    gradient_accumulation_steps = 2
     total_steps = _get_total_steps(
         world_size,
         num_epochs,
@@ -165,6 +180,8 @@ def main() -> None:
         tokenizer=tokenizer, mlm=True, mlm_probability=0.15
     )
 
+    best_train_loss_callback = SaveBestTrainingLossCallback(best_model_out_dir)
+
     training_args = TrainingArguments(
         output_dir=model_out,
         overwrite_output_dir=True,
@@ -178,6 +195,7 @@ def main() -> None:
         save_strategy="epoch",
         save_total_limit=2,
         dataloader_num_workers=4,
+        max_grad_norm=1.0,
         fp16=False,
         bf16=True,
         dataloader_pin_memory=True,
@@ -194,6 +212,7 @@ def main() -> None:
         train_dataset=streaming_dataset,
         tokenizer=tokenizer,
         optimizers=(None, None),
+        callbacks=[best_train_loss_callback],
     )
 
     logging.info("--- Starting Training with Hugging Face Trainer ---")
