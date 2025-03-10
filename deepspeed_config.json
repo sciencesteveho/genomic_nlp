@@ -1,5 +1,5 @@
 {
- "zero_optimization": {
+  "zero_optimization": {
     "stage": 2,
     "overlap_comm": true,
     "contiguous_gradients": true,
@@ -12,35 +12,30 @@
     "offload_param": {
       "device": "none"
     }
- },
- "bf16": {
-    "enabled": "auto",
-    "auto_cast": true,
+  },
+  "fp16": {
+    "enabled": true,
     "loss_scale": 0,
-    "initial_scale_power": 16,
     "loss_scale_window": 1000,
     "hysteresis": 2,
     "min_loss_scale": 1
- },
- "fp16": {
- "enabled": false
-},
- "optimizer": {
+  },
+  "optimizer": {
     "type": "AdamW",
     "params": {
-      "lr": 2e-5,
+      "lr": 1e-5,
       "betas": [0.9, 0.999],
       "eps": 1e-8,
       "weight_decay": 0.01
     }
- },
- "zero_allow_untested_optimizer": true,
- "train_batch_size": 256,
- "train_micro_batch_size_per_gpu": 128,
- "gradient_accumulation_steps": 1,
- "gradient_clipping": 1.0,
- "steps_per_print": 100,
- "wall_clock_breakdown": false,
- "communication_data_type": "bf16",
- "prescale_gradients": false
+  },
+  "zero_allow_untested_optimizer": true,
+  "train_batch_size": 128,
+  "train_micro_batch_size_per_gpu": 64,
+  "gradient_accumulation_steps": 1,
+  "gradient_clipping": 1.0,
+  "steps_per_print": 100,
+  "wall_clock_breakdown": false,
+  "communication_data_type": "fp16",
+  "prescale_gradients": false
 }
