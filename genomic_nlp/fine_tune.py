@@ -76,6 +76,17 @@ def custom_gene_tokenizer(
 
 def main() -> None:
     """Main function to fine-tune a transformer model on scientific abstracts."""
+    if "CUDA_VISIBLE_DEVICES" in os.environ:
+        logging.info(
+            "CUDA_VISIBLE_DEVICES environment variable is set. Unsetting it in script..."
+        )
+        del os.environ["CUDA_VISIBLE_DEVICES"]
+        logging.info(
+            f"CUDA_VISIBLE_DEVICES is now: {os.environ.get('CUDA_VISIBLE_DEVICES')}"
+        )
+    else:
+        logging.info("CUDA_VISIBLE_DEVICES environment variable is NOT set initially.")
+
     model_name = "microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract"
     gene_token_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_tokens_nosyn.txt"
     disease_token_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/disease/disease_tokens_nosyn.txt"
@@ -120,7 +131,7 @@ def main() -> None:
         torch.distributed.init_process_group(backend="nccl")  # ADD THIS LINE
 
     logging.info(
-        f"Rank {rank}: CUDA device count: {torch.cuda.device_count()}"
+        f"Rank {rank}: device count: {torch.cuda.device_count()}"
     )  # Check device count
     logging.info(
         f"Rank {rank}: CUDA current device: {torch.cuda.current_device()}"
