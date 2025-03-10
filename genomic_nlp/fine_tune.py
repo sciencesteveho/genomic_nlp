@@ -175,19 +175,18 @@ def main() -> None:
         model=model,
         config=ds_config_file,
     )
-    base_optimizer = optimizer.optimizer  # actual torch optimizer
+    base_optimizer = optimizer.optimizer
     scheduler = get_linear_schedule_with_warmup(
         optimizer=base_optimizer,
         num_warmup_steps=warmup_steps,
         num_training_steps=total_steps,
     )
 
-    # early stopping
+    # early stopping - now just best model saving
     best_train_loss = float("inf")
-    patience = 50  # 50 * 100 = 5,000 steps
+    patience = 50
 
     steps_since_last_improvement = 0
-    stop_early = False
 
     for epoch in range(num_epochs):
         model_engine.train()
@@ -217,7 +216,7 @@ def main() -> None:
             model_engine.step()
             scheduler.step()
 
-            # only rank 0 logs and checks early-stopping
+            # only rank 0 logs and checks best model
             if args.local_rank in {0, -1}:
                 epoch_iterator.set_postfix({"loss": f"{loss.item():.4f}"})
 
@@ -245,28 +244,9 @@ def main() -> None:
                         )
                         if steps_since_last_improvement >= patience:
                             logging.info(
-                                f"Early stopping triggered at step {step} "
-                                f"due to no improvement for {patience} checks."
+                                f"Patience reached at step {step} "
+                                f"due to no improvement for {patience} checks, but continuing training."
                             )
-                            stop_early = True
-
-            if dist.is_initialized() and world_size > 1:
-                # broadcast from rank 0 so all ranks see the same stop flag
-                stop_tensor = torch.tensor(
-                    [1 if stop_early else 0], device=model_engine.local_rank
-                )
-                dist.broadcast(stop_tensor, src=0)
-                stop_early = bool(stop_tensor.item())
-
-            # if any rank sees stop_early=True, we must break on *all* ranks
-            if stop_early:
-                # load best model on all ranks so states are consistent
-                model_engine.load_checkpoint(best_model_out_dir)
-                break
-
-        # if we ended the inner loop early, break the epoch loop too
-        if stop_early:
-            break
 
     if dist.is_initialized():
         dist.barrier()
