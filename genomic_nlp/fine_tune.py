@@ -187,6 +187,7 @@ def main() -> None:
     patience = 50
 
     steps_since_last_improvement = 0
+    logging.info(f"Length of dataloader: {len(dataloader)}")
 
     for epoch in range(num_epochs):
         model_engine.train()
