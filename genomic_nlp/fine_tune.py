@@ -17,16 +17,17 @@ import logging
 import os
 from typing import Set
 
-import deepspeed  # type: ignore
 import torch  # type: ignore
 import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
 from torch.utils.data import DistributedSampler
 from tqdm import tqdm  # type: ignore
+from transformers import AdamW  # type: ignore
 from transformers import BertForMaskedLM  # type: ignore
 from transformers import BertTokenizerFast  # type: ignore
 from transformers import DataCollatorForLanguageModeling  # type: ignore
-from transformers import get_linear_schedule_with_warmup  # type: ignore
+from transformers import get_linear_schedule_with_warmup
 
 from genomic_nlp.utils.streaming_corpus import MLMTextDataset
 
@@ -91,7 +92,7 @@ def main() -> None:
     parser.add_argument(
         "--local_rank",
         type=int,
-        default=-1,
+        default=int(os.environ.get("LOCAL_RANK", "-1")),
         help="Local rank for distributed training on GPUs",
     )
     parser.add_argument(
@@ -108,10 +109,12 @@ def main() -> None:
     best_model_out_dir = os.path.join(model_out, "best_model")
     final_model_out_dir = os.path.join(model_out, "final_model")
 
-    parsed_config = parse_deepspeed_config(ds_config_file)
-    train_micro_batch_size_per_gpu = parsed_config["train_micro_batch_size_per_gpu"]
-    deepspeed.init_distributed(dist_backend="nccl")
-    world_size = dist.get_world_size() if dist.is_initialized() else 1
+    # parsed_config = parse_deepspeed_config(ds_config_file)
+    train_micro_batch_size_per_gpu = 64
+    # deepspeed.init_distributed(dist_backend="nccl")
+    world_size = int(os.environ.get("WORLD_SIZE", "1"))
+    local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+    rank = int(os.environ.get("RANK", "0"))
 
     gene_tokens = load_tokens(gene_token_file)
     disease_tokens = load_tokens(disease_token_file)
@@ -145,17 +148,28 @@ def main() -> None:
     logging.info(f"Created MLMTextDataset with {total_abstracts} abstracts")
 
     num_epochs = 3
+    train_batch_size = 128
+    gradient_accumulation_steps = train_batch_size // (
+        train_micro_batch_size_per_gpu * world_size
+    )
     total_steps = _get_total_steps(
-        world_size, num_epochs, train_micro_batch_size_per_gpu, total_abstracts
+        world_size,
+        num_epochs,
+        train_micro_batch_size_per_gpu * world_size,
+        total_abstracts,
     )
     warmup_steps = int(0.1 * total_steps)
     logging.info(f"total steps: {total_steps}, warmup steps: {warmup_steps}")
+    logging.info(
+        f"Effective train batch size: {train_batch_size}, Micro batch size per GPU: {train_micro_batch_size_per_gpu}, Gradient Accumulation Steps: {gradient_accumulation_steps}"
+    )
 
     sampler = None
     if dist.is_initialized() and world_size > 1:
         sampler = DistributedSampler(streaming_dataset, shuffle=True)
         logging.info("Using DistributedSampler")
     else:
+        sampler = None
         logging.info("Not using DistributedSampler")
 
     dataloader = DataLoader(
@@ -170,17 +184,16 @@ def main() -> None:
         persistent_workers=True,
     )
 
-    # deep speed engine
-    model_engine, optimizer, _, _ = deepspeed.initialize(
-        model=model,
-        config=ds_config_file,
-    )
-    base_optimizer = optimizer.optimizer
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+
+    optimizer = AdamW(model.parameters(), lr=2e-5, weight_decay=0.01)
     scheduler = get_linear_schedule_with_warmup(
-        optimizer=base_optimizer,
-        num_warmup_steps=warmup_steps,
-        num_training_steps=total_steps,
+        optimizer, num_warmup_steps=warmup_steps, num_training_steps=total_steps
     )
+
+    if world_size > 1:  # initialize DDP if using multiple GPUs
+        model = DDP(model, device_ids=[local_rank], output_device=local_rank)
 
     # early stopping - now just best model saving
     best_train_loss = float("inf")
@@ -190,7 +203,7 @@ def main() -> None:
     logging.info(f"Length of dataloader: {len(dataloader)}")
 
     for epoch in range(num_epochs):
-        model_engine.train()
+        model.train()
 
         if sampler is not None:
             sampler.set_epoch(epoch)
@@ -208,14 +221,22 @@ def main() -> None:
 
         for step, batch in enumerate(epoch_iterator):
             # move batch to correct device
-            batch = {k: v.to(model_engine.local_rank) for k, v in batch.items()}
+            batch = {k: v.to(device) for k, v in batch.items()}  # Move batch to device
 
-            outputs = model_engine(**batch)
+            outputs = model(**batch)
             loss = outputs.loss
 
-            model_engine.backward(loss)
-            model_engine.step()
-            scheduler.step()
+            if (
+                gradient_accumulation_steps > 1
+            ):  # Accumulate loss if using gradient accumulation
+                loss = loss / gradient_accumulation_steps
+
+            loss.backward()  # Standard backward pass
+
+            if (step + 1) % gradient_accumulation_steps == 0:
+                optimizer.step()
+                scheduler.step()
+                optimizer.zero_grad()
 
             # only rank 0 logs and checks best model
             if args.local_rank in {0, -1}:
@@ -232,7 +253,12 @@ def main() -> None:
                         best_train_loss = current_loss
                         steps_since_last_improvement = 0
                         # save best model so far
-                        model_engine.save_checkpoint(best_model_out_dir)
+                        if args.local_rank in {0, -1}:  # only save on rank 0
+                            (
+                                model.module.save_pretrained(best_model_out_dir)
+                                if isinstance(model, DDP)
+                                else model.save_pretrained(best_model_out_dir)
+                            )
                         logging.info(
                             f"Best model updated at step={step}, "
                             f"loss={best_train_loss:.4f}, saved to {best_model_out_dir}"
@@ -254,7 +280,10 @@ def main() -> None:
 
     # save final model on rank 0
     if args.local_rank in {0, -1}:
-        model_engine.save_checkpoint(final_model_out_dir)
+        if isinstance(model, DDP):
+            model.module.save_pretrained(final_model_out_dir)
+        else:
+            model.save_pretrained(final_model_out_dir)
         logging.info(f"Final model saved to {final_model_out_dir}")
         logging.info(
             f"Best model (based on training loss) saved to {best_model_out_dir}"
