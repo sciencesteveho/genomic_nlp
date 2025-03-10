@@ -215,7 +215,7 @@ def main() -> None:
         learning_rate=2e-5,
         warmup_ratio=0.1,
         weight_decay=0.01,
-        logging_steps=1000,
+        logging_steps=2000,
         save_strategy="epoch",
         save_total_limit=2,
         dataloader_num_workers=4,
