@@ -7,7 +7,7 @@ import argparse
 import json
 import logging
 import os
-from typing import Set
+from typing import Any, Dict, Set
 
 import torch  # type: ignore
 from transformers import AdamW  # type: ignore
@@ -17,6 +17,7 @@ from transformers import DataCollatorForLanguageModeling  # type: ignore
 from transformers import get_linear_schedule_with_warmup  # type: ignore
 from transformers import Trainer  # type: ignore
 from transformers import TrainerCallback  # type: ignore
+from transformers import TrainerState  # type: ignore
 from transformers import TrainingArguments  # type: ignore
 
 from genomic_nlp.utils.streaming_corpus import MLMTextDataset
@@ -25,20 +26,32 @@ logging.basicConfig(level=logging.INFO)
 
 
 class SaveBestTrainingLossCallback(TrainerCallback):
-    def __init__(self, save_path):
+    """A custom callback to save the best model checkpoint during training based on training loss.
+    (Corrected version using state.global_step)
+    """
+
+    def __init__(self, save_path: str):
         self.best_loss = float("inf")
         self.save_path = save_path
 
-    def on_step_end(self, args, state, control, **kwargs):
-        if control.global_step % args.logging_steps == 0:
+    def on_step_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        **kwargs: Dict[str, Any],
+    ) -> None:
+        """
+        Event called at the end of each training step.
+        (Corrected version using state.global_step)
+        """
+        if state.global_step % args.logging_steps == 0:
             current_loss = state.log_history[-1]["loss"]
             if current_loss < self.best_loss:
                 self.best_loss = current_loss
                 logging.info(
-                    "Training loss improved at step "
-                    f"{control.global_step} to {self.best_loss:.4f}. Saving model..."
+                    f"Training loss improved at step {state.global_step} to {self.best_loss:.4f}. Saving model..."
                 )
-                kwargs["model"].save_pretrained(self.save_path)
+                kwargs["model"].save_pretrained(self.save_path)  # type: ignore
 
 
 def load_tokens(filename: str) -> Set[str]:
