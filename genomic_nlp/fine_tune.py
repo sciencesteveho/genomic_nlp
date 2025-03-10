@@ -1,15 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Code to fine-tune a transformer model on scientific abstracts. We use a
-masked language modeling objective as the fine-tuning task. We fine-tune on
-a bi-directional transformer model (BiomedBERT) designed for natural language
-understanding (NLU). We choose the base model size for a mix of performance and
-speed.
-
-To ensure we can extract embeddings for normalized_tokens in our texts, we use a
-custom tokenizer that adds gene/disease tokens to the vocabulary.
-"""
+"""Code to fine-tune a transformer model on scientific abstracts using Hugging Face Trainer."""
 
 import argparse
 import json
@@ -18,16 +10,13 @@ import os
 from typing import Set
 
 import torch  # type: ignore
-import torch.distributed as dist
-from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.utils.data import DataLoader
-from torch.utils.data import DistributedSampler
-from tqdm import tqdm  # type: ignore
 from transformers import AdamW  # type: ignore
 from transformers import BertForMaskedLM  # type: ignore
 from transformers import BertTokenizerFast  # type: ignore
 from transformers import DataCollatorForLanguageModeling  # type: ignore
-from transformers import get_linear_schedule_with_warmup
+from transformers import get_linear_schedule_with_warmup  # type: ignore
+from transformers import Trainer  # type: ignore
+from transformers import TrainingArguments  # type: ignore
 
 from genomic_nlp.utils.streaming_corpus import MLMTextDataset
 
@@ -61,31 +50,24 @@ def custom_gene_tokenizer(
     base_model_name: str,
     save_dir: str,
 ) -> BertTokenizerFast:
-    """Create a custom tokenizer and add given tokens to ensure consistent vocab."""
-    # load base tokenizer
+    """Create a custom tokenizer."""
     tokenizer = BertTokenizerFast.from_pretrained(base_model_name)
-
-    # add tokens
     new_tokens = list(normalized_tokens)
     tokenizer.add_tokens(new_tokens)
-
-    # save the tokenizer
     tokenizer.save_pretrained(save_dir)
     return tokenizer
 
 
 def main() -> None:
-    """Main function to fine-tune a transformer model on scientific abstracts."""
+    """Main function to fine-tune a transformer model using HF Trainer."""
     if "CUDA_VISIBLE_DEVICES" in os.environ:
-        logging.info(
-            "CUDA_VISIBLE_DEVICES environment variable is set. Unsetting it in script..."
-        )
+        logging.info("CUDA_VISIBLE_DEVICES env var is set. Unsetting in script...")
         del os.environ["CUDA_VISIBLE_DEVICES"]
         logging.info(
             f"CUDA_VISIBLE_DEVICES is now: {os.environ.get('CUDA_VISIBLE_DEVICES')}"
         )
     else:
-        logging.info("CUDA_VISIBLE_DEVICES environment variable is NOT set initially.")
+        logging.info("CUDA_VISIBLE_DEVICES env var is NOT set initially.")
 
     model_name = "microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract"
     gene_token_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_tokens_nosyn.txt"
@@ -116,29 +98,22 @@ def main() -> None:
 
     abstracts_dir = f"{args.root_dir}/data"
     abstracts = f"{abstracts_dir}/combined/processed_abstracts_finetune_combined.txt"
-    model_out = f"{args.root_dir}/models/finetuned_biomedbert_hf"  # Changed output dir name to indicate HF
+    model_out = f"{args.root_dir}/models/finetuned_biomedbert_hf"
     best_model_out_dir = os.path.join(model_out, "best_model")
     final_model_out_dir = os.path.join(model_out, "final_model")
 
-    # parsed_config = parse_deepspeed_config(ds_config_file)
     train_micro_batch_size_per_gpu = 64
-    # deepspeed.init_distributed(dist_backend="nccl") # Removed DeepSpeed init
     world_size = int(os.environ.get("WORLD_SIZE", "1"))
-    local_rank = int(os.environ.get("LOCAL_RANK", "0"))
     rank = int(os.environ.get("RANK", "0"))
 
-    if world_size > 1:  # Initialize process group for distributed training
-        torch.distributed.init_process_group(backend="nccl")  # ADD THIS LINE
+    if world_size > 1:
+        torch.distributed.init_process_group(backend="nccl")
 
-    logging.info(
-        f"Rank {rank}: device count: {torch.cuda.device_count()}"
-    )  # Check device count
-    logging.info(
-        f"Rank {rank}: CUDA current device: {torch.cuda.current_device()}"
-    )  # Check current device
+    logging.info(f"Rank {rank}: device count: {torch.cuda.device_count()}")
+    logging.info(f"Rank {rank}: CUDA current device: {torch.cuda.current_device()}")
     logging.info(
         f"Rank {rank}: CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES')}"
-    )  # Check CUDA_VISIBLE_DEVICES env var
+    )
 
     gene_tokens = load_tokens(gene_token_file)
     disease_tokens = load_tokens(disease_token_file)
@@ -153,7 +128,6 @@ def main() -> None:
     model = BertForMaskedLM.from_pretrained(model_name)
     model.resize_token_embeddings(len(tokenizer))
 
-    # force contiguous
     for _, param in model.named_parameters():
         if not param.data.is_contiguous():
             param.data = param.data.contiguous()
@@ -162,7 +136,6 @@ def main() -> None:
         f"Loaded BiomedBERT model and resized token embeddings to {len(tokenizer)}"
     )
 
-    # load data
     streaming_dataset = MLMTextDataset(
         file_path=abstracts,
         tokenizer=tokenizer,
@@ -179,7 +152,7 @@ def main() -> None:
     total_steps = _get_total_steps(
         world_size,
         num_epochs,
-        train_micro_batch_size_per_gpu * world_size,
+        train_batch_size,
         total_abstracts,
     )
     warmup_steps = int(0.1 * total_steps)
@@ -188,130 +161,49 @@ def main() -> None:
         f"Effective train batch size: {train_batch_size}, Micro batch size per GPU: {train_micro_batch_size_per_gpu}, Gradient Accumulation Steps: {gradient_accumulation_steps}"
     )
 
-    sampler = None
-    if dist.is_initialized() and world_size > 1:
-        sampler = DistributedSampler(streaming_dataset, shuffle=True)
-        logging.info("Using DistributedSampler")
-    else:
-        sampler = None
-        logging.info("Not using DistributedSampler")
-
-    dataloader = DataLoader(
-        streaming_dataset,
-        batch_size=train_micro_batch_size_per_gpu,
-        sampler=sampler,
-        num_workers=4,
-        collate_fn=DataCollatorForLanguageModeling(
-            tokenizer=tokenizer, mlm=True, mlm_probability=0.15
-        ),
-        pin_memory=True,
-        persistent_workers=True,
+    data_collator = DataCollatorForLanguageModeling(
+        tokenizer=tokenizer, mlm=True, mlm_probability=0.15
     )
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model.to(device)
-
-    optimizer = AdamW(model.parameters(), lr=2e-5, weight_decay=0.01)
-    scheduler = get_linear_schedule_with_warmup(
-        optimizer, num_warmup_steps=warmup_steps, num_training_steps=total_steps
+    training_args = TrainingArguments(
+        output_dir=model_out,
+        overwrite_output_dir=True,
+        num_train_epochs=num_epochs,
+        per_device_train_batch_size=train_micro_batch_size_per_gpu,
+        gradient_accumulation_steps=gradient_accumulation_steps,
+        learning_rate=2e-5,
+        warmup_ratio=0.1,
+        weight_decay=0.01,
+        logging_steps=100,
+        save_strategy="epoch",
+        save_total_limit=2,
+        dataloader_num_workers=4,
+        fp16=False,
+        bf16=True,
+        dataloader_pin_memory=True,
+        report_to=None,
+        dataloader_persistent_workers=True,
+        gradient_checkpointing=False,
+        push_to_hub=False,
     )
 
-    if world_size > 1:  # initialize DDP if using multiple GPUs
-        model = DDP(model, device_ids=[local_rank], output_device=local_rank)
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        data_collator=data_collator,
+        train_dataset=streaming_dataset,
+        tokenizer=tokenizer,
+        optimizers=(None, None),
+    )
 
-    # early stopping - now just best model saving
-    best_train_loss = float("inf")
-    patience = 50
+    logging.info("--- Starting Training with Hugging Face Trainer ---")
+    trainer.train()
+    logging.info("--- Training Finished ---")
 
-    steps_since_last_improvement = 0
-    logging.info(f"Length of dataloader: {len(dataloader)}")
-
-    for epoch in range(num_epochs):
-        model.train()
-
-        if sampler is not None:
-            sampler.set_epoch(epoch)
-
-        if args.local_rank in {0, -1}:
-            epoch_iterator = tqdm(
-                dataloader,
-                desc=f"epoch {epoch+1}",
-                position=0,
-                leave=True,
-                total=len(dataloader),
-            )
-        else:
-            epoch_iterator = dataloader
-
-        for step, batch in enumerate(epoch_iterator):
-            # move batch to correct device
-            batch = {k: v.to(device) for k, v in batch.items()}  # Move batch to device
-
-            outputs = model(**batch)
-            loss = outputs.loss
-
-            if (
-                gradient_accumulation_steps > 1
-            ):  # Accumulate loss if using gradient accumulation
-                loss = loss / gradient_accumulation_steps
-
-            loss.backward()  # Standard backward pass
-
-            if (step + 1) % gradient_accumulation_steps == 0:
-                optimizer.step()
-                scheduler.step()
-                optimizer.zero_grad()
-
-            # only rank 0 logs and checks best model
-            if args.local_rank in {0, -1}:
-                epoch_iterator.set_postfix({"loss": f"{loss.item():.4f}"})
-
-                # check improvement every 100 steps
-                if step % 100 == 0:
-                    current_loss = loss.item()
-                    logging.info(
-                        f"epoch {epoch}, step {step}, loss: {current_loss:.4f}"
-                    )
-
-                    if current_loss < best_train_loss:
-                        best_train_loss = current_loss
-                        steps_since_last_improvement = 0
-                        # save best model so far
-                        if args.local_rank in {0, -1}:  # only save on rank 0
-                            (
-                                model.module.save_pretrained(best_model_out_dir)
-                                if isinstance(model, DDP)
-                                else model.save_pretrained(best_model_out_dir)
-                            )
-                        logging.info(
-                            f"Best model updated at step={step}, "
-                            f"loss={best_train_loss:.4f}, saved to {best_model_out_dir}"
-                        )
-                    else:
-                        steps_since_last_improvement += 1
-                        logging.info(
-                            f"No improvement in training loss for "
-                            f"{steps_since_last_improvement} checks."
-                        )
-                        if steps_since_last_improvement >= patience:
-                            logging.info(
-                                f"Patience reached at step {step} "
-                                f"due to no improvement for {patience} checks, but continuing training."
-                            )
-
-    if dist.is_initialized():
-        dist.barrier()
-
-    # save final model on rank 0
-    if args.local_rank in {0, -1}:
-        if isinstance(model, DDP):
-            model.module.save_pretrained(final_model_out_dir)
-        else:
-            model.save_pretrained(final_model_out_dir)
-        logging.info(f"Final model saved to {final_model_out_dir}")
-        logging.info(
-            f"Best model (based on training loss) saved to {best_model_out_dir}"
-        )
+    logging.info(f"Final model saved to {final_model_out_dir} (Trainer output_dir)")
+    logging.info(
+        f"Best model (if using evaluation and best_model selection) saved to {best_model_out_dir} (Trainer output_dir)"
+    )
 
 
 if __name__ == "__main__":
