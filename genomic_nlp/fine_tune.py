@@ -47,13 +47,22 @@ class SaveBestTrainingLossCallback(TrainerCallback):
         (Corrected version using state.global_step)
         """
         if state.global_step % args.logging_steps == 0:
-            current_loss = state.log_history[-1]["loss"]
-            if current_loss < self.best_loss:
-                self.best_loss = current_loss
-                logging.info(
-                    f"Training loss improved at step {state.global_step} to {self.best_loss:.4f}. Saving model..."
-                )
-                kwargs["model"].save_pretrained(self.save_path)  # type: ignore
+            if state.log_history:
+                current_log = state.log_history[-1]
+                if "loss" in current_log:
+                    current_loss = current_log["loss"]
+                    if current_loss < self.best_loss:
+                        self.best_loss = current_loss
+                        logging.info(
+                            f"Training loss improved at step {state.global_step} to {self.best_loss:.4f}. Saving model..."
+                        )
+                        kwargs["model"].save_pretrained(self.save_path)
+                else:
+                    logging.warning(
+                        f"Loss key not found in log history at step {state.global_step}"
+                    )
+            else:
+                logging.warning(f"Log history is empty at step {state.global_step}")
 
 
 def load_tokens(filename: str) -> Set[str]:
