@@ -105,19 +105,29 @@ def main() -> None:
 
     abstracts_dir = f"{args.root_dir}/data"
     abstracts = f"{abstracts_dir}/combined/processed_abstracts_finetune_combined.txt"
-    model_out = f"{args.root_dir}/models/finetuned_biomedbert"
+    model_out = f"{args.root_dir}/models/finetuned_biomedbert_hf"  # Changed output dir name to indicate HF
     best_model_out_dir = os.path.join(model_out, "best_model")
     final_model_out_dir = os.path.join(model_out, "final_model")
 
     # parsed_config = parse_deepspeed_config(ds_config_file)
     train_micro_batch_size_per_gpu = 64
-    # deepspeed.init_distributed(dist_backend="nccl")
+    # deepspeed.init_distributed(dist_backend="nccl") # Removed DeepSpeed init
     world_size = int(os.environ.get("WORLD_SIZE", "1"))
     local_rank = int(os.environ.get("LOCAL_RANK", "0"))
     rank = int(os.environ.get("RANK", "0"))
 
-    if world_size > 1:
-        torch.distributed.init_process_group(backend="nccl")
+    if world_size > 1:  # Initialize process group for distributed training
+        torch.distributed.init_process_group(backend="nccl")  # ADD THIS LINE
+
+    logging.info(
+        f"Rank {rank}: CUDA device count: {torch.cuda.device_count()}"
+    )  # Check device count
+    logging.info(
+        f"Rank {rank}: CUDA current device: {torch.cuda.current_device()}"
+    )  # Check current device
+    logging.info(
+        f"Rank {rank}: CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES')}"
+    )  # Check CUDA_VISIBLE_DEVICES env var
 
     gene_tokens = load_tokens(gene_token_file)
     disease_tokens = load_tokens(disease_token_file)
