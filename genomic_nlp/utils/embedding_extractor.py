@@ -127,18 +127,6 @@ def main() -> None:
         desc="Processing Batches (Check Run)",
     ):
         batch_abstracts = abstracts_check[i : i + batch_size]
-        actual_batch_size = len(batch_abstracts)
-
-        # use correct sized tensor for partial batches
-        if actual_batch_size < batch_size:
-            special_token_ids_tensor_current = (
-                torch.tensor(special_token_ids, dtype=torch.long, device=device)
-                .unsqueeze(0)
-                .repeat(actual_batch_size, 1)
-            )
-        else:
-            special_token_ids_tensor_current = special_token_ids_tensor_batched
-
         inputs = tokenizer(
             batch_abstracts,
             padding=True,
@@ -146,6 +134,8 @@ def main() -> None:
             return_tensors="pt",
             max_length=512,
         ).to(device)
+
+        current_batch_size = inputs["input_ids"].shape[0]
 
         with torch.no_grad():
             outputs_check: MaskedLMOutput = model(**inputs)  # Renamed outputs
@@ -156,11 +146,13 @@ def main() -> None:
             batch_attention_mask = inputs["attention_mask"]
 
             special_token_mask = torch.isin(
-                batch_input_ids.unsqueeze(-1), special_token_ids_tensor_current
+                batch_input_ids.unsqueeze(-1),
+                special_token_ids_tensor_batched[:current_batch_size],
             )
+
             batch_special_token_indices_list = [
                 torch.nonzero(special_token_mask[batch_index], as_tuple=False)[:, 0]
-                for batch_index in range(actual_batch_size)
+                for batch_index in range(current_batch_size)
             ]
 
             max_special_tokens = max(
@@ -176,7 +168,7 @@ def main() -> None:
 
             valid_indices_mask = batch_special_token_indices_tensor != -1
 
-            for batch_index in range(actual_batch_size):
+            for batch_index in range(current_batch_size):
                 special_token_indices = batch_special_token_indices_tensor[batch_index]
                 valid_mask = valid_indices_mask[batch_index]
                 valid_special_token_indices = special_token_indices[valid_mask]
@@ -245,18 +237,6 @@ def main() -> None:
             desc="Processing Batches (Full Dataset)",
         ):
             batch_abstracts = abstracts_full[i : i + batch_size]
-            actual_batch_size = len(batch_abstracts)
-
-            # use correct sized tensor for partial batches
-            if actual_batch_size < batch_size:
-                special_token_ids_tensor_current = (
-                    torch.tensor(special_token_ids, dtype=torch.long, device=device)
-                    .unsqueeze(0)
-                    .repeat(actual_batch_size, 1)
-                )
-            else:
-                special_token_ids_tensor_current = special_token_ids_tensor_batched
-
             inputs = tokenizer(
                 batch_abstracts,
                 padding=True,
@@ -265,6 +245,8 @@ def main() -> None:
                 max_length=512,
             ).to(device)
 
+            current_batch_size = inputs["input_ids"].shape[0]
+
             with torch.no_grad():
                 outputs: MaskedLMOutput = model(**inputs)
                 all_token_embeddings: torch.Tensor = outputs.hidden_states[-1]
@@ -272,11 +254,12 @@ def main() -> None:
                 batch_attention_mask = inputs["attention_mask"]
 
                 special_token_mask = torch.isin(
-                    batch_input_ids.unsqueeze(-1), special_token_ids_tensor_current
+                    batch_input_ids.unsqueeze(-1),
+                    special_token_ids_tensor_batched[:current_batch_size],
                 )
                 batch_special_token_indices_list = [
                     torch.nonzero(special_token_mask[batch_index], as_tuple=False)[:, 0]
-                    for batch_index in range(actual_batch_size)
+                    for batch_index in range(current_batch_size)
                 ]
 
                 max_special_tokens = max(
@@ -293,7 +276,7 @@ def main() -> None:
 
                 valid_indices_mask = batch_special_token_indices_tensor != -1
 
-                for batch_index in range(actual_batch_size):
+                for batch_index in range(current_batch_size):
                     special_token_indices = batch_special_token_indices_tensor[
                         batch_index
                     ]
