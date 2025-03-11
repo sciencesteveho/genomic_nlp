@@ -109,11 +109,8 @@ def main() -> None:
         f"Loaded {len(abstracts_check)} abstracts for initial check, tokenizer, and model."
     )
 
-    # convert special tokens to ids
+    # prepare token ids once
     special_token_ids = tokenizer.convert_tokens_to_ids(list(all_entity_tokens))
-    # create a set for faster lookup
-    special_token_ids_set = set(special_token_ids)
-    # create special token tensor once
     special_token_ids_tensor = torch.tensor(
         special_token_ids, dtype=torch.long, device=device
     )
@@ -144,34 +141,30 @@ def main() -> None:
             all_token_embeddings_check: torch.Tensor = outputs_check.hidden_states[
                 -1
             ]  # Renamed all_token_embeddings
-            batch_input_ids = inputs["input_ids"]
-            batch_attention_mask = inputs["attention_mask"]
+            batch_input_ids = inputs["input_ids"][
+                :actual_batch_size
+            ]  # handle partial batches
+            batch_attention_mask = inputs["attention_mask"][
+                :actual_batch_size
+            ]  # handle partial batches
 
-            # efficiently find special tokens in the batch
-            batch_special_token_indices_list = []
-            for batch_idx in range(actual_batch_size):
-                # get indices where the current batch's input IDs match any special token ID
-                special_indices = []
-                for idx, token_id in enumerate(batch_input_ids[batch_idx]):
-                    if token_id.item() in special_token_ids_set:
-                        special_indices.append(idx)
+            # efficient special token masking
+            special_token_mask = torch.isin(batch_input_ids, special_token_ids_tensor)
 
-                batch_special_token_indices_list.append(
-                    torch.tensor(special_indices, dtype=torch.long, device=device)
-                    if special_indices
-                    else torch.tensor([], dtype=torch.long, device=device)
-                )
+            batch_special_token_indices_list = [
+                torch.nonzero(special_token_mask[batch_index], as_tuple=False)[:, 0]
+                for batch_index in range(actual_batch_size)
+            ]
 
-                # find max number of special tokens in any abstract in this batch
+            # check if we have any special tokens
+            if not any(
+                indices.numel() > 0 for indices in batch_special_token_indices_list
+            ):
+                continue
+
             max_special_tokens = max(
                 (len(indices) for indices in batch_special_token_indices_list) or [0]
             )
-
-            # skip processing if no special tokens found in this batch
-            if max_special_tokens == 0:
-                continue
-
-                # create padded tensor of indices
             padded_special_token_indices = [
                 F.pad(indices, (0, max_special_tokens - len(indices)), value=-1)
                 for indices in batch_special_token_indices_list
@@ -264,35 +257,33 @@ def main() -> None:
             with torch.no_grad():
                 outputs: MaskedLMOutput = model(**inputs)
                 all_token_embeddings: torch.Tensor = outputs.hidden_states[-1]
-                batch_input_ids = inputs["input_ids"]
-                batch_attention_mask = inputs["attention_mask"]
+                batch_input_ids = inputs["input_ids"][
+                    :actual_batch_size
+                ]  # handle partial batches
+                batch_attention_mask = inputs["attention_mask"][
+                    :actual_batch_size
+                ]  # handle partial batches
 
-                # efficiently find special tokens in the batch
-                batch_special_token_indices_list = []
-                for batch_idx in range(actual_batch_size):
-                    # get indices where the current batch's input IDs match any special token ID
-                    special_indices = []
-                    for idx, token_id in enumerate(batch_input_ids[batch_idx]):
-                        if token_id.item() in special_token_ids_set:
-                            special_indices.append(idx)
+                # efficient special token masking
+                special_token_mask = torch.isin(
+                    batch_input_ids, special_token_ids_tensor
+                )
 
-                    batch_special_token_indices_list.append(
-                        torch.tensor(special_indices, dtype=torch.long, device=device)
-                        if special_indices
-                        else torch.tensor([], dtype=torch.long, device=device)
-                    )
+                batch_special_token_indices_list = [
+                    torch.nonzero(special_token_mask[batch_index], as_tuple=False)[:, 0]
+                    for batch_index in range(actual_batch_size)
+                ]
 
-                # find max number of special tokens in any abstract in this batch
+                # check if we have any special tokens
+                if not any(
+                    indices.numel() > 0 for indices in batch_special_token_indices_list
+                ):
+                    continue
+
                 max_special_tokens = max(
                     (len(indices) for indices in batch_special_token_indices_list)
                     or [0]
                 )
-
-                # skip processing if no special tokens found in this batch
-                if max_special_tokens == 0:
-                    continue
-
-                # create padded tensor of indices
                 padded_special_token_indices = [
                     F.pad(indices, (0, max_special_tokens - len(indices)), value=-1)
                     for indices in batch_special_token_indices_list
@@ -303,7 +294,7 @@ def main() -> None:
 
                 valid_indices_mask = batch_special_token_indices_tensor != -1
 
-                for batch_index in range(actual_batch_size):
+                for batch_index in range(actual_batch_size):  # use actual batch size
                     special_token_indices = batch_special_token_indices_tensor[
                         batch_index
                     ]
