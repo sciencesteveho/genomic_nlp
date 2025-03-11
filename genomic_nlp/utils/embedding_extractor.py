@@ -91,8 +91,12 @@ def main() -> None:
     disease_tokens = load_tokens(disease_token_file)
     all_entity_tokens = gene_tokens.union(disease_tokens)
 
-    # initialize tokenizer and model.
+    # build a set of special token ids for fast membership checks
     tokenizer = BertTokenizerFast.from_pretrained(tokenizer_path)
+    special_token_ids = tokenizer.convert_tokens_to_ids(list(all_entity_tokens))
+    special_token_ids_set = set(special_token_ids)
+
+    # initialize model
     model = BertForMaskedLM.from_pretrained(
         model_path, output_hidden_states=True
     ).eval()
@@ -107,13 +111,6 @@ def main() -> None:
     abstracts_check = load_abstracts(abstract_file_path)[:num_abstracts_check]
     print(
         f"Loaded {len(abstracts_check)} abstracts for initial check, tokenizer, and model."
-    )
-
-    special_token_ids = tokenizer.convert_tokens_to_ids(list(all_entity_tokens))
-    special_token_ids_tensor_batched = (
-        torch.tensor(special_token_ids, dtype=torch.long, device=device)
-        .unsqueeze(0)
-        .repeat(batch_size, 1)
     )
 
     avg_token_embeddings_dict_check: Dict[str, List[float]] = {}
@@ -138,77 +135,56 @@ def main() -> None:
         current_batch_size = inputs["input_ids"].shape[0]
 
         with torch.no_grad():
-            outputs_check: MaskedLMOutput = model(**inputs)  # Renamed outputs
-            all_token_embeddings_check: torch.Tensor = outputs_check.hidden_states[
-                -1
-            ]  # Renamed all_token_embeddings
+            outputs_check: MaskedLMOutput = model(**inputs)
+            all_token_embeddings_check: torch.Tensor = outputs_check.hidden_states[-1]
             batch_input_ids = inputs["input_ids"]
             batch_attention_mask = inputs["attention_mask"]
 
-            special_token_mask = torch.isin(
-                batch_input_ids.unsqueeze(-1),
-                special_token_ids_tensor_batched[:current_batch_size],
-            )
-
-            batch_special_token_indices_list = [
-                torch.nonzero(special_token_mask[batch_index], as_tuple=False)[:, 0]
-                for batch_index in range(current_batch_size)
-            ]
-
-            max_special_tokens = max(
-                (len(indices) for indices in batch_special_token_indices_list) or [0]
-            )
-            padded_special_token_indices = [
-                F.pad(indices, (0, max_special_tokens - len(indices)), value=-1)
-                for indices in batch_special_token_indices_list
-            ]
-            batch_special_token_indices_tensor = torch.stack(
-                padded_special_token_indices
-            )
-
-            valid_indices_mask = batch_special_token_indices_tensor != -1
-
+            # loop-based membership check to find special token indices
             for batch_index in range(current_batch_size):
-                special_token_indices = batch_special_token_indices_tensor[batch_index]
-                valid_mask = valid_indices_mask[batch_index]
-                valid_special_token_indices = special_token_indices[valid_mask]
+                input_ids_list = batch_input_ids[batch_index].tolist()
+                special_indices = [
+                    idx
+                    for idx, val in enumerate(input_ids_list)
+                    if val in special_token_ids_set
+                ]
+                if len(special_indices) == 0:
+                    continue
 
-                if valid_special_token_indices.numel() > 0:
-                    text_embeddings = all_token_embeddings_check[
-                        batch_index
-                    ]  # Use renamed variable
-                    special_token_embeddings = text_embeddings[
-                        valid_special_token_indices
-                    ]
+                valid_special_token_indices = torch.tensor(
+                    special_indices, device=device
+                )
+                text_embeddings = all_token_embeddings_check[batch_index]
+                special_token_embeddings = text_embeddings[valid_special_token_indices]
 
-                    avg_pooled_embeddings = torch.mean(special_token_embeddings, dim=0)
-                    attn_pooled_embeddings = pooling(
-                        special_token_embeddings.unsqueeze(0),
-                        torch.ones(
-                            (1, special_token_embeddings.size(0)),
-                            device=device,
-                            dtype=torch.long,
-                        ),
-                    ).squeeze(0)
+                avg_pooled_embeddings = torch.mean(special_token_embeddings, dim=0)
+                attn_pooled_embeddings = pooling(
+                    special_token_embeddings.unsqueeze(0),
+                    torch.ones(
+                        (1, special_token_embeddings.size(0)),
+                        device=device,
+                        dtype=torch.long,
+                    ),
+                ).squeeze(0)
 
-                    input_ids_current_abstract = inputs["input_ids"][batch_index]
-                    abstract_special_token_ids = input_ids_current_abstract[
-                        valid_special_token_indices
-                    ]
-                    abstract_special_tokens = tokenizer.convert_ids_to_tokens(
-                        abstract_special_token_ids
-                    )
+                input_ids_current_abstract = batch_input_ids[batch_index]
+                abstract_special_token_ids = input_ids_current_abstract[
+                    valid_special_token_indices
+                ]
+                abstract_special_tokens = tokenizer.convert_ids_to_tokens(
+                    abstract_special_token_ids
+                )
 
-                    # populate dictionaries with token-embedding pairs (check run dictionaries)
-                    for token_str in abstract_special_tokens:
-                        token_str_lower = token_str.lower()
-                        if token_str_lower in all_entity_tokens:
-                            avg_token_embeddings_dict_check[token_str_lower] = (
-                                avg_pooled_embeddings.cpu().numpy().tolist()
-                            )
-                            attn_token_embeddings_dict_check[token_str_lower] = (
-                                attn_pooled_embeddings.cpu().numpy().tolist()
-                            )
+                # populate dictionaries (check run)
+                for token_str in abstract_special_tokens:
+                    token_str_lower = token_str.lower()
+                    if token_str_lower in all_entity_tokens:
+                        avg_token_embeddings_dict_check[token_str_lower] = (
+                            avg_pooled_embeddings.cpu().numpy().tolist()
+                        )
+                        attn_token_embeddings_dict_check[token_str_lower] = (
+                            attn_pooled_embeddings.cpu().numpy().tolist()
+                        )
 
     print(
         f"Number of unique gene/disease tokens with average embeddings (check run): {len(avg_token_embeddings_dict_check)}"
@@ -253,72 +229,52 @@ def main() -> None:
                 batch_input_ids = inputs["input_ids"]
                 batch_attention_mask = inputs["attention_mask"]
 
-                special_token_mask = torch.isin(
-                    batch_input_ids.unsqueeze(-1),
-                    special_token_ids_tensor_batched[:current_batch_size],
-                )
-                batch_special_token_indices_list = [
-                    torch.nonzero(special_token_mask[batch_index], as_tuple=False)[:, 0]
-                    for batch_index in range(current_batch_size)
-                ]
-
-                max_special_tokens = max(
-                    (len(indices) for indices in batch_special_token_indices_list)
-                    or [0]
-                )
-                padded_special_token_indices = [
-                    F.pad(indices, (0, max_special_tokens - len(indices)), value=-1)
-                    for indices in batch_special_token_indices_list
-                ]
-                batch_special_token_indices_tensor = torch.stack(
-                    padded_special_token_indices
-                )
-
-                valid_indices_mask = batch_special_token_indices_tensor != -1
-
                 for batch_index in range(current_batch_size):
-                    special_token_indices = batch_special_token_indices_tensor[
-                        batch_index
+                    input_ids_list = batch_input_ids[batch_index].tolist()
+                    special_indices = [
+                        idx
+                        for idx, val in enumerate(input_ids_list)
+                        if val in special_token_ids_set
                     ]
-                    valid_mask = valid_indices_mask[batch_index]
-                    valid_special_token_indices = special_token_indices[valid_mask]
+                    if len(special_indices) == 0:
+                        continue
 
-                    if valid_special_token_indices.numel() > 0:
-                        text_embeddings = all_token_embeddings[batch_index]
-                        special_token_embeddings = text_embeddings[
-                            valid_special_token_indices
-                        ]
+                    valid_special_token_indices = torch.tensor(
+                        special_indices, device=device
+                    )
+                    text_embeddings = all_token_embeddings[batch_index]
+                    special_token_embeddings = text_embeddings[
+                        valid_special_token_indices
+                    ]
 
-                        avg_pooled_embeddings = torch.mean(
-                            special_token_embeddings, dim=0
-                        )
-                        attn_pooled_embeddings = pooling(
-                            special_token_embeddings.unsqueeze(0),
-                            torch.ones(
-                                (1, special_token_embeddings.size(0)),
-                                device=device,
-                                dtype=torch.long,
-                            ),
-                        ).squeeze(0)
+                    avg_pooled_embeddings = torch.mean(special_token_embeddings, dim=0)
+                    attn_pooled_embeddings = pooling(
+                        special_token_embeddings.unsqueeze(0),
+                        torch.ones(
+                            (1, special_token_embeddings.size(0)),
+                            device=device,
+                            dtype=torch.long,
+                        ),
+                    ).squeeze(0)
 
-                        input_ids_current_abstract = inputs["input_ids"][batch_index]
-                        abstract_special_token_ids = input_ids_current_abstract[
-                            valid_special_token_indices
-                        ]
-                        abstract_special_tokens = tokenizer.convert_ids_to_tokens(
-                            abstract_special_token_ids
-                        )
+                    input_ids_current_abstract = batch_input_ids[batch_index]
+                    abstract_special_token_ids = input_ids_current_abstract[
+                        valid_special_token_indices
+                    ]
+                    abstract_special_tokens = tokenizer.convert_ids_to_tokens(
+                        abstract_special_token_ids
+                    )
 
-                        # populate dictionaries with token-embedding pairs
-                        for token_str in abstract_special_tokens:
-                            token_str_lower = token_str.lower()
-                            if token_str_lower in all_entity_tokens:
-                                avg_token_embeddings_dict[token_str_lower] = (
-                                    avg_pooled_embeddings.cpu().numpy().tolist()
-                                )
-                                attn_token_embeddings_dict[token_str_lower] = (
-                                    attn_pooled_embeddings.cpu().numpy().tolist()
-                                )
+                    # populate dictionaries
+                    for token_str in abstract_special_tokens:
+                        token_str_lower = token_str.lower()
+                        if token_str_lower in all_entity_tokens:
+                            avg_token_embeddings_dict[token_str_lower] = (
+                                avg_pooled_embeddings.cpu().numpy().tolist()
+                            )
+                            attn_token_embeddings_dict[token_str_lower] = (
+                                attn_pooled_embeddings.cpu().numpy().tolist()
+                            )
 
         print(
             f"Number of unique gene/disease tokens with average embeddings (full dataset): {len(avg_token_embeddings_dict)}"
