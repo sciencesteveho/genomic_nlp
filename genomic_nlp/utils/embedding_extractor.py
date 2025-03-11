@@ -79,7 +79,7 @@ def main() -> None:
     # paths
     root_dir = "/ocean/projects/bio210019p/stevesho/genomic_nlp"
     data_dir = f"{root_dir}/data/combined"
-    model_path = f"{root_dir}/models/finetuned_biomedbert"
+    model_path = f"{root_dir}/models/finetuned_biomedbert_hf/best_model"
     tokenizer_path = f"{model_path}/gene_tokenizer"
     output_dir = f"{root_dir}/embeddings"
     output_file_avg = f"{output_dir}/averaged_embeddings.pkl"

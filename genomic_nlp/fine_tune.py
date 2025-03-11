@@ -26,43 +26,43 @@ from genomic_nlp.utils.streaming_corpus import MLMTextDataset
 logging.basicConfig(level=logging.INFO)
 
 
-class SaveBestTrainingLossCallback(TrainerCallback):
-    """A custom callback to save the best model checkpoint during training based on training loss.
-    (Corrected version using state.global_step)
-    """
+# class SaveBestTrainingLossCallback(TrainerCallback):
+#     """A custom callback to save the best model checkpoint during training based on training loss.
+#     (Corrected version using state.global_step)
+#     """
 
-    def __init__(self, save_path: str):
-        self.best_loss = float("inf")
-        self.save_path = save_path
+#     def __init__(self, save_path: str):
+#         self.best_loss = float("inf")
+#         self.save_path = save_path
 
-    def on_step_end(
-        self,
-        args: TrainingArguments,
-        state: TrainerState,
-        control: TrainerControl,
-        **kwargs: Dict[str, Any],
-    ) -> None:
-        """
-        Event called at the end of each training step.
-        (Corrected version using state.global_step)
-        """
-        if state.global_step % args.logging_steps == 0:
-            if state.log_history:
-                current_log = state.log_history[-1]
-                if "loss" in current_log:
-                    current_loss = current_log["loss"]
-                    if current_loss < self.best_loss:
-                        self.best_loss = current_loss
-                        logging.info(
-                            f"Training loss improved at step {state.global_step} to {self.best_loss:.4f}. Saving model..."
-                        )
-                        kwargs["model"].save_pretrained(self.save_path)  # type: ignore
-                else:
-                    logging.warning(
-                        f"Loss key not found in log history at step {state.global_step}"
-                    )
-            else:
-                logging.warning(f"Log history is empty at step {state.global_step}")
+#     def on_step_end(
+#         self,
+#         args: TrainingArguments,
+#         state: TrainerState,
+#         control: TrainerControl,
+#         **kwargs: Dict[str, Any],
+#     ) -> None:
+#         """
+#         Event called at the end of each training step.
+#         (Corrected version using state.global_step)
+#         """
+#         if state.global_step % args.logging_steps == 0:
+#             if state.log_history:
+#                 current_log = state.log_history[-1]
+#                 if "loss" in current_log:
+#                     current_loss = current_log["loss"]
+#                     if current_loss < self.best_loss:
+#                         self.best_loss = current_loss
+#                         logging.info(
+#                             f"Training loss improved at step {state.global_step} to {self.best_loss:.4f}. Saving model..."
+#                         )
+#                         kwargs["model"].save_pretrained(self.save_path)  # type: ignore
+#                 else:
+#                     logging.warning(
+#                         f"Loss key not found in log history at step {state.global_step}"
+#                     )
+#             else:
+#                 logging.warning(f"Log history is empty at step {state.global_step}")
 
 
 def load_tokens(filename: str) -> Set[str]:
@@ -139,8 +139,9 @@ def main() -> None:
     args = parser.parse_args()
 
     abstracts_dir = f"{args.root_dir}/data"
-    abstracts = f"{abstracts_dir}/combined/processed_abstracts_finetune_combined.txt"
-    model_out = f"{args.root_dir}/models/finetuned_biomedbert_hf"
+    train_abstracts_file = f"{abstracts_dir}/combined/train_abstracts.txt"
+    validation_abstracts_file = f"{abstracts_dir}/combined/validation_abstracts.txt"
+    model_out = f"{args.root_dir}/models/finetuned_biomedbert_hf_val"
     best_model_out_dir = os.path.join(model_out, "best_model")
     final_model_out_dir = os.path.join(model_out, "final_model")
     world_size = int(os.environ.get("WORLD_SIZE", "1"))
@@ -176,15 +177,26 @@ def main() -> None:
         f"Loaded BiomedBERT model and resized token embeddings to {len(tokenizer)}"
     )
 
-    streaming_dataset = MLMTextDataset(
-        file_path=abstracts,
+    train_dataset = MLMTextDataset(
+        file_path=train_abstracts_file,
         tokenizer=tokenizer,
         max_length=512,
     )
-    total_abstracts = len(streaming_dataset)
-    logging.info(f"Created MLMTextDataset with {total_abstracts} abstracts")
+    validation_dataset = MLMTextDataset(
+        file_path=validation_abstracts_file,
+        tokenizer=tokenizer,
+        max_length=512,
+    )
+    total_abstracts_train = len(train_dataset)
+    total_abstracts_val = len(validation_dataset)
+    logging.info(
+        f"Created MLMTextDataset for training with {total_abstracts_train} abstracts"
+    )
+    logging.info(
+        f"Created MLMTextDataset for validation with {total_abstracts_val} abstracts"
+    )
 
-    num_epochs = 3
+    num_epochs = 5
     train_batch_size = 128
     train_micro_batch_size_per_gpu = 32
     gradient_accumulation_steps = 2
@@ -192,7 +204,7 @@ def main() -> None:
         world_size,
         num_epochs,
         train_batch_size,
-        total_abstracts,
+        total_abstracts_train,
     )
     warmup_steps = int(0.1 * total_steps)
     logging.info(f"total steps: {total_steps}, warmup steps: {warmup_steps}")
@@ -204,7 +216,7 @@ def main() -> None:
         tokenizer=tokenizer, mlm=True, mlm_probability=0.15
     )
 
-    best_train_loss_callback = SaveBestTrainingLossCallback(best_model_out_dir)
+    # best_train_loss_callback = SaveBestTrainingLossCallback(best_model_out_dir)
 
     training_args = TrainingArguments(
         output_dir=model_out,
@@ -227,16 +239,19 @@ def main() -> None:
         dataloader_persistent_workers=True,
         gradient_checkpointing=False,
         push_to_hub=False,
+        evaluation_strategy="epoch",
+        load_best_model_at_end=True,
+        metric_for_best_model="eval_loss",
     )
 
     trainer = Trainer(
         model=model,
         args=training_args,
         data_collator=data_collator,
-        train_dataset=streaming_dataset,
+        train_dataset=train_dataset,
+        eval_dataset=validation_dataset,
         tokenizer=tokenizer,
         optimizers=(None, None),
-        callbacks=[best_train_loss_callback],
     )
 
     logging.info("--- Starting Training with Hugging Face Trainer ---")
