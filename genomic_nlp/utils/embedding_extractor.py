@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Extract embeddings for gene/disease tokens."""
+"""Extract embeddings for gene/disease tokens (Vectorized Attention Pooling + Dict Output - v6 - MYPY Fixed)."""
 
 import pickle
 from typing import Dict, List, Optional, Set, Tuple
@@ -21,7 +21,7 @@ class AttentionPooling(nn.Module):
     """
 
     def __init__(self, hidden_dim: int) -> None:
-        super(AttentionPooling, self).__init__()
+        super().__init__()
         self.attention_layer = nn.Linear(hidden_dim, 1, bias=False)
 
     def forward(
@@ -77,8 +77,8 @@ def main() -> None:
     model_path = f"{root_dir}/models/finetuned_biomedbert_hf/best_model"
     tokenizer_path = f"{root_dir}/models/finetuned_biomedbert_hf/gene_tokenizer"
     output_dir = f"{root_dir}/embeddings"
-    output_file_avg = f"{output_dir}/averaged_gene_disease_embeddings_v5.pkl"
-    output_file_attn = f"{output_dir}/attention_gene_disease_embeddings_v5.pkl"
+    output_file_avg = f"{output_dir}/averaged_gene_disease_embeddings_v6.pkl"  # Updated filename to v6
+    output_file_attn = f"{output_dir}/attention_gene_disease_embeddings_v6.pkl"  # Updated filename to v6
     gene_token_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/gene_tokens_nosyn.txt"
     disease_token_file = "/ocean/projects/bio210019p/stevesho/genomic_nlp/training_data/disease/disease_tokens_nosyn.txt"
     abstract_file_path = f"{data_dir}/processed_abstracts_finetune_combined.txt"
@@ -110,14 +110,11 @@ def main() -> None:
     )
 
     special_token_ids = tokenizer.convert_tokens_to_ids(list(all_entity_tokens))
-    special_token_ids_tensor_batched = (
-        torch.tensor(special_token_ids, dtype=torch.long, device=device)
-        .unsqueeze(0)
-        .repeat(batch_size, 1)
-    )
 
     avg_token_embeddings_dict_check: Dict[str, List[float]] = {}
     attn_token_embeddings_dict_check: Dict[str, List[float]] = {}
+
+    verification_passed = True
 
     # process abstracts in batches (for initial check - first 1000 abstracts)
     for i in tqdm(
@@ -125,6 +122,17 @@ def main() -> None:
         desc="Processing Batches (Check Run)",
     ):
         batch_abstracts = abstracts_check[i : i + batch_size]
+        actual_batch_size = len(
+            batch_abstracts
+        )  # get actual number of abstracts in this batch
+
+        # create tensor with actual batch size
+        special_token_ids_tensor_batched = (
+            torch.tensor(special_token_ids, dtype=torch.long, device=device)
+            .unsqueeze(0)
+            .repeat(actual_batch_size, 1)
+        )
+
         inputs = tokenizer(
             batch_abstracts,
             padding=True,
@@ -134,8 +142,8 @@ def main() -> None:
         ).to(device)
 
         with torch.no_grad():
-            outputs: MaskedLMOutput = model(**inputs)
-            all_token_embeddings: torch.Tensor = outputs.hidden_states[-1]
+            outputs_check: MaskedLMOutput = model(**inputs)
+            all_token_embeddings_check: torch.Tensor = outputs_check.hidden_states[-1]
             batch_input_ids = inputs["input_ids"]
             batch_attention_mask = inputs["attention_mask"]
 
@@ -144,7 +152,7 @@ def main() -> None:
             )
             batch_special_token_indices_list = [
                 torch.nonzero(special_token_mask[batch_index], as_tuple=False)[:, 0]
-                for batch_index in range(batch_size)
+                for batch_index in range(actual_batch_size)
             ]
 
             max_special_tokens = max(
@@ -160,13 +168,15 @@ def main() -> None:
 
             valid_indices_mask = batch_special_token_indices_tensor != -1
 
-            for batch_index in range(batch_size):
+            for batch_index in range(actual_batch_size):
                 special_token_indices = batch_special_token_indices_tensor[batch_index]
                 valid_mask = valid_indices_mask[batch_index]
                 valid_special_token_indices = special_token_indices[valid_mask]
 
                 if valid_special_token_indices.numel() > 0:
-                    text_embeddings = all_token_embeddings[batch_index]
+                    text_embeddings = all_token_embeddings_check[
+                        batch_index
+                    ]  # Use renamed variable
                     special_token_embeddings = text_embeddings[
                         valid_special_token_indices
                     ]
@@ -227,6 +237,17 @@ def main() -> None:
             desc="Processing Batches (Full Dataset)",
         ):
             batch_abstracts = abstracts_full[i : i + batch_size]
+            actual_batch_size = len(
+                batch_abstracts
+            )  # get actual number of abstracts in this batch
+
+            # create tensor with actual batch size
+            special_token_ids_tensor_batched = (
+                torch.tensor(special_token_ids, dtype=torch.long, device=device)
+                .unsqueeze(0)
+                .repeat(actual_batch_size, 1)
+            )
+
             inputs = tokenizer(
                 batch_abstracts,
                 padding=True,
@@ -246,7 +267,7 @@ def main() -> None:
                 )
                 batch_special_token_indices_list = [
                     torch.nonzero(special_token_mask[batch_index], as_tuple=False)[:, 0]
-                    for batch_index in range(batch_size)
+                    for batch_index in range(actual_batch_size)  # Use actual batch size
                 ]
 
                 max_special_tokens = max(
@@ -263,7 +284,7 @@ def main() -> None:
 
                 valid_indices_mask = batch_special_token_indices_tensor != -1
 
-                for batch_index in range(batch_size):
+                for batch_index in range(actual_batch_size):  # use actual batch size
                     special_token_indices = batch_special_token_indices_tensor[
                         batch_index
                     ]
@@ -320,7 +341,9 @@ def main() -> None:
             pickle.dump(attn_token_embeddings_dict, f_attn)
 
         print(f"Average pooled embeddings (full dataset) saved to: {output_file_avg}")
-        print(f"Attention pooled embeddings saved to: {output_file_attn}")
+        print(
+            f"Attention pooled embeddings (full dataset) saved to: {output_file_attn}"
+        )
 
     else:
         print(
