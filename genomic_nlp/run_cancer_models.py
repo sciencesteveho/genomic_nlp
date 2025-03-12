@@ -2,8 +2,7 @@
 # -*- coding: utf-8 -*-
 
 
-"""Code to run models to predict cancer genes.
-"""
+"""Code to run models to predict cancer genes."""
 
 
 import argparse
@@ -270,6 +269,13 @@ def get_gene_embeddings(
             embeddings = pickle.load(f)
         gene_embeddings = _extract_gene_vectors(embeddings, gene_names)
         save_path = f"{args.save_path}/n2v/{args.n2v_type}"
+    elif args.model == "bert":
+        model_path = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/averaged_embeddings.pkl"
+        with open(model_path, "rb") as f:
+            embeddings = pickle.load(f)
+        gene_embeddings = {gene: embeddings[gene] for gene in gene_names}
+        save_path = args.save_path
+        os.makedirs(save_path, exist_ok=True)
 
     return gene_embeddings, save_path
 
@@ -407,8 +413,8 @@ def main() -> None:
         "--model_type",
         type=str,
         help="Type of embedding model to use.",
-        default="n2v",
-        choices=["w2v", "n2v"],
+        default="bert",
+        choices=["w2v", "n2v", "bert"],
     )
     parser.add_argument(
         "--gene_names",

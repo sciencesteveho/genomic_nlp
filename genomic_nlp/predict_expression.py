@@ -205,39 +205,46 @@ def main() -> None:
     # to "average" column
     df["all_tissues"] = np.log2(df["all_tissues"] + PSEUDOCOUNT)
 
-    # load n2v embeddings
-    # with open("input_embeddings.pkl", "rb") as f:
-    #     embeddings = pickle.load(f)
-    # # upper case all gene names
-    # embeddings = {gene.upper(): embedding for gene, embedding in embeddings.items()}
-    # embedding_genes = {gene.upper() for gene in embeddings}
-
     # load w2v model
     w2v = Word2Vec.load(
         "/Users/steveho/genomic_nlp/development/models/word2vec_300_dimensions_2023.model"
     )
 
-    # # load genePT
-    # with open(
-    #     "/Users/steveho/genomic_nlp/development/plots/GenePT_emebdding_v2/GenePT_gene_embedding_ada_text.pickle",
-    #     "rb",
-    # ) as f:
-    #     gene_pt_raw = pickle.load(f)
+    # load genePT
+    with open(
+        "/Users/steveho/genomic_nlp/development/plots/GenePT_emebdding_v2/GenePT_gene_embedding_ada_text.pickle",
+        "rb",
+    ) as f:
+        gene_pt_raw = pickle.load(f)
 
-    # gene_pt = {
-    #     gene.casefold(): np.array(embedding) for gene, embedding in gene_pt_raw.items()
-    # }
+    gene_pt = {
+        gene.casefold(): np.array(embedding) for gene, embedding in gene_pt_raw.items()
+    }
 
     # load attention embeddings
-    attn_embeddings = np.load(
-        "/Users/steveho/genomic_nlp/development/expression/attention_embeddings.npy"
-    )
+    with open("averaged_embeddings.pkl", "rb") as f:
+        avg_embeddings = pickle.load(f)
 
-    # add symbols to df
+    # add symbols to df and convert to lowercase
     df["genesymbol"] = df.index.map(lambda x: symbol_lookup.get(x, x))
-    genes_symbols = {gene.lower() for gene in list(df["genesymbol"])}
+    df["genesymbol"] = df["genesymbol"].map(lambda x: x.lower())
+    genes_symbols = set(df["genesymbol"])
+
+    # assign train, test, val based on chr_map
+    # and filter for protein coding genes
+    df["split"] = df.index.map(lambda x: assign_split(x, chr_map))
+    gene_bed = BedTool(protein_coding_bed)
+    protein_coding_genes = {feature[3] for feature in gene_bed if feature[3] in genes}
+    df = df[df.index.isin(protein_coding_genes)]
 
     # filter for valid genes
+    w2v_genes = {gene for gene in genes_symbols if gene in w2v.wv}
+    gene_pt_genes = {gene for gene in genes_symbols if gene in gene_pt}
+    attn_genes = {gene for gene in genes_symbols if gene in avg_embeddings}
+
+    shared_genes = w2v_genes.intersection(gene_pt_genes).intersection(attn_genes)
+    print(f"Total genes with all three embeddings: {len(shared_genes):,}")
+
     valid_genes = [gene for gene in genes_symbols if gene in w2v.wv]
     w2v_genes = {gene: w2v.wv[gene] for gene in valid_genes}
 
@@ -245,39 +252,32 @@ def main() -> None:
     valid_genes = [gene for gene in genes_symbols if gene in gene_pt]
     gene_pt_genes = {gene: gene_pt[gene] for gene in valid_genes}
 
-    # assign train, test, val based on chr_map
-    df["split"] = df.index.map(lambda x: assign_split(x, chr_map))
+    # fitler for valid genes in attention embeddings
+    valid_genes = [gene for gene in genes_symbols if gene in avg_embeddings]
+    attn_genes = {gene: avg_embeddings[gene] for gene in valid_genes}
 
     # filter for protein coding
     gene_bed = BedTool(protein_coding_bed)
     genes = [feature[3] for feature in gene_bed if feature[3] in genes]
     df = df[df.index.isin(genes)]
 
-    # convert to genesymbol and filter for embeddings
-    df["genesymbol"] = df.index.map(lambda x: symbol_lookup.get(x, x))
+    # filter for shared genes
+    df = df[df["genesymbol"].isin(shared_genes)]
 
-    # df = df[df["genesymbol"].isin(embedding_genes)]
-    # convert to lower first
-    df["genesymbol"] = df["genesymbol"].map(lambda x: x.lower())
-    # df = df[df["genesymbol"].isin(w2v_genes)]
-    df = df[df["genesymbol"].isin(gene_pt_genes)]
-
-    # add embeddings to df
-    # df["embedding"] = df["genesymbol"].map(lambda x: embeddings.get(x))
-    # df["embedding"] = df["genesymbol"].map(lambda x: w2v_genes.get(x))
-    df["embedding"] = df["genesymbol"].map(lambda x: gene_pt_genes.get(x))
-
-    # check how many train, test, val
+    # check split distribution
     split_counts = df["split"].value_counts()
+    print("Distribution of genes across splits after filtering for shared genes:")
+    print(f"Train: {split_counts.get('train', 0):,} genes")
+    print(f"Test:  {split_counts.get('test', 0):,} genes")
 
-    print("Distribution of genes across splits:")
-    print(f"Train: {split_counts['train']:,} genes")
-    print(f"Test:  {split_counts['test']:,} genes")
-    # print(f"Val:   {split_counts['val']:,} genes")
-
-    # split the dataframe into training and test sets based on the 'split' column.
+    # split the dataframe
     train_df = df[df["split"] == "train"]
     test_df = df[df["split"] == "test"]
+
+    # map embeddings
+    w2v_embeddings = {gene: w2v.wv[gene] for gene in shared_genes}
+    genept_embeddings = {gene: gene_pt[gene] for gene in shared_genes}
+    attn_embeddings = {gene: avg_embeddings[gene] for gene in shared_genes}
 
     # get vectors for model training
     X_train = np.array(train_df["embedding"].tolist())
@@ -396,7 +396,8 @@ def main() -> None:
     #     y_test,
     #     savetitle="random_embedding_expression_prediction.png",
     # )
-    predictions_genept = final_model.predict(X_test)
+    # predictions_genept = final_model.predict(X_test)
+    # predictions_attn = final_model.predict(X_test)  # type: ignore
 
     final_model = Pipeline(
         [

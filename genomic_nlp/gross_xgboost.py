@@ -87,7 +87,7 @@ def main():
         type=str,
         default="/ocean/projects/bio210019p/stevesho/genomic_nlp/models/disease",
     )
-    parser.add_argument("--model", type=str, default="w2v")
+    parser.add_argument("--model", type=str, default="bert")
     args = parser.parse_args()
     embedding_path = "/ocean/projects/bio210019p/stevesho/genomic_nlp/models/w2v"
 
@@ -95,12 +95,16 @@ def main():
         model_path = f"/ocean/projects/bio210019p/stevesho/genomic_nlp/models/n2v/disease/{args.year}/input_embeddings.pkl"
         with open(model_path, "rb") as f:
             embeddings = pickle.load(f)
-    else:
+    elif args.model == "w2v":
         w2vmodel_file = (
             f"{embedding_path}/{args.year}/word2vec_300_dimensions_{args.year}.model"
         )
         w2v_model = Word2Vec.load(w2vmodel_file)
         embeddings = {word: w2v_model.wv[word] for word in w2v_model.wv.index_to_key}
+    elif args.model == "bert":
+        model_path = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/averaged_embeddings.pkl"
+        with open(model_path, "rb") as f:
+            embeddings = pickle.load(f)
 
     save_dir = f"{args.save_dir}/{args.model}"
     save_dir = Path(save_dir)

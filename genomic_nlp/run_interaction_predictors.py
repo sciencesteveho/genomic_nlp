@@ -323,8 +323,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model_type",
         type=str,
+        default="bert",
         help="Type of embedding model to use.",
-        choices=["w2v", "n2v"],
+        choices=["w2v", "n2v", "bert"],
     )
     parser.add_argument(
         "--year", type=int, help="Year of the model to use.", default=2019
@@ -351,6 +352,13 @@ def get_gene_embeddings(
             embeddings = pickle.load(f)
         gene_embeddings = _extract_gene_vectors(embeddings, gene_names)
         save_path = f"{args.save_path}/n2v/{args.n2v_type}/{args.year}"
+        os.makedirs(save_path, exist_ok=True)
+    elif args.model == "bert":
+        model_path = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/averaged_embeddings.pkl"
+        with open(model_path, "rb") as f:
+            embeddings = pickle.load(f)
+        gene_embeddings = _extract_gene_vectors(embeddings, gene_names)
+        save_path = f"{args.save_path}/bert"
         os.makedirs(save_path, exist_ok=True)
 
     return gene_embeddings, save_path
