@@ -43,7 +43,7 @@ def run_shap(
     train_features: np.ndarray,
     model_dir: str,
     model_name: str,
-) -> None:
+) -> np.ndarray:
     """Run SHAP analysis for a tree-based model."""
     explainer = shap.TreeExplainer(final_model.model)
     shap_values = explainer.shap_values(train_features)
@@ -52,6 +52,7 @@ def run_shap(
     shap.summary_plot(shap_values, train_features)
     plt.savefig(f"{model_dir}/{model_name}_shap_summary_plot.png", dpi=450)
     plt.close()
+    return shap_values
 
 
 def build_edge_features(
@@ -229,7 +230,13 @@ def main():
 
         # run SHAP analysis on XGBoost
         xgb_wrapped = BaselineModel(final_xgb)
-        run_shap(xgb_wrapped, X_all, save_dir, f"xgboost_gda_{args.year}")
+        shap_values = run_shap(xgb_wrapped, X_all, save_dir, f"xgboost_gda_{args.year}")
+
+        # Now you can save them
+        if shap_values is not None:
+            shap_path = save_dir / f"gda_shap_values_{args.year}.npy"
+            np.save(shap_path, shap_values)
+            print(f"Saved SHAP values to {shap_path}")
 
         # train final Logistic Regression model
         print("Training final Logistic Regression model on all data...")

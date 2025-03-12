@@ -217,16 +217,21 @@ def main() -> None:
         "/Users/steveho/genomic_nlp/development/models/word2vec_300_dimensions_2023.model"
     )
 
-    # load genePT
-    with open(
-        "/Users/steveho/genomic_nlp/development/plots/GenePT_emebdding_v2/GenePT_gene_embedding_ada_text.pickle",
-        "rb",
-    ) as f:
-        gene_pt_raw = pickle.load(f)
+    # # load genePT
+    # with open(
+    #     "/Users/steveho/genomic_nlp/development/plots/GenePT_emebdding_v2/GenePT_gene_embedding_ada_text.pickle",
+    #     "rb",
+    # ) as f:
+    #     gene_pt_raw = pickle.load(f)
 
-    gene_pt = {
-        gene.casefold(): np.array(embedding) for gene, embedding in gene_pt_raw.items()
-    }
+    # gene_pt = {
+    #     gene.casefold(): np.array(embedding) for gene, embedding in gene_pt_raw.items()
+    # }
+
+    # load attention embeddings
+    attn_embeddings = np.load(
+        "/Users/steveho/genomic_nlp/development/expression/attention_embeddings.npy"
+    )
 
     # add symbols to df
     df["genesymbol"] = df.index.map(lambda x: symbol_lookup.get(x, x))
