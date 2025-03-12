@@ -206,12 +206,12 @@ def main():
         print(
             f"XGB - Mean AP: {cv_results['xgb']['mean_ap']:.4f} ± {cv_results['xgb']['std_ap']:.4f}"
         )
-        print(
-            f"LR - Mean AUC: {cv_results['lr']['mean_auc']:.4f} ± {cv_results['lr']['std_auc']:.4f}"
-        )
-        print(
-            f"LR - Mean AP: {cv_results['lr']['mean_ap']:.4f} ± {cv_results['lr']['std_ap']:.4f}"
-        )
+        # print(
+        #     f"LR - Mean AUC: {cv_results['lr']['mean_auc']:.4f} ± {cv_results['lr']['std_auc']:.4f}"
+        # )
+        # print(
+        #     f"LR - Mean AP: {cv_results['lr']['mean_ap']:.4f} ± {cv_results['lr']['std_ap']:.4f}"
+        # )
 
         # Train final models on all data
         print("Training final XGBoost model on all data...")
@@ -232,14 +232,14 @@ def main():
             pickle.dump(final_xgb, f)
         print(f"Saved XGBoost model to {model_path}")
 
-        # run SHAP analysis on XGBoost
-        xgb_wrapped = BaselineModel(final_xgb)
-        shap_values = run_shap(xgb_wrapped, X_all, save_dir, f"xgboost_gda_{args.year}")
+        # # run SHAP analysis on XGBoost
+        # xgb_wrapped = BaselineModel(final_xgb)
+        # shap_values = run_shap(xgb_wrapped, X_all, save_dir, f"xgboost_gda_{args.year}")
 
-        if shap_values is not None:
-            shap_path = save_dir / f"gda_shap_values_{args.year}.npy"
-            np.save(shap_path, shap_values)
-            print(f"Saved SHAP values to {shap_path}")
+        # if shap_values is not None:
+        #     shap_path = save_dir / f"gda_shap_values_{args.year}.npy"
+        #     np.save(shap_path, shap_values)
+        #     print(f"Saved SHAP values to {shap_path}")
 
         # # train final Logistic Regression model
         # print("Training final Logistic Regression model on all data...")
