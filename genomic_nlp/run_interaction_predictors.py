@@ -10,6 +10,7 @@ threshold."""
 
 import argparse
 import csv
+import gc
 import multiprocessing as mp
 import os
 import pickle
@@ -83,6 +84,9 @@ class GeneInterationPredictions:
             self.train_features,
             self.train_targets,
         )
+        del self.train_features, self.train_targets
+        gc.collect()
+
         test_ap_plot = self.evaluate_model(
             final_model,
             self.test_features,
@@ -99,13 +103,13 @@ class GeneInterationPredictions:
         )
         print(f"Hold-out test set AUC: {test_ap:.4f}")
 
-        # SHAP analysis for tree-based model
-        shap_values = None
-        if self.model_name == "xgboost":
-            try:
-                self.run_shap(final_model)
-            except Exception as e:
-                print(f"Error generating SHAP summary plot: {str(e)}")
+        # # SHAP analysis for tree-based model
+        # shap_values = None
+        # if self.model_name == "xgboost":
+        #     try:
+        #         self.run_shap(final_model)
+        #     except Exception as e:
+        #         print(f"Error generating SHAP summary plot: {str(e)}")
 
         # save model
         model_path = f"{self.model_dir}/{self.model_name}_model.pkl"
@@ -116,16 +120,16 @@ class GeneInterationPredictions:
         except Exception as e:
             print(f"Error saving model {self.model_name}: {str(e)}")
 
-        # save training features and labels
-        train_features_path = f"{self.model_dir}/{self.model_name}_train_features.npy"
-        train_targets_path = f"{self.model_dir}/{self.model_name}_train_targets.npy"
-        np.save(train_features_path, self.train_features)
-        np.save(train_targets_path, self.train_targets)
+        # # save training features and labels
+        # train_features_path = f"{self.model_dir}/{self.model_name}_train_features.npy"
+        # train_targets_path = f"{self.model_dir}/{self.model_name}_train_targets.npy"
+        # np.save(train_features_path, self.train_features)
+        # np.save(train_targets_path, self.train_targets)
 
-        # save SHAP vals
-        if shap_values is not None:
-            shap_path = f"{self.model_dir}/{self.model_name}_shap_values.npy"
-            np.save(shap_path, shap_values)
+        # # save SHAP vals
+        # if shap_values is not None:
+        #     shap_path = f"{self.model_dir}/{self.model_name}_shap_values.npy"
+        #     np.save(shap_path, shap_values)
 
         print(f"Length of test_gene_pairs: {len(self.test_gene_pairs)}")
         print(f"Length of test_predictions: {len(test_predictions)}")
@@ -140,17 +144,17 @@ class GeneInterationPredictions:
 
         return final_model
 
-    def run_shap(self, final_model: BaselineModel) -> None:
-        """Run SHAP analysis for a tree-based model."""
-        explainer = shap.TreeExplainer(final_model.model)
-        shap_values = explainer.shap_values(self.train_features)
-        print("[SHAP) generating summary plot...")
-        set_matplotlib_publication_parameters()
-        shap.summary_plot(shap_values, self.train_features)
-        plt.savefig(
-            f"{self.model_dir}/{self.model_name}_shap_summary_plot.png", dpi=450
-        )
-        plt.close()
+    # def run_shap(self, final_model: BaselineModel) -> None:
+    #     """Run SHAP analysis for a tree-based model."""
+    #     explainer = shap.TreeExplainer(final_model.model)
+    #     shap_values = explainer.shap_values(self.train_features)
+    #     print("[SHAP) generating summary plot...")
+    #     set_matplotlib_publication_parameters()
+    #     shap.summary_plot(shap_values, self.train_features)
+    #     plt.savefig(
+    #         f"{self.model_dir}/{self.model_name}_shap_summary_plot.png", dpi=450
+    #     )
+    #     plt.close()
 
     @staticmethod
     def train_model(
