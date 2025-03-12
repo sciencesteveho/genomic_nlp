@@ -498,64 +498,64 @@ def main() -> None:
     #         final_predictions = trainer.predict_all_genes()
     #         trainer.save_data(final_predictions, f"final_predictions_{year}_horizon")
 
-    # train and test models via temporal split without horizon
-    for year in range(2003, 2020):
-        print(f"Running models for year {year}...")
+    # # train and test models via temporal split without horizon
+    # for year in range(2003, 2020):
+    #     print(f"Running models for year {year}...")
 
-        # load gene embeddings
-        gene_embeddings, save_path = get_gene_embeddings(
-            args=args, gene_names=gene_names, year=year
-        )
+    #     # load gene embeddings
+    #     gene_embeddings, save_path = get_gene_embeddings(
+    #         args=args, gene_names=gene_names, year=year
+    #     )
 
-        # prepare
-        (
-            train_features,
-            train_targets,
-            train_gene_names,
-            test_features,
-            test_targets,
-            test_gene_names,
-            save_dir,
-            gene_embeddings,
-            cancer_genes,
-        ) = prepare_data(
-            save_path=save_path,
-            gene_embeddings=gene_embeddings,
-            year=year,
-            horizon=None,
-        )
-        print(f"Total number of genes in training data: {len(train_features)}")
-        print(f"Total number of genes in test data: {len(test_features)}")
+    #     # prepare
+    #     (
+    #         train_features,
+    #         train_targets,
+    #         train_gene_names,
+    #         test_features,
+    #         test_targets,
+    #         test_gene_names,
+    #         save_dir,
+    #         gene_embeddings,
+    #         cancer_genes,
+    #     ) = prepare_data(
+    #         save_path=save_path,
+    #         gene_embeddings=gene_embeddings,
+    #         year=year,
+    #         horizon=None,
+    #     )
+    #     print(f"Total number of genes in training data: {len(train_features)}")
+    #     print(f"Total number of genes in test data: {len(test_features)}")
 
-        # define models
-        models = define_models()
+    #     # define models
+    #     models = define_models()
 
-        print("Running models (single train/test).")
-        for name, model_class in models.items():
-            print(f"\nRunning {name} model...")
+    #     print("Running models (single train/test).")
+    #     for name, model_class in models.items():
+    #         print(f"\nRunning {name} model...")
 
-            # initialize trainer
-            trainer = CancerGenePrediction(
-                model_class=model_class,
-                train_features=train_features,
-                train_targets=train_targets,
-                test_features=test_features,
-                test_targets=test_targets,
-                gene_embeddings=gene_embeddings,
-                model_name=name,
-                save_dir=save_dir,
-                year=year,
-                cancer_genes=cancer_genes,
-                train_gene_names=train_gene_names,
-                test_gene_names=test_gene_names,
-            )
+    #         # initialize trainer
+    #         trainer = CancerGenePrediction(
+    #             model_class=model_class,
+    #             train_features=train_features,
+    #             train_targets=train_targets,
+    #             test_features=test_features,
+    #             test_targets=test_targets,
+    #             gene_embeddings=gene_embeddings,
+    #             model_name=name,
+    #             save_dir=save_dir,
+    #             year=year,
+    #             cancer_genes=cancer_genes,
+    #             train_gene_names=train_gene_names,
+    #             test_gene_names=test_gene_names,
+    #         )
 
-            # train and evaluate
-            trainer.train_and_evaluate()
+    #         # train and evaluate
+    #         trainer.train_and_evaluate()
 
-            # predict all genes
-            final_predictions = trainer.predict_all_genes()
-            trainer.save_data(final_predictions, f"final_predictions_{year}")
+    #         # predict all genes
+    #         final_predictions = trainer.predict_all_genes()
+    #         trainer.save_data(final_predictions, f"final_predictions_{year}")
 
     # run final model for 2023
     run_final_model(args=args, gene_names=gene_names)
