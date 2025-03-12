@@ -173,16 +173,16 @@ def main():
             cv_results["xgb"]["ap"].append(ap)
             print(f"Fold {fold+1} - XGB AUC = {auc:.4f}, AP = {ap:.4f}")
 
-            # Train Logistic Regression
-            lr_clf = LogisticRegression(max_iter=1000)
-            print(f"Training Logistic Regression (fold {fold+1}/5)...")
-            lr_clf.fit(X_train_fold, y_train_fold)
-            probs_val_lr = lr_clf.predict_proba(X_val_fold)[:, 1]
-            auc_lr = roc_auc_score(y_val_fold, probs_val_lr)
-            ap_lr = average_precision_score(y_val_fold, probs_val_lr)
-            cv_results["lr"]["auc"].append(auc_lr)
-            cv_results["lr"]["ap"].append(ap_lr)
-            print(f"Fold {fold+1} - LR AUC = {auc_lr:.4f}, AP = {ap_lr:.4f}")
+            # # Train Logistic Regression
+            # lr_clf = LogisticRegression(max_iter=1000)
+            # print(f"Training Logistic Regression (fold {fold+1}/5)...")
+            # lr_clf.fit(X_train_fold, y_train_fold)
+            # probs_val_lr = lr_clf.predict_proba(X_val_fold)[:, 1]
+            # auc_lr = roc_auc_score(y_val_fold, probs_val_lr)
+            # ap_lr = average_precision_score(y_val_fold, probs_val_lr)
+            # cv_results["lr"]["auc"].append(auc_lr)
+            # cv_results["lr"]["ap"].append(ap_lr)
+            # print(f"Fold {fold+1} - LR AUC = {auc_lr:.4f}, AP = {ap_lr:.4f}")
 
         # calculate average performance across folds
         cv_results["xgb"]["mean_auc"] = np.mean(cv_results["xgb"]["auc"])
@@ -190,10 +190,10 @@ def main():
         cv_results["xgb"]["mean_ap"] = np.mean(cv_results["xgb"]["ap"])
         cv_results["xgb"]["std_ap"] = np.std(cv_results["xgb"]["ap"])
 
-        cv_results["lr"]["mean_auc"] = np.mean(cv_results["lr"]["auc"])
-        cv_results["lr"]["std_auc"] = np.std(cv_results["lr"]["auc"])
-        cv_results["lr"]["mean_ap"] = np.mean(cv_results["lr"]["ap"])
-        cv_results["lr"]["std_ap"] = np.std(cv_results["lr"]["ap"])
+        # cv_results["lr"]["mean_auc"] = np.mean(cv_results["lr"]["auc"])
+        # cv_results["lr"]["std_auc"] = np.std(cv_results["lr"]["auc"])
+        # cv_results["lr"]["mean_ap"] = np.mean(cv_results["lr"]["ap"])
+        # cv_results["lr"]["std_ap"] = np.std(cv_results["lr"]["ap"])
 
         # save CV results as JSON
         with open(save_dir / f"cv_results_{args.year}.json", "w") as f:
@@ -236,22 +236,21 @@ def main():
         xgb_wrapped = BaselineModel(final_xgb)
         shap_values = run_shap(xgb_wrapped, X_all, save_dir, f"xgboost_gda_{args.year}")
 
-        # Now you can save them
         if shap_values is not None:
             shap_path = save_dir / f"gda_shap_values_{args.year}.npy"
             np.save(shap_path, shap_values)
             print(f"Saved SHAP values to {shap_path}")
 
-        # train final Logistic Regression model
-        print("Training final Logistic Regression model on all data...")
-        final_lr = LogisticRegression(max_iter=1000)
-        final_lr.fit(X_all, y_all)
+        # # train final Logistic Regression model
+        # print("Training final Logistic Regression model on all data...")
+        # final_lr = LogisticRegression(max_iter=1000)
+        # final_lr.fit(X_all, y_all)
 
-        # save final Logistic Regression model
-        model_path_lr = save_dir / f"lr_gda_{args.year}.pkl"
-        with open(model_path_lr, "wb") as f:
-            pickle.dump(final_lr, f)
-        print(f"Saved Logistic Regression model to {model_path_lr}")
+        # # save final Logistic Regression model
+        # model_path_lr = save_dir / f"lr_gda_{args.year}.pkl"
+        # with open(model_path_lr, "wb") as f:
+        #     pickle.dump(final_lr, f)
+        # print(f"Saved Logistic Regression model to {model_path_lr}")
 
     else:
         # code for years other than 2023
