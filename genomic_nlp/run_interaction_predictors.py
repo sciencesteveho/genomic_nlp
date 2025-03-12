@@ -353,7 +353,7 @@ def get_gene_embeddings(
         gene_embeddings = _extract_gene_vectors(embeddings, gene_names)
         save_path = f"{args.save_path}/n2v/{args.n2v_type}/{args.year}"
         os.makedirs(save_path, exist_ok=True)
-    elif args.model == "bert":
+    elif args.model_type == "bert":
         model_path = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/averaged_embeddings.pkl"
         with open(model_path, "rb") as f:
             embeddings = pickle.load(f)

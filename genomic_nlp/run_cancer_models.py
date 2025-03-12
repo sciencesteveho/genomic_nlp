@@ -273,7 +273,9 @@ def get_gene_embeddings(
         model_path = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/averaged_embeddings.pkl"
         with open(model_path, "rb") as f:
             embeddings = pickle.load(f)
-        gene_embeddings = {gene: embeddings[gene] for gene in gene_names}
+        gene_embeddings = {
+            gene: embeddings[gene] for gene in gene_names if gene in embeddings
+        }
         save_path = args.save_path
         os.makedirs(save_path, exist_ok=True)
 
