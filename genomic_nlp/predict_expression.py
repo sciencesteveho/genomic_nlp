@@ -520,8 +520,7 @@ def main() -> None:
     filtered_indices_topN = np.argsort(similarity_scores)[::-1][:top_N]
     print("Number of genes selected by top-N strategy:", len(filtered_indices_topN))
 
-    # Choose one filtering method:
-    # For instance, using the top-N approach:
+    # filter
     filtered_indices = filtered_indices_topN
 
     # Get filtered genes and their corresponding embeddings in the top-feature space

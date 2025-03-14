@@ -227,19 +227,19 @@ def main():
         final_xgb.fit(X_all, y_all)
 
         # save final XGBoost model
-        model_path = save_dir / f"xgboost_gda_{args.year}.pkl"
+        model_path = save_dir / f"xgboost_gda_{args.year}_final.pkl"
         with open(model_path, "wb") as f:
             pickle.dump(final_xgb, f)
         print(f"Saved XGBoost model to {model_path}")
 
-        # # run SHAP analysis on XGBoost
-        # xgb_wrapped = BaselineModel(final_xgb)
-        # shap_values = run_shap(xgb_wrapped, X_all, save_dir, f"xgboost_gda_{args.year}")
+        # run SHAP analysis on XGBoost
+        xgb_wrapped = BaselineModel(final_xgb)
+        shap_values = run_shap(xgb_wrapped, X_all, save_dir, f"xgboost_gda_{args.year}")
 
-        # if shap_values is not None:
-        #     shap_path = save_dir / f"gda_shap_values_{args.year}.npy"
-        #     np.save(shap_path, shap_values)
-        #     print(f"Saved SHAP values to {shap_path}")
+        if shap_values is not None:
+            shap_path = save_dir / f"gda_shap_values_{args.year}.npy"
+            np.save(shap_path, shap_values)
+            print(f"Saved SHAP values to {shap_path}")
 
         # # train final Logistic Regression model
         # print("Training final Logistic Regression model on all data...")
@@ -379,95 +379,95 @@ def main():
 
         print(f"Saved XGBoost model to {model_path}")
 
-        probs_test_named = []
-        for idx, (g, d) in enumerate(test_positive_pairs + test_negative_pairs):
-            probs_test_named.append((g, d, probs_test[idx]))
-        with open(save_dir / f"probs_test_{args.year}.tsv", "w") as f:
-            writer = csv.writer(f, delimiter="\t")
-            writer.writerow(["gene", "disease", "probability"])
-            for row in probs_test_named:
-                writer.writerow(row)
+        # probs_test_named = []
+        # for idx, (g, d) in enumerate(test_positive_pairs + test_negative_pairs):
+        #     probs_test_named.append((g, d, probs_test[idx]))
+        # with open(save_dir / f"probs_test_{args.year}.tsv", "w") as f:
+        #     writer = csv.writer(f, delimiter="\t")
+        #     writer.writerow(["gene", "disease", "probability"])
+        #     for row in probs_test_named:
+        #         writer.writerow(row)
 
-        # train Logistic Regression
-        lr_clf = LogisticRegression()
-        print("Training Logistic Regression...")
+        # # train Logistic Regression
+        # lr_clf = LogisticRegression()
+        # print("Training Logistic Regression...")
 
-        lr_clf.fit(X_train, y_train)
-        probs_test_lr = lr_clf.predict_proba(X_test)[:, 1]
-        auc_lr = roc_auc_score(y_test, probs_test_lr)
-        ap_lr = average_precision_score(y_test, probs_test_lr)
-        pr_curve_lr = precision_recall_curve(y_test, probs_test_lr)
-        precision_lr, recall_lr, thresholds_lr = pr_curve_lr
+        # lr_clf.fit(X_train, y_train)
+        # probs_test_lr = lr_clf.predict_proba(X_test)[:, 1]
+        # auc_lr = roc_auc_score(y_test, probs_test_lr)
+        # ap_lr = average_precision_score(y_test, probs_test_lr)
+        # pr_curve_lr = precision_recall_curve(y_test, probs_test_lr)
+        # precision_lr, recall_lr, thresholds_lr = pr_curve_lr
 
-        print(f"Test AUC (LR) = {auc_lr:.4f}")
-        print(f"Test Average Precision (LR) = {ap_lr:.4f}")
-        np.savez(
-            save_dir / f"pr_curve_lr_{args.year}.npz",
-            precision=precision_lr,
-            recall=recall_lr,
-            thresholds=thresholds_lr,
-        )
+        # print(f"Test AUC (LR) = {auc_lr:.4f}")
+        # print(f"Test Average Precision (LR) = {ap_lr:.4f}")
+        # np.savez(
+        #     save_dir / f"pr_curve_lr_{args.year}.npz",
+        #     precision=precision_lr,
+        #     recall=recall_lr,
+        #     thresholds=thresholds_lr,
+        # )
 
-        model_path_lr = save_dir / f"lr_gda_{args.year}.pkl"
-        with open(model_path_lr, "wb") as f:
-            pickle.dump(lr_clf, f)
+        # model_path_lr = save_dir / f"lr_gda_{args.year}.pkl"
+        # with open(model_path_lr, "wb") as f:
+        #     pickle.dump(lr_clf, f)
 
-        print(f"Saved Logistic Regression model to {model_path_lr}")
-        probs_test_named_lr = []
-        for idx, (g, d) in enumerate(test_positive_pairs + test_negative_pairs):
-            probs_test_named_lr.append((g, d, probs_test_lr[idx]))
+        # print(f"Saved Logistic Regression model to {model_path_lr}")
+        # probs_test_named_lr = []
+        # for idx, (g, d) in enumerate(test_positive_pairs + test_negative_pairs):
+        #     probs_test_named_lr.append((g, d, probs_test_lr[idx]))
 
-        with open(save_dir / f"probs_test_lr_{args.year}.tsv", "w") as f:
-            writer = csv.writer(f, delimiter="\t")
-            writer.writerow(["gene", "disease", "probability"])
-            for row in probs_test_named_lr:
-                writer.writerow(row)
+        # with open(save_dir / f"probs_test_lr_{args.year}.tsv", "w") as f:
+        #     writer = csv.writer(f, delimiter="\t")
+        #     writer.writerow(["gene", "disease", "probability"])
+        #     for row in probs_test_named_lr:
+        #         writer.writerow(row)
 
-        # random baseline
-        print("Running Random Baseline...")
+        # # random baseline
+        # print("Running Random Baseline...")
 
-        class RandomBaseline:
-            """
-            A random baseline classifier that returns random probabilities.
-            Mimics the interface of a model with a predict_proba method.
-            """
+        # class RandomBaseline:
+        #     """
+        #     A random baseline classifier that returns random probabilities.
+        #     Mimics the interface of a model with a predict_proba method.
+        #     """
 
-            def __init__(self, random_state: int = 42):
-                self.rng = np.random.default_rng(random_state)
+        #     def __init__(self, random_state: int = 42):
+        #         self.rng = np.random.default_rng(random_state)
 
-            def fit(self, X: np.ndarray, y: np.ndarray):
-                return self
+        #     def fit(self, X: np.ndarray, y: np.ndarray):
+        #         return self
 
-            def predict_proba(self, X: np.ndarray) -> np.ndarray:
-                n_samples = X.shape[0]
-                probs = self.rng.random(n_samples)
-                return np.column_stack((1 - probs, probs))
+        #     def predict_proba(self, X: np.ndarray) -> np.ndarray:
+        #         n_samples = X.shape[0]
+        #         probs = self.rng.random(n_samples)
+        #         return np.column_stack((1 - probs, probs))
 
-        random_baseline = RandomBaseline(random_state=42).fit(X_train, y_train)
-        probs_test_rand = random_baseline.predict_proba(X_test)[:, 1]
-        auc_rand = roc_auc_score(y_test, probs_test_rand)
-        ap_rand = average_precision_score(y_test, probs_test_rand)
-        pr_curve_rand = precision_recall_curve(y_test, probs_test_rand)
-        precision_rand, recall_rand, thresholds_rand = pr_curve_rand
+        # random_baseline = RandomBaseline(random_state=42).fit(X_train, y_train)
+        # probs_test_rand = random_baseline.predict_proba(X_test)[:, 1]
+        # auc_rand = roc_auc_score(y_test, probs_test_rand)
+        # ap_rand = average_precision_score(y_test, probs_test_rand)
+        # pr_curve_rand = precision_recall_curve(y_test, probs_test_rand)
+        # precision_rand, recall_rand, thresholds_rand = pr_curve_rand
 
-        print(f"Test AUC (Random Baseline) = {auc_rand:.4f}")
-        print(f"Test Average Precision (Random Baseline) = {ap_rand:.4f}")
-        np.savez(
-            save_dir / f"pr_curve_rand_{args.year}.npz",
-            precision=precision_rand,
-            recall=recall_rand,
-            thresholds=thresholds_rand,
-        )
+        # print(f"Test AUC (Random Baseline) = {auc_rand:.4f}")
+        # print(f"Test Average Precision (Random Baseline) = {ap_rand:.4f}")
+        # np.savez(
+        #     save_dir / f"pr_curve_rand_{args.year}.npz",
+        #     precision=precision_rand,
+        #     recall=recall_rand,
+        #     thresholds=thresholds_rand,
+        # )
 
-        probs_test_named_rand = []
-        for idx, (g, d) in enumerate(test_positive_pairs + test_negative_pairs):
-            probs_test_named_rand.append((g, d, probs_test_rand[idx]))
+        # probs_test_named_rand = []
+        # for idx, (g, d) in enumerate(test_positive_pairs + test_negative_pairs):
+        #     probs_test_named_rand.append((g, d, probs_test_rand[idx]))
 
-        with open(save_dir / f"probs_test_rand_{args.year}.tsv", "w") as f:
-            writer = csv.writer(f, delimiter="\t")
-            writer.writerow(["gene", "disease", "probability"])
-            for row in probs_test_named_rand:
-                writer.writerow(row)
+        # with open(save_dir / f"probs_test_rand_{args.year}.tsv", "w") as f:
+        #     writer = csv.writer(f, delimiter="\t")
+        #     writer.writerow(["gene", "disease", "probability"])
+        #     for row in probs_test_named_rand:
+        #         writer.writerow(row)
 
 
 if __name__ == "__main__":
