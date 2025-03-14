@@ -80,14 +80,14 @@ def build_edge_features(
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--year", type=int, default=2007, help="Which year's data to load."
+        "--year", type=int, default=2023, help="Which year's data to load."
     )
     parser.add_argument(
         "--save_dir",
         type=str,
         default="/ocean/projects/bio210019p/stevesho/genomic_nlp/models/disease",
     )
-    parser.add_argument("--model", type=str, default="bert")
+    parser.add_argument("--model", type=str, default="n2v")
     args = parser.parse_args()
     embedding_path = "/ocean/projects/bio210019p/stevesho/genomic_nlp/models/w2v"
 
@@ -142,70 +142,70 @@ def main():
             f"Total data for CV: pos: {len(X_pos)}, neg: {len(X_neg)}; total: {len(X_all)}"
         )
 
-        # 5-fold cross-validation
-        kf = KFold(n_splits=5, shuffle=True, random_state=42)
+        # # 5-fold cross-validation
+        # kf = KFold(n_splits=5, shuffle=True, random_state=42)
 
-        # results dictionary
-        cv_results = {"xgb": {"auc": [], "ap": []}, "lr": {"auc": [], "ap": []}}
+        # # results dictionary
+        # cv_results = {"xgb": {"auc": [], "ap": []}, "lr": {"auc": [], "ap": []}}
 
-        print("Running 5-fold cross-validation...")
-        for fold, (train_idx, val_idx) in enumerate(kf.split(X_all)):
-            X_train_fold, X_val_fold = X_all[train_idx], X_all[val_idx]
-            y_train_fold, y_val_fold = y_all[train_idx], y_all[val_idx]
+        # print("Running 5-fold cross-validation...")
+        # for fold, (train_idx, val_idx) in enumerate(kf.split(X_all)):
+        #     X_train_fold, X_val_fold = X_all[train_idx], X_all[val_idx]
+        #     y_train_fold, y_val_fold = y_all[train_idx], y_all[val_idx]
 
-            # Train XGBoost
-            xgb_clf = XGBClassifier(
-                eval_metric="aucpr",
-                n_estimators=300,
-                learning_rate=0.05,
-                subsample=0.8,
-                colsample_bytree=0.8,
-                seed=42,
-                reg_lambda=1,
-            )
+        #     # Train XGBoost
+        #     xgb_clf = XGBClassifier(
+        #         eval_metric="aucpr",
+        #         n_estimators=300,
+        #         learning_rate=0.05,
+        #         subsample=0.8,
+        #         colsample_bytree=0.8,
+        #         seed=42,
+        #         reg_lambda=1,
+        #     )
 
-            print(f"Training XGBoost (fold {fold+1}/5)...")
-            xgb_clf.fit(X_train_fold, y_train_fold)
-            probs_val = xgb_clf.predict_proba(X_val_fold)[:, 1]
-            auc = roc_auc_score(y_val_fold, probs_val)
-            ap = average_precision_score(y_val_fold, probs_val)
-            cv_results["xgb"]["auc"].append(auc)
-            cv_results["xgb"]["ap"].append(ap)
-            print(f"Fold {fold+1} - XGB AUC = {auc:.4f}, AP = {ap:.4f}")
+        #     print(f"Training XGBoost (fold {fold+1}/5)...")
+        #     xgb_clf.fit(X_train_fold, y_train_fold)
+        #     probs_val = xgb_clf.predict_proba(X_val_fold)[:, 1]
+        #     auc = roc_auc_score(y_val_fold, probs_val)
+        #     ap = average_precision_score(y_val_fold, probs_val)
+        #     cv_results["xgb"]["auc"].append(auc)
+        #     cv_results["xgb"]["ap"].append(ap)
+        #     print(f"Fold {fold+1} - XGB AUC = {auc:.4f}, AP = {ap:.4f}")
 
-            # # Train Logistic Regression
-            # lr_clf = LogisticRegression(max_iter=1000)
-            # print(f"Training Logistic Regression (fold {fold+1}/5)...")
-            # lr_clf.fit(X_train_fold, y_train_fold)
-            # probs_val_lr = lr_clf.predict_proba(X_val_fold)[:, 1]
-            # auc_lr = roc_auc_score(y_val_fold, probs_val_lr)
-            # ap_lr = average_precision_score(y_val_fold, probs_val_lr)
-            # cv_results["lr"]["auc"].append(auc_lr)
-            # cv_results["lr"]["ap"].append(ap_lr)
-            # print(f"Fold {fold+1} - LR AUC = {auc_lr:.4f}, AP = {ap_lr:.4f}")
+        #     # # Train Logistic Regression
+        #     # lr_clf = LogisticRegression(max_iter=1000)
+        #     # print(f"Training Logistic Regression (fold {fold+1}/5)...")
+        #     # lr_clf.fit(X_train_fold, y_train_fold)
+        #     # probs_val_lr = lr_clf.predict_proba(X_val_fold)[:, 1]
+        #     # auc_lr = roc_auc_score(y_val_fold, probs_val_lr)
+        #     # ap_lr = average_precision_score(y_val_fold, probs_val_lr)
+        #     # cv_results["lr"]["auc"].append(auc_lr)
+        #     # cv_results["lr"]["ap"].append(ap_lr)
+        #     # print(f"Fold {fold+1} - LR AUC = {auc_lr:.4f}, AP = {ap_lr:.4f}")
 
-        # calculate average performance across folds
-        cv_results["xgb"]["mean_auc"] = np.mean(cv_results["xgb"]["auc"])
-        cv_results["xgb"]["std_auc"] = np.std(cv_results["xgb"]["auc"])
-        cv_results["xgb"]["mean_ap"] = np.mean(cv_results["xgb"]["ap"])
-        cv_results["xgb"]["std_ap"] = np.std(cv_results["xgb"]["ap"])
+        # # calculate average performance across folds
+        # cv_results["xgb"]["mean_auc"] = np.mean(cv_results["xgb"]["auc"])
+        # cv_results["xgb"]["std_auc"] = np.std(cv_results["xgb"]["auc"])
+        # cv_results["xgb"]["mean_ap"] = np.mean(cv_results["xgb"]["ap"])
+        # cv_results["xgb"]["std_ap"] = np.std(cv_results["xgb"]["ap"])
 
-        # cv_results["lr"]["mean_auc"] = np.mean(cv_results["lr"]["auc"])
-        # cv_results["lr"]["std_auc"] = np.std(cv_results["lr"]["auc"])
-        # cv_results["lr"]["mean_ap"] = np.mean(cv_results["lr"]["ap"])
-        # cv_results["lr"]["std_ap"] = np.std(cv_results["lr"]["ap"])
+        # # cv_results["lr"]["mean_auc"] = np.mean(cv_results["lr"]["auc"])
+        # # cv_results["lr"]["std_auc"] = np.std(cv_results["lr"]["auc"])
+        # # cv_results["lr"]["mean_ap"] = np.mean(cv_results["lr"]["ap"])
+        # # cv_results["lr"]["std_ap"] = np.std(cv_results["lr"]["ap"])
 
-        # save CV results as JSON
-        with open(save_dir / f"cv_results_{args.year}.json", "w") as f:
-            json.dump(cv_results, f, indent=4)
+        # # save CV results as JSON
+        # with open(save_dir / f"cv_results_{args.year}.json", "w") as f:
+        #     json.dump(cv_results, f, indent=4)
 
-        print("CV Results:")
-        print(
-            f"XGB - Mean AUC: {cv_results['xgb']['mean_auc']:.4f} ± {cv_results['xgb']['std_auc']:.4f}"
-        )
-        print(
-            f"XGB - Mean AP: {cv_results['xgb']['mean_ap']:.4f} ± {cv_results['xgb']['std_ap']:.4f}"
-        )
+        # print("CV Results:")
+        # print(
+        #     f"XGB - Mean AUC: {cv_results['xgb']['mean_auc']:.4f} ± {cv_results['xgb']['std_auc']:.4f}"
+        # )
+        # print(
+        #     f"XGB - Mean AP: {cv_results['xgb']['mean_ap']:.4f} ± {cv_results['xgb']['std_ap']:.4f}"
+        # )
         # print(
         #     f"LR - Mean AUC: {cv_results['lr']['mean_auc']:.4f} ± {cv_results['lr']['std_auc']:.4f}"
         # )
@@ -227,7 +227,7 @@ def main():
         final_xgb.fit(X_all, y_all)
 
         # save final XGBoost model
-        model_path = save_dir / f"xgboost_gda_{args.year}_final.pkl"
+        model_path = save_dir / f"xgboost_gda_{args.year}_final_notbert.pkl"
         with open(model_path, "wb") as f:
             pickle.dump(final_xgb, f)
         print(f"Saved XGBoost model to {model_path}")
