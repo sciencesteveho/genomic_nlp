@@ -107,6 +107,7 @@ def plot_predicted_versus_expected(
         s=5,
         edgecolor=None,
         linewidth=0,
+        color="darkgray",
         alpha=0.75,
         marginal_kws={
             "element": "step",
@@ -248,13 +249,13 @@ def main() -> None:
     valid_genes = [gene for gene in genes_symbols if gene in w2v.wv]
     w2v_genes = {gene: w2v.wv[gene] for gene in valid_genes}
 
-    # filter for valid genes in genePT
-    valid_genes = [gene for gene in genes_symbols if gene in gene_pt]
-    gene_pt_genes = {gene: gene_pt[gene] for gene in valid_genes}
+    # # filter for valid genes in genePT
+    # valid_genes = [gene for gene in genes_symbols if gene in gene_pt]
+    # gene_pt_genes = {gene: gene_pt[gene] for gene in valid_genes}
 
-    # fitler for valid genes in attention embeddings
-    valid_genes = [gene for gene in genes_symbols if gene in avg_embeddings]
-    attn_genes = {gene: avg_embeddings[gene] for gene in valid_genes}
+    # # fitler for valid genes in attention embeddings
+    # valid_genes = [gene for gene in genes_symbols if gene in avg_embeddings]
+    # attn_genes = {gene: avg_embeddings[gene] for gene in valid_genes}
 
     # filter for protein coding
     gene_bed = BedTool(protein_coding_bed)
@@ -278,6 +279,10 @@ def main() -> None:
     w2v_embeddings = {gene: w2v.wv[gene] for gene in shared_genes}
     genept_embeddings = {gene: gene_pt[gene] for gene in shared_genes}
     attn_embeddings = {gene: avg_embeddings[gene] for gene in shared_genes}
+
+    # add embeddings to df
+    train_df["embedding"] = train_df["genesymbol"].map(lambda x: w2v_embeddings.get(x))
+    test_df["embedding"] = test_df["genesymbol"].map(lambda x: w2v_embeddings.get(x))
 
     # get vectors for model training
     X_train = np.array(train_df["embedding"].tolist())
@@ -356,46 +361,46 @@ def main() -> None:
     }
     xgb_params = {k.replace("xgb__", ""): v for k, v in best_params.items()}
 
-    # # get random vectors using xavier uniform init
-    # embedding_dimension = X_train.shape[1]
-    # num_train_genes = X_train.shape[0]
-    # X_train_random = xavier_uniform_initialization(
-    #     (num_train_genes, embedding_dimension)
-    # )
+    # get random vectors using xavier uniform init
+    embedding_dimension = X_train.shape[1]
+    num_train_genes = X_train.shape[0]
+    X_train_random = xavier_uniform_initialization(
+        (num_train_genes, embedding_dimension)
+    )
 
-    # pipe_random_embedding = Pipeline(
-    #     [
-    #         ("scaler", StandardScaler()),
-    #         (
-    #             "xgb",
-    #             xgb.XGBRegressor(
-    #                 objective="reg:squarederror",
-    #                 random_state=42,
-    #                 eval_metric="rmse",
-    #                 tree_method="hist",
-    #                 **xgb_params,
-    #             ),
-    #         ),
-    #     ]
-    # )
+    pipe_random_embedding = Pipeline(
+        [
+            ("scaler", StandardScaler()),
+            (
+                "xgb",
+                xgb.XGBRegressor(
+                    objective="reg:squarederror",
+                    random_state=42,
+                    eval_metric="rmse",
+                    tree_method="hist",
+                    **xgb_params,
+                ),
+            ),
+        ]
+    )
 
-    # print("Training XGBoost with RANDOM embeddings...")
-    # pipe_random_embedding.fit(X_train_random, y_train)
+    print("Training XGBoost with RANDOM embeddings...")
+    pipe_random_embedding.fit(X_train_random, y_train)
 
-    # print("Making predictions with RANDOM embeddings...")
-    # predictions_random = pipe_random_embedding.predict(X_test)
+    print("Making predictions with RANDOM embeddings...")
+    predictions_random = pipe_random_embedding.predict(X_test)
 
-    # pearson_corr_random, _ = pearsonr(predictions_random, y_test)
-    # print(f"Pearson Correlation with RANDOM Embeddings: {pearson_corr_random:.4f}")
+    pearson_corr_random, _ = pearsonr(predictions_random, y_test)
+    print(f"Pearson Correlation with RANDOM Embeddings: {pearson_corr_random:.4f}")
 
-    # spearman_corr_random, _ = stats.spearmanr(predictions_random, y_test)
-    # print(f"Spearman Correlation with RANDOM Embeddings: {spearman_corr_random:.4f}")
+    spearman_corr_random, _ = stats.spearmanr(predictions_random, y_test)
+    print(f"Spearman Correlation with RANDOM Embeddings: {spearman_corr_random:.4f}")
 
-    # plot_predicted_versus_expected(
-    #     predictions_random,
-    #     y_test,
-    #     savetitle="random_embedding_expression_prediction.png",
-    # )
+    plot_predicted_versus_expected(
+        predictions_random,
+        y_test,
+        savetitle="random_embedding_expression_prediction.png",
+    )
     # predictions_genept = final_model.predict(X_test)
     # predictions_attn = final_model.predict(X_test)  # type: ignore
 
