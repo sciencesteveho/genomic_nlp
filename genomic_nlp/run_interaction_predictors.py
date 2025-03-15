@@ -100,7 +100,7 @@ class GeneInterationPredictions:
             features=self.test_features,
             labels=self.test_targets,
             return_predictions=True,
-        )
+        )  # type: ignore
         print(f"Hold-out test set AUC: {test_ap:.4f}")
 
         # # SHAP analysis for tree-based model
@@ -393,79 +393,94 @@ def predict_unseen_interactions(
     probability_threshold: float = 0.7,
 ) -> None:
     """Predict interactions for unseen gene pairs."""
-    # combine all existing pairs to exclude from unseen predictions
-    existing_pairs = set()
-    for pair in (
-        data_preprocessor.positive_training_pairs
-        + data_preprocessor.negative_training_pairs
-        + test_gene_pairs
-    ):
-        existing_pairs.add(pair)
-        existing_pairs.add((pair[1], pair[0]))  # add reverse pair too
+    try:
+        # combine all existing pairs to exclude from unseen predictions
+        existing_pairs = set()
+        for pair in (
+            data_preprocessor.positive_training_pairs
+            + data_preprocessor.negative_training_pairs
+            + test_gene_pairs
+        ):
+            existing_pairs.add(pair)
+            existing_pairs.add((pair[1], pair[0]))  # add reverse pair
 
-    # get all genes
-    all_genes = list(gene_embeddings.keys())
-    print(f"Generating unseen pairs from {len(all_genes)} genes...")
+        # get all genes
+        all_genes = list(gene_embeddings.keys())
+        print(f"Generating unseen pairs from {len(all_genes)} genes...")
+        print(f"Number of existing pairs to exclude: {len(existing_pairs)}")
 
-    # process in batches
-    total_predictions = {}
-    batch_pairs = []
-    batch_features = []
+        # process in batches
+        total_predictions = {}  # type: ignore
+        batch_pairs = []
+        batch_features = []
 
-    # process gene pairs in batches
-    pair_count = 0
-    saved_count = 0
+        # process gene pairs in batches
+        pair_count = 0
+        saved_count = 0
 
-    for i, gene1 in enumerate(all_genes):
-        if i % 100 == 0 and i > 0:
-            print(
-                f"Processed {i}/{len(all_genes)} genes, found {pair_count} pairs, saved {saved_count} predictions"
-            )
+        for i, gene1 in enumerate(all_genes):
+            if i % 100 == 0 and i > 0:
+                print(
+                    f"Processed {i}/{len(all_genes)} genes, found {pair_count} pairs, saved {saved_count} predictions"
+                )
 
-        for j in range(i + 1, len(all_genes)):
-            gene2 = all_genes[j]
-            pair = (gene1, gene2)
+            for j in range(i + 1, len(all_genes)):
+                gene2 = all_genes[j]
+                pair = (gene1, gene2)
 
-            if pair not in existing_pairs:
-                pair_count += 1
-                # Create feature vector by concatenating embeddings
-                feature = np.hstack([gene_embeddings[gene1], gene_embeddings[gene2]])
-
-                batch_pairs.append(pair)
-                batch_features.append(feature)
-
-                # Process batch when it reaches the desired size
-                if len(batch_pairs) >= batch_size:
-                    saved_batch = _process_prediction_batch(
-                        trained_model,
-                        batch_pairs,
-                        batch_features,
-                        probability_threshold,
+                if pair not in existing_pairs:
+                    pair_count += 1
+                    feature = np.hstack(
+                        [gene_embeddings[gene1], gene_embeddings[gene2]]
                     )
-                    saved_count += len(saved_batch)
-                    total_predictions |= saved_batch
-                    batch_pairs = []
-                    batch_features = []
 
-                    # Free memory
-                    gc.collect()
+                    batch_pairs.append(pair)
+                    batch_features.append(feature)
 
-    # Process any remaining pairs
-    if batch_pairs:
-        saved_batch = _process_prediction_batch(
-            trained_model, batch_pairs, batch_features, probability_threshold
+                    # predict in batches
+                    if len(batch_pairs) >= batch_size:
+                        saved_batch = _process_prediction_batch(
+                            trained_model,
+                            batch_pairs,
+                            batch_features,
+                            probability_threshold,
+                        )
+                        saved_count += len(saved_batch)
+                        total_predictions |= saved_batch
+                        batch_pairs = []
+                        batch_features = []
+
+                        # free memory
+                        gc.collect()
+
+        # process any remaining pairs
+        if batch_pairs:
+            saved_batch = _process_prediction_batch(
+                trained_model, batch_pairs, batch_features, probability_threshold
+            )
+            saved_count += len(saved_batch)
+            total_predictions.update(saved_batch)
+
+        # verify gene names
+        if total_predictions:
+            sample_items = list(total_predictions.items())[:5]
+            print("\nSample predictions (gene1, gene2, probability):")
+            for pair, prob in sample_items:
+                print(f"  {pair[0]}, {pair[1]}, {prob:.4f}")
+
+        # save predictions
+        predictions_path = f"{out_path}/{model_name}_unseen_predictions_2023.pkl"
+        with open(predictions_path, "wb") as f:
+            pickle.dump(total_predictions, f)
+
+        print(
+            f"Saved {len(total_predictions)} unseen interaction predictions to {predictions_path}"
         )
-        saved_count += len(saved_batch)
-        total_predictions |= saved_batch
+    except Exception as e:
+        print(f"Error predicting unseen interactions: {str(e)}")
+        import traceback
 
-    # Save predictions
-    predictions_path = f"{out_path}/{model_name}_unseen_predictions_2023.pkl"
-    with open(predictions_path, "wb") as f:
-        pickle.dump(total_predictions, f)
-
-    print(
-        f"Saved {len(total_predictions)} unseen interaction predictions to {predictions_path}"
-    )
+        traceback.print_exc()
 
 
 def _process_prediction_batch(
@@ -539,8 +554,8 @@ def main() -> None:
     # define models
     models = {
         "xgboost": XGBoost,
-        "random_baseline": RandomBaseline,
-        "logistic_regression": LogisticRegressionModel,
+        # "random_baseline": RandomBaseline,
+        # "logistic_regression": LogisticRegressionModel,
         # "svm": SVM,
         # "mlp": MLP,
     }

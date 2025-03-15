@@ -7,6 +7,7 @@ GDA dataset."""
 
 import argparse
 import csv
+import gc
 import json
 from pathlib import Path
 import pickle
@@ -51,6 +52,8 @@ def predict_unseen_gda(
     model,
     embeddings,
     preprocessor,
+    data,
+    test_pos_edge_index,
     save_dir,
     model_name,
     batch_size=10000,
@@ -63,9 +66,23 @@ def predict_unseen_gda(
 
     # get all existing pairs from training data
     existing_pairs = set()
-    all_train_edges = (
-        preprocessor.train_pairs + preprocessor.val_pairs + preprocessor.test_pairs
-    )
+
+    # extract pairs from edge indices
+    train_pairs = [
+        (data.inv_node_mapping[src], data.inv_node_mapping[dst])
+        for src, dst in data.train_pos_edge_index.numpy().T
+    ]
+    val_pairs = [
+        (data.inv_node_mapping[src], data.inv_node_mapping[dst])
+        for src, dst in data.val_pos_edge_index.numpy().T
+    ]
+    test_pairs = [
+        (data.inv_node_mapping[src], data.inv_node_mapping[dst])
+        for src, dst in test_pos_edge_index.numpy().T
+    ]
+
+    all_train_edges = train_pairs + val_pairs + test_pairs
+
     for edge in all_train_edges:
         existing_pairs.add(edge)
 
@@ -99,7 +116,7 @@ def predict_unseen_gda(
                         model, batch_pairs, batch_features, probability_threshold
                     )
                     saved_count += len(saved_batch)
-                    total_predictions.update(saved_batch)
+                    total_predictions |= saved_batch
                     batch_pairs = []
                     batch_features = []
                     gc.collect()
@@ -110,6 +127,12 @@ def predict_unseen_gda(
         )
         saved_count += len(saved_batch)
         total_predictions.update(saved_batch)
+
+    if total_predictions:
+        sample_items = list(total_predictions.items())[:5]
+        print("Sample predictions (gene, disease, probability):")
+        for pair, prob in sample_items:
+            print(f"  {pair[0]}, {pair[1]}, {prob:.4f}")
 
     predictions_path = save_dir / f"{model_name}_unseen_predictions_2023.pkl"
     with open(predictions_path, "wb") as f:
@@ -231,36 +254,36 @@ def main():
             f"Total data for CV: pos: {len(X_pos)}, neg: {len(X_neg)}; total: {len(X_all)}"
         )
 
-        # # 5-fold cross-validation
-        # kf = KFold(n_splits=5, shuffle=True, random_state=42)
+        # 5-fold cross-validation
+        kf = KFold(n_splits=5, shuffle=True, random_state=42)
 
         # # results dictionary
         # cv_results = {"xgb": {"auc": [], "ap": []}, "lr": {"auc": [], "ap": []}}
 
-        # print("Running 5-fold cross-validation...")
-        # for fold, (train_idx, val_idx) in enumerate(kf.split(X_all)):
-        #     X_train_fold, X_val_fold = X_all[train_idx], X_all[val_idx]
-        #     y_train_fold, y_val_fold = y_all[train_idx], y_all[val_idx]
+        print("Running 5-fold cross-validation...")
+        for fold, (train_idx, val_idx) in enumerate(kf.split(X_all)):
+            X_train_fold, X_val_fold = X_all[train_idx], X_all[val_idx]
+            y_train_fold, y_val_fold = y_all[train_idx], y_all[val_idx]
 
-        #     # Train XGBoost
-        #     xgb_clf = XGBClassifier(
-        #         eval_metric="aucpr",
-        #         n_estimators=300,
-        #         learning_rate=0.05,
-        #         subsample=0.8,
-        #         colsample_bytree=0.8,
-        #         seed=42,
-        #         reg_lambda=1,
-        #     )
+            # Train XGBoost
+            xgb_clf = XGBClassifier(
+                eval_metric="aucpr",
+                n_estimators=300,
+                learning_rate=0.05,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                seed=42,
+                reg_lambda=1,
+            )
 
-        #     print(f"Training XGBoost (fold {fold+1}/5)...")
-        #     xgb_clf.fit(X_train_fold, y_train_fold)
-        #     probs_val = xgb_clf.predict_proba(X_val_fold)[:, 1]
-        #     auc = roc_auc_score(y_val_fold, probs_val)
-        #     ap = average_precision_score(y_val_fold, probs_val)
-        #     cv_results["xgb"]["auc"].append(auc)
-        #     cv_results["xgb"]["ap"].append(ap)
-        #     print(f"Fold {fold+1} - XGB AUC = {auc:.4f}, AP = {ap:.4f}")
+            print(f"Training XGBoost (fold {fold+1}/5)...")
+            xgb_clf.fit(X_train_fold, y_train_fold)
+            probs_val = xgb_clf.predict_proba(X_val_fold)[:, 1]
+            auc = roc_auc_score(y_val_fold, probs_val)
+            ap = average_precision_score(y_val_fold, probs_val)
+            # cv_results["xgb"]["auc"].append(auc)
+            # cv_results["xgb"]["ap"].append(ap)
+            print(f"Fold {fold+1} - XGB AUC = {auc:.4f}, AP = {ap:.4f}")
 
         #     # # Train Logistic Regression
         #     # lr_clf = LogisticRegression(max_iter=1000)
@@ -336,6 +359,8 @@ def main():
                 model=final_xgb,
                 embeddings=embeddings,
                 preprocessor=preprocessor,
+                data=data,
+                test_pos_edge_index=test_pos_edge_index,
                 save_dir=save_dir,
                 model_name=f"xgboost_gda_{args.model}",
             )
