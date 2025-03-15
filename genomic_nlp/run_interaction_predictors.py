@@ -178,97 +178,95 @@ class GeneInterationPredictions:
         """Evaluate a model and return its AUC score."""
         predicted_probabilities = model.predict_probability(features)
         ap_score = average_precision_score(labels, predicted_probabilities)
-        if return_predictions:
-            return ap_score, predicted_probabilities
-        return ap_score
+        return (ap_score, predicted_probabilities) if return_predictions else ap_score
 
 
-class BootstrapEvaluator:
-    """Class used to evaluate models using n out of n bootstrapping."""
+# class BootstrapEvaluator:
+#     """Class used to evaluate models using n out of n bootstrapping."""
 
-    def __init__(
-        self,
-        models: Dict[str, BaselineModel],
-        test_features: np.ndarray,
-        test_targets: np.ndarray,
-        n_iterations: int = 1000,
-        confidence_level: float = 0.95,
-    ) -> None:
-        """Instantiate a BootstrapEvaluator object."""
-        self.models = models
-        self.test_features = test_features
-        self.test_targets = test_targets
-        self.n_iterations = n_iterations
-        self.confidence_level = confidence_level
+#     def __init__(
+#         self,
+#         models: Dict[str, BaselineModel],
+#         test_features: np.ndarray,
+#         test_targets: np.ndarray,
+#         n_iterations: int = 1000,
+#         confidence_level: float = 0.95,
+#     ) -> None:
+#         """Instantiate a BootstrapEvaluator object."""
+#         self.models = models
+#         self.test_features = test_features
+#         self.test_targets = test_targets
+#         self.n_iterations = n_iterations
+#         self.confidence_level = confidence_level
 
-    def bootstrap_test_evaluation(
-        self,
-    ) -> Dict[str, Dict[str, Dict[str, float]]]:
-        """Perform bootstrapped evaluation of multiple models on the test set."""
-        n_samples = len(self.test_features)
+#     def bootstrap_test_evaluation(
+#         self,
+#     ) -> Dict[str, Dict[str, Dict[str, float]]]:
+#         """Perform bootstrapped evaluation of multiple models on the test set."""
+#         n_samples = len(self.test_features)
 
-        # prepare arguments for multiprocessing
-        mp_args = [
-            (n_samples, self.test_features, self.test_targets, self.models)
-            for _ in range(self.n_iterations)
-        ]
+#         # prepare arguments for multiprocessing
+#         mp_args = [
+#             (n_samples, self.test_features, self.test_targets, self.models)
+#             for _ in range(self.n_iterations)
+#         ]
 
-        # use multiprocessing to run iterations in parallel
-        with mp.Pool(processes=get_physical_cores()) as pool:
-            results = pool.starmap(self._bootstrap_iteration, mp_args)
+#         # use multiprocessing to run iterations in parallel
+#         with mp.Pool(processes=get_physical_cores()) as pool:
+#             results = pool.starmap(self._bootstrap_iteration, mp_args)
 
-        # aggregate results
-        bootstrap_results: Dict[str, Dict[str, List[float]]] = {
-            model_name: {"auc": [], "auprc": []} for model_name in self.models
-        }
-        for result in results:
-            for model_name, metrics in result.items():
-                bootstrap_results[model_name]["auc"].append(metrics["auc"])
-                bootstrap_results[model_name]["auprc"].append(metrics["auprc"])
+#         # aggregate results
+#         bootstrap_results: Dict[str, Dict[str, List[float]]] = {
+#             model_name: {"auc": [], "auprc": []} for model_name in self.models
+#         }
+#         for result in results:
+#             for model_name, metrics in result.items():
+#                 bootstrap_results[model_name]["auc"].append(metrics["auc"])
+#                 bootstrap_results[model_name]["auprc"].append(metrics["auprc"])
 
-        return self.compute_bootstrap_statistics(
-            bootstrap_results=bootstrap_results, confidence_level=self.confidence_level
-        )
+#         return self.compute_bootstrap_statistics(
+#             bootstrap_results=bootstrap_results, confidence_level=self.confidence_level
+#         )
 
-    @staticmethod
-    def _bootstrap_iteration(n_samples, test_features, test_targets, models):
-        """Perform a single bootstrap iteration."""
-        indices = np.random.choice(n_samples, size=n_samples, replace=True)
-        boot_features = test_features[indices]
-        boot_targets = test_targets[indices]
-        iteration_results = {}
-        for model_name, model in models.items():
-            predictions = model.predict_probability(boot_features)
-            iteration_results[model_name] = {
-                "auc": roc_auc_score(boot_targets, predictions),
-                "auprc": average_precision_score(boot_targets, predictions),
-            }
-        return iteration_results
+#     @staticmethod
+#     def _bootstrap_iteration(n_samples, test_features, test_targets, models):
+#         """Perform a single bootstrap iteration."""
+#         indices = np.random.choice(n_samples, size=n_samples, replace=True)
+#         boot_features = test_features[indices]
+#         boot_targets = test_targets[indices]
+#         iteration_results = {}
+#         for model_name, model in models.items():
+#             predictions = model.predict_probability(boot_features)
+#             iteration_results[model_name] = {
+#                 "auc": roc_auc_score(boot_targets, predictions),
+#                 "auprc": average_precision_score(boot_targets, predictions),
+#             }
+#         return iteration_results
 
-    @staticmethod
-    def compute_bootstrap_statistics(
-        bootstrap_results: Dict[str, Dict[str, List[float]]], confidence_level: float
-    ) -> Dict[str, Any]:
-        """Compute statistics from bootstrap results."""
-        bootstrap_stats: Dict[str, Any] = {}
+#     @staticmethod
+#     def compute_bootstrap_statistics(
+#         bootstrap_results: Dict[str, Dict[str, List[float]]], confidence_level: float
+#     ) -> Dict[str, Any]:
+#         """Compute statistics from bootstrap results."""
+#         bootstrap_stats: Dict[str, Any] = {}
 
-        for model_name, metrics in bootstrap_results.items():
-            bootstrap_stats[model_name] = {}
-            for metric, values in metrics.items():
-                mean = np.mean(values)
-                std_err = np.std(values, ddof=1)
-                ci_lower, ci_upper = stats.t.interval(
-                    confidence_level, len(values) - 1, loc=mean, scale=std_err
-                )
+#         for model_name, metrics in bootstrap_results.items():
+#             bootstrap_stats[model_name] = {}
+#             for metric, values in metrics.items():
+#                 mean = np.mean(values)
+#                 std_err = np.std(values, ddof=1)
+#                 ci_lower, ci_upper = stats.t.interval(
+#                     confidence_level, len(values) - 1, loc=mean, scale=std_err
+#                 )
 
-                bootstrap_stats[model_name][metric] = {
-                    "mean": mean,
-                    "std_error": std_err,
-                    "ci_lower": ci_lower,
-                    "ci_upper": ci_upper,
-                }
+#                 bootstrap_stats[model_name][metric] = {
+#                     "mean": mean,
+#                     "std_error": std_err,
+#                     "ci_lower": ci_lower,
+#                     "ci_upper": ci_upper,
+#                 }
 
-        return bootstrap_stats
+#         return bootstrap_stats
 
 
 def _setup_model_dir(args: argparse.Namespace) -> str:
@@ -358,7 +356,7 @@ def get_gene_embeddings(
         save_path = f"{args.save_path}/n2v/{args.n2v_type}/{args.year}"
         os.makedirs(save_path, exist_ok=True)
     elif args.model_type == "bert":
-        model_path = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/averaged_embeddings.pkl"
+        model_path = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/attention_embeddings.pkl"
         with open(model_path, "rb") as f:
             embeddings = pickle.load(f)
         gene_embeddings = _extract_gene_vectors(embeddings, gene_names)
@@ -382,6 +380,109 @@ def get_training_files(
         positive_test_file,
         negative_test_file,
     )
+
+
+def predict_unseen_interactions(
+    trained_model: BaselineModel,
+    gene_embeddings: Dict[str, np.ndarray],
+    data_preprocessor: InteractionDataPreprocessor,
+    test_gene_pairs: List[Tuple[str, str]],
+    model_name: str,
+    out_path: str,
+    batch_size: int = 10000,
+    probability_threshold: float = 0.7,
+) -> None:
+    """Predict interactions for unseen gene pairs."""
+    # combine all existing pairs to exclude from unseen predictions
+    existing_pairs = set()
+    for pair in (
+        data_preprocessor.positive_training_pairs
+        + data_preprocessor.negative_training_pairs
+        + test_gene_pairs
+    ):
+        existing_pairs.add(pair)
+        existing_pairs.add((pair[1], pair[0]))  # add reverse pair too
+
+    # get all genes
+    all_genes = list(gene_embeddings.keys())
+    print(f"Generating unseen pairs from {len(all_genes)} genes...")
+
+    # process in batches
+    total_predictions = {}
+    batch_pairs = []
+    batch_features = []
+
+    # process gene pairs in batches
+    pair_count = 0
+    saved_count = 0
+
+    for i, gene1 in enumerate(all_genes):
+        if i % 100 == 0 and i > 0:
+            print(
+                f"Processed {i}/{len(all_genes)} genes, found {pair_count} pairs, saved {saved_count} predictions"
+            )
+
+        for j in range(i + 1, len(all_genes)):
+            gene2 = all_genes[j]
+            pair = (gene1, gene2)
+
+            if pair not in existing_pairs:
+                pair_count += 1
+                # Create feature vector by concatenating embeddings
+                feature = np.hstack([gene_embeddings[gene1], gene_embeddings[gene2]])
+
+                batch_pairs.append(pair)
+                batch_features.append(feature)
+
+                # Process batch when it reaches the desired size
+                if len(batch_pairs) >= batch_size:
+                    saved_batch = _process_prediction_batch(
+                        trained_model,
+                        batch_pairs,
+                        batch_features,
+                        probability_threshold,
+                    )
+                    saved_count += len(saved_batch)
+                    total_predictions |= saved_batch
+                    batch_pairs = []
+                    batch_features = []
+
+                    # Free memory
+                    gc.collect()
+
+    # Process any remaining pairs
+    if batch_pairs:
+        saved_batch = _process_prediction_batch(
+            trained_model, batch_pairs, batch_features, probability_threshold
+        )
+        saved_count += len(saved_batch)
+        total_predictions |= saved_batch
+
+    # Save predictions
+    predictions_path = f"{out_path}/{model_name}_unseen_predictions_2023.pkl"
+    with open(predictions_path, "wb") as f:
+        pickle.dump(total_predictions, f)
+
+    print(
+        f"Saved {len(total_predictions)} unseen interaction predictions to {predictions_path}"
+    )
+
+
+def _process_prediction_batch(
+    model: BaselineModel,
+    batch_pairs: List[Tuple[str, str]],
+    batch_features: List[np.ndarray],
+    probability_threshold: float,
+) -> Dict[Tuple[str, str], float]:
+    """Process a batch of predictions and return filtered results."""
+    features_array = np.array(batch_features)
+    predictions = model.predict_probability(features_array)
+
+    return {
+        pair: float(prob)
+        for pair, prob in zip(batch_pairs, predictions)
+        if prob >= probability_threshold
+    }
 
 
 def main() -> None:
@@ -482,14 +583,27 @@ def main() -> None:
                 )
             )
 
-    visualizer = BaselineModelVisualizer(output_path=out_path)
-    visualizer.plot_model_performances(
-        train_results=train_results, test_results=test_results
-    )
-    visualizer.plot_stratified_performance(stratified_results=stratified_results)
-    visualizer.plot_pr_curve(
-        models=trained_models, test_features=test_features, test_labels=test_targets
-    )
+    # Predict unseen interactions for 2023 models
+    if args.year == 2023:
+        print("\nPredicting unseen gene interactions for 2023 models:")
+        for name, model in trained_models.items():
+            predict_unseen_interactions(
+                trained_model=model,
+                gene_embeddings=gene_embeddings,
+                data_preprocessor=data_preprocessor,
+                test_gene_pairs=test_gene_pairs,
+                model_name=name,
+                out_path=out_path,
+            )
+
+    # visualizer = BaselineModelVisualizer(output_path=out_path)
+    # visualizer.plot_model_performances(
+    #     train_results=train_results, test_results=test_results
+    # )
+    # visualizer.plot_stratified_performance(stratified_results=stratified_results)
+    # visualizer.plot_pr_curve(
+    #     models=trained_models, test_features=test_features, test_labels=test_targets
+    # )
 
     # save stratified results
     stratified_results_path = f"{out_path}/stratified_results_{args.year}.pkl"

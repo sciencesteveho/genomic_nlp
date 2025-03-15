@@ -31,6 +31,95 @@ from genomic_nlp.gda_data_preprocessor import GDADataPreprocessor
 from genomic_nlp.visualization import set_matplotlib_publication_parameters
 
 
+def _process_gda_prediction_batch(
+    model, batch_pairs, batch_features, probability_threshold
+):
+    """Process a batch of GDA predictions and return filtered results."""
+    features_array = np.array(batch_features)
+    predictions = model.predict_proba(features_array)[:, 1]
+
+    # filter predictions by threshold
+    filtered_predictions = {}
+    for i, (pair, prob) in enumerate(zip(batch_pairs, predictions)):
+        if prob >= probability_threshold:
+            filtered_predictions[pair] = float(prob)
+
+    return filtered_predictions
+
+
+def predict_unseen_gda(
+    model,
+    embeddings,
+    preprocessor,
+    save_dir,
+    model_name,
+    batch_size=10000,
+    probability_threshold=0.7,
+):
+    """Predict unseen gene-disease associations."""
+    # extract all genes and diseases that have embeddings
+    genes = [g for g in preprocessor.available_genes if g in embeddings]
+    diseases = [d for d in preprocessor.available_diseases if d in embeddings]
+
+    # get all existing pairs from training data
+    existing_pairs = set()
+    all_train_edges = (
+        preprocessor.train_pairs + preprocessor.val_pairs + preprocessor.test_pairs
+    )
+    for edge in all_train_edges:
+        existing_pairs.add(edge)
+
+    print("Generating predictions for unseen gene-disease pairs...")
+    print(f"Available genes: {len(genes)}, diseases: {len(diseases)}")
+    print(f"Number of existing pairs to exclude: {len(existing_pairs)}")
+
+    total_predictions = {}
+    batch_pairs = []
+    batch_features = []
+    pair_count = 0
+    saved_count = 0
+
+    for i, gene in enumerate(genes):
+        if i % 100 == 0 and i > 0:
+            print(
+                f"Processed {i}/{len(genes)} genes, found {pair_count} pairs, saved {saved_count} predictions"
+            )
+
+        for disease in diseases:
+            pair = (gene, disease)
+
+            if pair not in existing_pairs:
+                pair_count += 1
+                feature = np.concatenate([embeddings[gene], embeddings[disease]])
+
+                batch_pairs.append(pair)
+                batch_features.append(feature)
+                if len(batch_pairs) >= batch_size:
+                    saved_batch = _process_gda_prediction_batch(
+                        model, batch_pairs, batch_features, probability_threshold
+                    )
+                    saved_count += len(saved_batch)
+                    total_predictions.update(saved_batch)
+                    batch_pairs = []
+                    batch_features = []
+                    gc.collect()
+
+    if batch_pairs:
+        saved_batch = _process_gda_prediction_batch(
+            model, batch_pairs, batch_features, probability_threshold
+        )
+        saved_count += len(saved_batch)
+        total_predictions.update(saved_batch)
+
+    predictions_path = save_dir / f"{model_name}_unseen_predictions_2023.pkl"
+    with open(predictions_path, "wb") as f:
+        pickle.dump(total_predictions, f)
+
+    print(
+        f"Saved {len(total_predictions)} unseen GDA predictions to {predictions_path}"
+    )
+
+
 class BaselineModel:
     """Wrapper for baseline models to use with SHAP."""
 
@@ -87,7 +176,7 @@ def main():
         type=str,
         default="/ocean/projects/bio210019p/stevesho/genomic_nlp/models/disease",
     )
-    parser.add_argument("--model", type=str, default="n2v")
+    parser.add_argument("--model", type=str, default="bert")
     args = parser.parse_args()
     embedding_path = "/ocean/projects/bio210019p/stevesho/genomic_nlp/models/w2v"
 
@@ -102,7 +191,7 @@ def main():
         w2v_model = Word2Vec.load(w2vmodel_file)
         embeddings = {word: w2v_model.wv[word] for word in w2v_model.wv.index_to_key}
     elif args.model == "bert":
-        model_path = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/averaged_embeddings.pkl"
+        model_path = "/ocean/projects/bio210019p/stevesho/genomic_nlp/embeddings/attention_embeddings.pkl"
         with open(model_path, "rb") as f:
             embeddings = pickle.load(f)
 
@@ -240,6 +329,16 @@ def main():
             shap_path = save_dir / f"gda_shap_values_{args.year}.npy"
             np.save(shap_path, shap_values)
             print(f"Saved SHAP values to {shap_path}")
+
+        if args.year == 2023:
+            print("\nPredicting unseen gene-disease associations...")
+            predict_unseen_gda(
+                model=final_xgb,
+                embeddings=embeddings,
+                preprocessor=preprocessor,
+                save_dir=save_dir,
+                model_name="xgboost_gda",
+            )
 
         # # train final Logistic Regression model
         # print("Training final Logistic Regression model on all data...")
