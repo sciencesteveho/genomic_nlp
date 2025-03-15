@@ -316,19 +316,19 @@ def main():
         final_xgb.fit(X_all, y_all)
 
         # save final XGBoost model
-        model_path = save_dir / f"xgboost_gda_{args.year}_final_notbert.pkl"
+        model_path = save_dir / f"xgboost_gda_{args.year}_final_{args.model}.pkl"
         with open(model_path, "wb") as f:
             pickle.dump(final_xgb, f)
         print(f"Saved XGBoost model to {model_path}")
 
-        # run SHAP analysis on XGBoost
-        xgb_wrapped = BaselineModel(final_xgb)
-        shap_values = run_shap(xgb_wrapped, X_all, save_dir, f"xgboost_gda_{args.year}")
+        # # run SHAP analysis on XGBoost
+        # xgb_wrapped = BaselineModel(final_xgb)
+        # shap_values = run_shap(xgb_wrapped, X_all, save_dir, f"xgboost_gda_{args.year}")
 
-        if shap_values is not None:
-            shap_path = save_dir / f"gda_shap_values_{args.year}.npy"
-            np.save(shap_path, shap_values)
-            print(f"Saved SHAP values to {shap_path}")
+        # if shap_values is not None:
+        #     shap_path = save_dir / f"gda_shap_values_{args.year}.npy"
+        #     np.save(shap_path, shap_values)
+        #     print(f"Saved SHAP values to {shap_path}")
 
         if args.year == 2023:
             print("\nPredicting unseen gene-disease associations...")
@@ -337,7 +337,7 @@ def main():
                 embeddings=embeddings,
                 preprocessor=preprocessor,
                 save_dir=save_dir,
-                model_name="xgboost_gda",
+                model_name=f"xgboost_gda_{args.model}",
             )
 
         # # train final Logistic Regression model
